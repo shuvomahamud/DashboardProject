@@ -1,31 +1,22 @@
-using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using Presentation.Models;
 
-namespace Presentation.Controllers;
-
-public class HomeController : Controller
+namespace Presentation.Controllers
 {
-    private readonly ILogger<HomeController> _logger;
-
-    public HomeController(ILogger<HomeController> logger)
+    public class HomeController : Controller
     {
-        _logger = logger;
-    }
-
-    public IActionResult Index()
-    {
-        return View();
-    }
-
-    public IActionResult Privacy()
-    {
-        return View();
-    }
-
-    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
-    public IActionResult Error()
-    {
-        return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
+        public IActionResult Index()
+        {
+            // Check if the user is authenticated
+            if (User?.Identity != null && User.Identity.IsAuthenticated)
+            {
+                // If logged in, redirect to the Dashboard
+                return RedirectToAction("Dashboard", "Dashboard");
+            }
+            else
+            {
+                // If not logged in, redirect to the Login page
+                return RedirectToAction("Login", "Account");
+            }
+        }
     }
 }

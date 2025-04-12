@@ -1,5 +1,4 @@
 ﻿@model Presentation.Models.LoginViewModel
-
 @{
     ViewBag.Title = "Login";
 }
@@ -20,9 +19,14 @@
     <button type="submit" class="btn btn-primary">Login</button>
 </form>
 
-<p>
-    <a asp-action="ForgotPassword">Forgot your password?</a>
-</p>
+<div>
+    <p>
+        <a asp-action="Register">Don't have an account? Sign up here.</a>
+    </p>
+    <p>
+        <a asp-action="ForgotPassword">Forgot your password?</a>
+    </p>
+</div>
 
 @section Scripts {
     @{
