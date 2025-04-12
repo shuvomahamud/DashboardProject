@@ -1,11 +1,22 @@
 using Infrastructure;
+using Domain.IdentityModels;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
+// Configure DashboardDbContext to use Supabase via Npgsql.
+builder.Services.AddDbContext<DashboardDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Configure ASP.NET Core Identity with ApplicationUser and IdentityRole.
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
+    .AddEntityFrameworkStores<DashboardDbContext>()
+    .AddDefaultTokenProviders();
+
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -20,10 +31,13 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Add authentication middleware before authorization.
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
+// Seed the admin user.
 await SeedData.SeedAdminUser(app);
 
 app.Run();

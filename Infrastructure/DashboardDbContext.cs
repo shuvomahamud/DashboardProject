@@ -14,7 +14,7 @@ namespace Infrastructure
 
         // Optionally add DbSet placeholders for your application tables here.
         // They will be included after scaffolding later.
-        // public DbSet<InterviewInformation> InterviewInformations { get; set; }
+        public DbSet<InterviewInformation> InterviewInformations { get; set; }
         // public DbSet<AccountsPayable> AccountsPayables { get; set; }
         // public DbSet<ToDoTask> ToDoTasks { get; set; }
         // public DbSet<Onboarding> Onboardings { get; set; }
