@@ -4,6 +4,10 @@ namespace Domain.IdentityModels
 {
     public class ApplicationUser : IdentityUser
     {
-        // Add extra properties if needed in the future
+        // User's full name
+        public string Name { get; set; }
+
+        // Flag to indicate admin approval (false by default for non-admins)
+        public bool IsApproved { get; set; } = false;
     }
 }
