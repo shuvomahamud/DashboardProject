@@ -16,6 +16,13 @@ namespace Infrastructure
                 var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
                 var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
+                // Ensure both roles exist
+                foreach (var roleName in new[] { "Admin", "User" })
+                {
+                    if (!await roleManager.RoleExistsAsync(roleName))
+                        await roleManager.CreateAsync(new IdentityRole(roleName));
+                }
+
                 string adminEmail = "shuvomahamud@gmail.com";
                 string adminPassword = "StrongAdminPassword123!"; // Ensure this meets your password policy
 

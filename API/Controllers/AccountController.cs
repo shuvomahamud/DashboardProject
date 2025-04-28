@@ -11,11 +11,13 @@ namespace API.Controllers
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly RoleManager<IdentityRole> _roleManager;
 
-        public AccountController(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager)
+        public AccountController(UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, RoleManager<IdentityRole> roleManager)
         {
             _userManager = userManager;
             _signInManager = signInManager;
+            _roleManager = roleManager;
         }
 
         /// <summary>
@@ -40,6 +42,12 @@ namespace API.Controllers
             var result = await _userManager.CreateAsync(user, model.Password);
             if (result.Succeeded)
             {
+                var role = string.IsNullOrWhiteSpace(model.Role) ? "User" : model.Role;
+                if (!await _roleManager.RoleExistsAsync(role))
+                    await _roleManager.CreateAsync(new IdentityRole(role));
+
+                // Assign the role
+                await _userManager.AddToRoleAsync(user, role);
                 // Optionally notify admin for approval (e.g., via email or by marking in the system)
                 return Ok(new { message = "Registration successful. Your account is pending admin approval." });
             }
@@ -133,6 +141,7 @@ namespace API.Controllers
         public string Name { get; set; }
         public string Email { get; set; }
         public string Password { get; set; }
+        public string Role { get; set; }    // NEW: chosen role
     }
     public class LoginModel
     {

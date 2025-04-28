@@ -1,0 +1,68 @@
+﻿@model Presentation.Models.DashboardViewModel
+
+<!-- Interview Information -->
+<h4>Interview Information</h4>
+<table class="table table-striped table-sm">
+    <thead>
+        <tr><th>#</th><th>HBITS No</th><th>Consultant</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var r in Model.InterviewInformation)
+        {
+            <tr>
+                <td>@r.Id</td>
+                <td>@r.HbitNo</td>
+                <td>@r.Consultant</td>
+                <td>@r.InterviewDate</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<!-- AP -->
+<h4>Accounts&nbsp;Payable</h4>
+<table class="table table-striped table-sm">
+    <thead>
+        <tr><th>#</th><th>Vendor</th><th>Invoice</th><th>Due</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var r in Model.AccountsPayable)
+        {
+            <tr><td>@r.Id</td><td>@r.VendorName</td><td>@r.InvoiceNo</td><td>@r.DueDate</td></tr>
+        }
+    </tbody>
+</table>
+
+<!-- On-Boarding -->
+<h4>On-Boarding</h4>
+<table class="table table-striped table-sm">
+    <thead>
+        <tr><th>#</th><th>Name</th><th>I-9</th><th>FP</th><th>Active</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var r in Model.OnBoardings)
+        {
+            <tr>
+                <td>@r.Id</td>
+                <td>@r.Name</td>
+                <td>@r.I9</td>
+                <td>@r.Fingerprint</td>
+                <td>@(r.Active ? "Yes" : "No")</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<!-- To-Do -->
+<h4>To-Do List</h4>
+<table class="table table-striped table-sm">
+    <thead>
+        <tr><th>#</th><th>Task</th><th>Due</th><th>Priority</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var r in Model.ToDoTasks)
+        {
+            <tr><td>@r.Id</td><td>@r.Task</td><td>@r.DueDate</td><td>@r.Priority</td></tr>
+        }
+    </tbody>
+</table>

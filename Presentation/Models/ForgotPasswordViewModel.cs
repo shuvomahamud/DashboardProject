@@ -4,7 +4,8 @@ namespace Presentation.Models
 {
     public class ForgotPasswordViewModel
     {
-        [Required, EmailAddress]
+        [Required]
+        [EmailAddress]
         public string Email { get; set; }
     }
 }
