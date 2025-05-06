@@ -19,6 +19,9 @@
     <ProjectReference Include="..\Domain\Domain.csproj" />
     <ProjectReference Include="..\Application\Application.csproj" />
   </ItemGroup>
+  <ItemGroup>
+	<Compile Remove="Models\**\*.cs" />
+  </ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Presentation.Models;
 using System.Collections.Generic;
+using System.Data;
 using System.Net.Http;
 using System.Security.Claims;
 using System.Text;
@@ -32,6 +33,9 @@ namespace Presentation.Controllers
             var json = JsonSerializer.Serialize(model);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await _httpClient.PostAsync("api/account/login", content);
+            var body = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(body);
+            var role = doc.RootElement.TryGetProperty("role", out var r) ? r.GetString() : "User";
 
             if (response.IsSuccessStatusCode)
             {
@@ -39,6 +43,7 @@ namespace Presentation.Controllers
                 var claims = new List<Claim>
                 {
                     new Claim(ClaimTypes.Name, model.Email),
+                    new Claim(ClaimTypes.Role, role)
                     // Optionally: new Claim(ClaimTypes.Role, "Admin") if you know their role
                 };
                 var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);

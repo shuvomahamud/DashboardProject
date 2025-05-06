@@ -1,6 +1,7 @@
 ﻿using Domain.IdentityModels;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace API.Controllers
@@ -76,10 +77,18 @@ namespace API.Controllers
                 return Unauthorized("Your account is pending admin approval.");
 
             var result = await _signInManager.PasswordSignInAsync(user, model.Password, false, false);
-            if (result.Succeeded)
-                return Ok("Login successful.");
+            if (!result.Succeeded)
+                return Unauthorized("Invalid email or password.");
 
-            return Unauthorized("Invalid email or password.");
+            // ✅ Fetch the user's first role (default to "User" if none)
+            var roles = await _userManager.GetRolesAsync(user);
+            var role = roles.FirstOrDefault() ?? "User";
+
+            return Ok(new
+            {
+                message = "Login successful.",
+                role = role                     // ← returned to Presentation
+            });
         }
 
         /// <summary>
