@@ -58,6 +58,7 @@ namespace Infrastructure
                 e.Property(x => x.PaymentTermNet).HasColumnName("PaymentTermNet");
                 e.Property(x => x.PaymentMode).HasColumnName("PaymentMode");
                 e.Property(x => x.PaymentDueDate).HasColumnName("PaymentDueDate");
+                e.Property(x => x.Check).HasColumnName("Check").HasMaxLength(20);
             });
 
             // ---------- InterviewInformation table ----------

@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Presentation.Models;
@@ -57,7 +58,29 @@ namespace Presentation.Controllers
             ModelState.AddModelError("", "Login failed. Check your credentials or approval status.");
             return View(model);
         }
+        [HttpPost]                      // ⬅ must be POST (no [Authorize])
+        [Route("/Account/LocalSignIn")]
+        [ValidateAntiForgeryToken]      // basic CSRF protection
+        public async Task<IActionResult> LocalSignIn(
+        [FromForm] string email,
+        [FromForm] string role)
+        {
+            // Build the claims
+            var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name,  email),
+            new(ClaimTypes.Role,  role)
+        };
+            var id = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            var user = new ClaimsPrincipal(id);
 
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                user);
+
+            // ➜ go to dashboard (will no longer redirect back to /Login)
+            return RedirectToAction("Index", "Dashboard");
+        }
         [HttpGet]
         public IActionResult Register()
         {
