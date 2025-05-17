@@ -13,7 +13,7 @@ namespace Infrastructure
         // ─── Application tables ──────────────────────────────
         public DbSet<Interview> InterviewInformations { get; set; }
         public DbSet<AccountsPayable> ApReports { get; set; }
-        // public DbSet<ToDoTask>            ToDoTasks          { get; set; }
+        public DbSet<TodoTask> ToDoTasks { get; set; }
         // public DbSet<Onboarding>          Onboardings        { get; set; }
 
         // ─── Fluent‑API mappings ─────────────────────────────
@@ -62,7 +62,6 @@ namespace Infrastructure
             });
 
             // ---------- InterviewInformation table ----------
-            // (Only needed if column names differ; otherwise EF conventions suffice)
             modelBuilder.Entity<Interview>(e =>
             {
                 e.ToTable("interviews");
@@ -88,6 +87,32 @@ namespace Infrastructure
                 e.Property(i => i.VendorEmailId).HasColumnName("vendoremailid");
                 e.Property(i => i.CandidateSelected).HasColumnName("candidateselected");
                 e.Property(i => i.MonthYear).HasColumnName("monthyear");
+            });
+            // ---------- todo_list table ----------
+            modelBuilder.Entity<TodoTask>(e =>
+            {
+                e.ToTable("todo_list");
+
+                e.HasKey(t => t.TaskId);
+                e.Property(t => t.TaskId).HasColumnName("taskid");
+
+                e.Property(t => t.Category).HasColumnName("category");
+                e.Property(t => t.TaskName).HasColumnName("taskname");
+
+                e.Property(t => t.TriggerDateUtc).HasColumnName("triggerdate");
+                e.Property(t => t.AssignedTo).HasColumnName("assignedto");
+
+                e.Property(t => t.InternalDueDateUtc).HasColumnName("internalduedate");
+                e.Property(t => t.ActualDueDateUtc).HasColumnName("actualduedate");
+
+                e.Property(t => t.Status).HasColumnName("status");
+
+                e.Property(t => t.RequiresFiling).HasColumnName("requiresfiling");
+                e.Property(t => t.Filed).HasColumnName("filed");
+                e.Property(t => t.FollowUpNeeded).HasColumnName("followupneeded");
+                e.Property(t => t.Recurring).HasColumnName("recurring");
+
+                e.Property(t => t.NextDueDateUtc).HasColumnName("nextduedate");
             });
         }
     }

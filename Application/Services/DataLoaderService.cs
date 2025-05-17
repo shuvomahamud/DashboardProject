@@ -38,7 +38,8 @@ namespace Application.Services
                     return ons.Count;
 
                 case "todo":
-                    var todos = csvRdr.GetRecords<ToDoTask>().ToList();
+                    csvRdr.Context.RegisterClassMap<TodoTaskMap>();
+                    var todos = csvRdr.GetRecords<TodoTask>().ToList();
                     await _dal.BulkInsertAsync(todos);
                     return todos.Count;
 
