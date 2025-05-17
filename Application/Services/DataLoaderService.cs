@@ -21,7 +21,8 @@ namespace Application.Services
             switch (key.ToLowerInvariant())
             {
                 case "interview":
-                    var interviews = csvRdr.GetRecords<InterviewInformation>().ToList();
+                    csvRdr.Context.RegisterClassMap<InterviewMap>();
+                    var interviews = csvRdr.GetRecords<Interview>().ToList();
                     await _dal.BulkInsertAsync(interviews);
                     return interviews.Count;
 

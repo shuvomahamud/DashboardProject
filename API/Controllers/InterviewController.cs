@@ -21,7 +21,7 @@ namespace API.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            IEnumerable<InterviewInformation> interviews = await _interviewService.GetAllAsync();
+            IEnumerable<Interview> interviews = await _interviewService.GetAllAsync();
             return Ok(interviews);
         }
 
@@ -37,20 +37,20 @@ namespace API.Controllers
 
         // POST: api/interview
         [HttpPost]
-        public async Task<IActionResult> Create([FromBody] InterviewInformation interview)
+        public async Task<IActionResult> Create([FromBody] Interview interview)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            InterviewInformation created = await _interviewService.CreateAsync(interview);
-            return CreatedAtAction(nameof(Get), new { id = created.Id }, created);
+            Interview created = await _interviewService.CreateAsync(interview);
+            return CreatedAtAction(nameof(Get), new { id = created.InterviewId }, created);
         }
 
         // PUT: api/interview/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, [FromBody] InterviewInformation interview)
+        public async Task<IActionResult> Update(int id, [FromBody] Interview interview)
         {
-            if (id != interview.Id)
+            if (id != interview.InterviewId)
                 return BadRequest();
 
             bool updateResult = await _interviewService.UpdateAsync(interview);

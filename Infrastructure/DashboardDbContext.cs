@@ -11,7 +11,7 @@ namespace Infrastructure
             : base(options) { }
 
         // ─── Application tables ──────────────────────────────
-        public DbSet<InterviewInformation> InterviewInformations { get; set; }
+        public DbSet<Interview> InterviewInformations { get; set; }
         public DbSet<AccountsPayable> ApReports { get; set; }
         // public DbSet<ToDoTask>            ToDoTasks          { get; set; }
         // public DbSet<Onboarding>          Onboardings        { get; set; }
@@ -63,11 +63,31 @@ namespace Infrastructure
 
             // ---------- InterviewInformation table ----------
             // (Only needed if column names differ; otherwise EF conventions suffice)
-            modelBuilder.Entity<InterviewInformation>(e =>
+            modelBuilder.Entity<Interview>(e =>
             {
-                e.ToTable("InterviewInformation");
-                // Example explicit mapping (if casing differs):
-                // e.Property(x => x.HbitNo).HasColumnName("HBITNo");
+                e.ToTable("interviews");
+                e.HasKey(i => i.InterviewId);
+
+                e.Property(i => i.InterviewId).HasColumnName("interviewid");
+                e.Property(i => i.HbitsNo).HasColumnName("hbits_no");
+                e.Property(i => i.Position).HasColumnName("position");
+                e.Property(i => i.Level).HasColumnName("level");
+                e.Property(i => i.MailReceivedDateUtc).HasColumnName("mailreceiveddate");
+                e.Property(i => i.ConsultantName).HasColumnName("consultantname");
+                e.Property(i => i.ClientSuggestedDates).HasColumnName("clientsuggesteddates");
+                e.Property(i => i.MailedDatesToConsultantUtc).HasColumnName("maileddatestoconsultant");
+                e.Property(i => i.InterviewTimeOptedFor).HasColumnName("interviewtimeoptedfor");
+                e.Property(i => i.InterviewScheduledMailedToMr).HasColumnName("interviewscheduledmailedtomr");
+                e.Property(i => i.InterviewConfirmedByClientUtc).HasColumnName("interviewconfirmedbyclient");
+                e.Property(i => i.TimeOfInterviewUtc).HasColumnName("timeofinterview");
+                e.Property(i => i.ThruRecruiter).HasColumnName("thrurecruiter");
+                e.Property(i => i.ConsultantContactNo).HasColumnName("consultantcontactno");
+                e.Property(i => i.ConsultantEmail).HasColumnName("consultantemail");
+                e.Property(i => i.VendorPocName).HasColumnName("vendorpocname");
+                e.Property(i => i.VendorNumber).HasColumnName("vendornumber");
+                e.Property(i => i.VendorEmailId).HasColumnName("vendoremailid");
+                e.Property(i => i.CandidateSelected).HasColumnName("candidateselected");
+                e.Property(i => i.MonthYear).HasColumnName("monthyear");
             });
         }
     }

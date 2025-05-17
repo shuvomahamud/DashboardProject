@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "interview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "HbitsNo",
+    "Position",
+    "Level",
+    "Mailreceiveddate",
+    "Consultantname"
+  ],
+
+  "properties": {
+    "HbitsNo": {
+      "type": "string",
+      "maxLength": 50
+    },
+    "Position": {
+      "type": "string",
+      "maxLength": 255
+    },
+    "Level": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+
+    "Mailreceiveddate": {
+      "type": "string",
+      "pattern": "^[0-9]{8}$"
+    }, // MMddyyyy
+    "Clientsuggesteddates": {
+      "type": "string",
+      "pattern": "^[0-9]{8}$"
+    },
+    "Maileddatestoconsultant": {
+      "type": "string",
+      "pattern": "^[0-9]{8}$"
+    },
+    "Interviewconfirmedbyclient": {
+      "type": "string",
+      "pattern": "^[0-9]{8}$"
+    },
+
+    "Interviewtimeoptedfor": {
+      "type": "string",
+      "maxLength": 50
+    }, // free text
+    "Timeofinterview": {
+      "type": "string",
+      "pattern": "^[0-9]{8}\\s[0-9]{4}$"
+    }, // MMddyyyy HHmm
+
+    "Interviewscheduledmailedtomr": {
+      "type": "boolean",
+      "trueValues": [ "TRUE", "YES", "Y", "1" ],
+      "falseValues": [ "FALSE", "NO", "N", "0" ]
+    },
+    "Candidateselected": {
+      "type": "boolean",
+      "trueValues": [ "TRUE", "YES", "Y", "1" ],
+      "falseValues": [ "FALSE", "NO", "N", "0" ]
+    },
+
+    "Thrurecruiter": {
+      "type": "string",
+      "maxLength": 255
+    },
+    "Consultantname": {
+      "type": "string",
+      "maxLength": 255
+    },
+    "Consultantcontactno": {
+      "type": "string",
+      "maxLength": 50
+    },
+    "Consultantemail": {
+      "type": "string",
+      "format": "email"
+    },
+    "Vendorpocname": {
+      "type": "string",
+      "maxLength": 255
+    },
+    "Vendornumber": {
+      "type": "string",
+      "maxLength": 50
+    },
+    "Vendoremailid": {
+      "type": "string",
+      "format": "email"
+    },
+    "Monthyear": {
+      "type": "string",
+      "pattern": "^[0-9]{6}$"
+    } // e.g. 052025
+  },
+
+  "missingValues": [ "", "NA", "N/A" ]
+}

@@ -29,7 +29,7 @@ namespace Presentation.Controllers
 
         // POST: /Interview/Create
         [HttpPost]
-        public async Task<IActionResult> Create(InterviewInformation interview)
+        public async Task<IActionResult> Create(Interview interview)
         {
             if (!ModelState.IsValid)
                 return View(interview);
@@ -49,7 +49,7 @@ namespace Presentation.Controllers
 
         // POST: /Interview/Edit/5
         [HttpPost]
-        public async Task<IActionResult> Edit(InterviewInformation interview)
+        public async Task<IActionResult> Edit(Interview interview)
         {
             if (!ModelState.IsValid)
                 return View(interview);

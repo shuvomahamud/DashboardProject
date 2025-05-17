@@ -9,17 +9,17 @@ public class InterviewService : IInterviewService
     private readonly IDashboardDal _dal;
     public InterviewService(IDashboardDal dal) => _dal = dal;
 
-    public Task<InterviewInformation> CreateAsync(InterviewInformation dto) =>
+    public Task<Interview> CreateAsync(Interview dto) =>
         _dal.AddAsync(dto);
 
-    public Task<IEnumerable<InterviewInformation>> GetAllAsync() =>
-        _dal.GetAllAsync<InterviewInformation>()
-            .ContinueWith(t => (IEnumerable<InterviewInformation>)t.Result);
+    public Task<IEnumerable<Interview>> GetAllAsync() =>
+        _dal.GetAllAsync<Interview>()
+            .ContinueWith(t => (IEnumerable<Interview>)t.Result);
 
-    public Task<InterviewInformation?> GetByIdAsync(int id) =>
-        _dal.FindAsync<InterviewInformation>(id);
+    public Task<Interview?> GetByIdAsync(int id) =>
+        _dal.FindAsync<Interview>(id);
 
-    public async Task<bool> UpdateAsync(InterviewInformation dto)
+    public async Task<bool> UpdateAsync(Interview dto)
     {
         /* you may add field-level merge logic here if needed */
         return await _dal.UpdateAsync(dto);
@@ -27,7 +27,7 @@ public class InterviewService : IInterviewService
 
     public async Task<bool> DeleteAsync(int id)
     {
-        var row = await _dal.FindAsync<InterviewInformation>(id);
+        var row = await _dal.FindAsync<Interview>(id);
         return row is null ? false : await _dal.RemoveAsync(row);
     }
 }
