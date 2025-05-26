@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Domain.Entities;          //  <-- add this
 
 namespace Infrastructure.Services
 {
@@ -20,6 +21,18 @@ namespace Infrastructure.Services
             await _db.SaveChangesAsync();
                       
         }
+        public async Task BulkInsertAsync(Onboarding master)
+        {
+            try
+            {
+                _db.Onboardings.Add(master);
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) {
+                Console.WriteLine(ex.ToString());
+            }
+        }
+
         public async Task<T> AddAsync<T>(T row) where T : class
         {
             _db.Set<T>().Add(row);

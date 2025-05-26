@@ -14,7 +14,9 @@ namespace Infrastructure
         public DbSet<Interview> InterviewInformations { get; set; }
         public DbSet<AccountsPayable> ApReports { get; set; }
         public DbSet<TodoTask> ToDoTasks { get; set; }
-        // public DbSet<Onboarding>          Onboardings        { get; set; }
+        public DbSet<Onboarding> Onboardings { get; set; }
+        public DbSet<OnboardingFieldData> OnboardingFieldData { get; set; }
+
 
         // ─── Fluent‑API mappings ─────────────────────────────
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -113,6 +115,40 @@ namespace Infrastructure
                 e.Property(t => t.Recurring).HasColumnName("recurring");
 
                 e.Property(t => t.NextDueDateUtc).HasColumnName("nextduedate");
+            });
+            // ---------- onboarding (master) ----------
+            modelBuilder.Entity<Onboarding>(e =>
+            {
+                e.ToTable("onboarding");
+                e.HasKey(o => o.OnboardingId);
+
+                e.Property(o => o.OnboardingId).HasColumnName("onboardingid");
+                e.Property(o => o.CandidateName).HasColumnName("candidatename");
+                e.Property(o => o.CreatedDateUtc)
+                    .HasColumnName("createddate")
+                    .HasConversion(v => v.GetValueOrDefault(), d => DateTime.SpecifyKind(d, DateTimeKind.Utc));
+            });
+
+            // ---------- onboardingfielddata (detail) ----------
+            modelBuilder.Entity<OnboardingFieldData>(e =>
+            {
+                e.ToTable("onboardingfielddata");
+                e.HasKey(f => f.Id);
+
+                e.Property(f => f.Id).HasColumnName("id");
+                e.Property(f => f.OnboardingId).HasColumnName("onboardingid");
+                e.Property(f => f.FieldName).HasColumnName("fieldname");
+                e.Property(f => f.Value).HasColumnName("detailsvalue");
+                e.Property(f => f.Owner).HasColumnName("owner");
+                e.Property(f => f.Notes).HasColumnName("notes");
+                e.Property(f => f.Date)
+                    .HasColumnName("dateutc")
+                    .HasColumnType("timestamp");        // nullable
+
+                e.HasOne(f => f.Onboarding)
+                 .WithMany(o => o.Fields)
+                 .HasForeignKey(f => f.OnboardingId)
+                 .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

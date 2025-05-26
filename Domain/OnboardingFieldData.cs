@@ -1,14 +1,18 @@
-﻿namespace Domain.Entities;
+﻿// Domain/Entities/OnboardingFieldData.cs
+using Domain.Entities;
+
 public class OnboardingFieldData
 {
-    public int Id { get; set; }       // id (PK)
-    public int OnboardingId { get; set; }       // FK → Onboarding
-    public Onboarding Onboarding { get; set; } = null!;
+    public int Id { get; set; }
+    public int? OnboardingId { get; set; }
 
-    public string? FieldName { get; set; }      // ITEMS
-    public string? Details { get; set; }      // DETAILS
-    public string? Owner { get; set; }      // OWNER
-    public DateTime? DateUtc { get; set; }      // DATE   (nullable)
-    public string? Status { get; set; }      // STATUS/REMARKS
-    public string? Notes { get; set; }      // Additional
+    public string? FieldName { get; set; }
+    public string? Owner { get; set; }
+    public string? Value { get; set; }
+    public string? Notes { get; set; }
+
+    /* ─────────── changed property name ─────────── */
+    public DateTime? Date /* <- no ‘Utc’ */ { get; set; }
+
+    public Onboarding? Onboarding { get; set; }
 }

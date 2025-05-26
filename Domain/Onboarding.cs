@@ -6,6 +6,6 @@ namespace Domain.Entities
         public string? CandidateName { get; set; }
         public DateTime? CreatedDateUtc { get; set; }
 
-        public ICollection<OnboardingFieldData> Fields { get; set; } = [];
+        public ICollection<OnboardingFieldData> Fields { get; set; } = new List<OnboardingFieldData>();
     }
 }
