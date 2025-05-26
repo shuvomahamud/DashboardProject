@@ -11,11 +11,13 @@ namespace Infrastructure
             : base(options) { }
 
         // ─── Application tables ──────────────────────────────
+        public DbSet<SheetConfig> SheetConfigs => Set<SheetConfig>();
         public DbSet<Interview> InterviewInformations { get; set; }
         public DbSet<AccountsPayable> ApReports { get; set; }
         public DbSet<TodoTask> ToDoTasks { get; set; }
         public DbSet<Onboarding> Onboardings { get; set; }
         public DbSet<OnboardingFieldData> OnboardingFieldData { get; set; }
+
 
 
         // ─── Fluent‑API mappings ─────────────────────────────
@@ -149,6 +151,23 @@ namespace Infrastructure
                  .WithMany(o => o.Fields)
                  .HasForeignKey(f => f.OnboardingId)
                  .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<SheetConfig>(e =>
+            {
+                // ①  use exactly the table-name that will exist in Postgres
+                //     (lower-case is safest because Postgres folds identifiers)
+                e.ToTable("sheet_config");      // or "SheetConfigs" if you prefer quotes
+
+                e.HasKey(s => s.Id);
+                e.Property(s => s.Id).HasColumnName("id");
+                e.Property(s => s.TableKey).HasColumnName("table_key")
+                                             .HasMaxLength(20)
+                                             .IsRequired();
+                e.Property(s => s.SheetUrl).HasColumnName("sheet_url")
+                                             .HasMaxLength(400)
+                                             .IsRequired();
+                e.Property(s => s.UpdatedUtc).HasColumnName("updated_utc");
             });
         }
     }

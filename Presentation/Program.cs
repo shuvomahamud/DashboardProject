@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http.Headers;
 using Infrastructure;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
@@ -14,10 +15,17 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // Register the API HttpClient
 builder.Services.AddHttpClient("APIClient", client =>
 {
+    // Base address comes from configuration.
+    // appsettings.json  ?  "API": { "BaseAddress": "https://localhost:7016/" }
     var baseAddress = builder.Configuration["API:BaseAddress"];
-    if (string.IsNullOrEmpty(baseAddress))
-        throw new Exception("API BaseAddress is not configured.");
+    if (string.IsNullOrWhiteSpace(baseAddress))
+        throw new InvalidOperationException("API BaseAddress is not configured.");
+
     client.BaseAddress = new Uri(baseAddress);
+
+    // Default headers you want on every outgoing call:
+    client.DefaultRequestHeaders.Accept
+          .Add(new MediaTypeWithQualityHeaderValue("application/json"));
 });
 
 // Add cookie-based authentication
