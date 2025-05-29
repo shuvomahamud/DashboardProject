@@ -33,9 +33,11 @@
                                      Todo
                                 </a>
                             </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#">Menu 2</a>
-                        </li>
+                            <li class="nav-item">
+                                <a class="nav-link" asp-controller="Interview" asp-action="Index">
+                                    Interview
+                                </a>
+                            </li>
                             @if (User.IsInRole("Admin"))
                             {
                                 <li class="nav-item">

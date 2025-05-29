@@ -92,5 +92,20 @@ namespace Infrastructure.Services
             await _db.SaveChangesAsync();
             return true;
         }
+
+        // ---------- INTERVIEW ----------
+        public async Task<List<Interview>> GetAllInterviewsAsync()
+            => await _db.InterviewInformations
+                        .OrderBy(i => i.TimeOfInterviewUtc ?? DateTime.MaxValue)
+                        .ToListAsync();
+
+        public Task<Interview?> GetInterviewAsync(int id)
+            => _db.InterviewInformations.FirstOrDefaultAsync(i => i.InterviewId == id);
+
+        public async Task<bool> UpdateInterviewAsync(Interview e)
+        {
+            _db.InterviewInformations.Update(e);
+            return await _db.SaveChangesAsync() > 0;
+        }
     }
 }

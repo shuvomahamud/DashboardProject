@@ -17,5 +17,9 @@ namespace Application.Interfaces.DAL
         Task<IEnumerable<TodoTask>> GetAllTodosAsync();
         Task<TodoTask?> GetTodoAsync(int id);
         Task<bool> UpdateTodoAsync(TodoTask dto);
+        // INTERVIEW
+        Task<List<Interview>> GetAllInterviewsAsync();
+        Task<Interview?> GetInterviewAsync(int id);
+        Task<bool> UpdateInterviewAsync(Interview entity);
     }
 }

@@ -1,0 +1,79 @@
+﻿@{
+    ViewBag.Title = "Interview detail";
+    Layout = "_Layout";
+}
+
+<h3 id="title">Interview</h3>
+<form id="frm" class="row g-3">
+    <!-- left column -->
+    <div class="col-md-6">
+        <label class="form-label">HBITS #</label>
+        <input name="HbitsNo" class="form-control" />
+        <label class="form-label">Position</label>
+        <input name="Position" class="form-control" />
+        <label class="form-label">Consultant</label>
+        <input name="ConsultantName" class="form-control" />
+        <label class="form-label">Consultant Email</label>
+        <input name="ConsultantEmail" class="form-control" />
+        <label class="form-label">Time of Interview (ISO)</label>
+        <input name="TimeOfInterviewUtc" class="form-control" />
+    </div>
+
+    <!-- right column -->
+    <div class="col-md-6">
+        <label class="form-label">Recruiter</label>
+        <input name="ThruRecruiter" class="form-control" />
+        <label class="form-label">Vendor POC</label>
+        <input name="VendorPocName" class="form-control" />
+        <label class="form-label">Candidate Selected</label>
+        <select name="CandidateSelected" class="form-select">
+            <option value=""></option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+        </select>
+        <label class="form-label">Month/Year</label>
+        <input name="MonthYear" class="form-control" />
+    </div>
+
+    <div class="col-12">
+        <button id="btnSave" class="btn btn-primary">Save</button>
+        <a href="/interview" class="btn btn-secondary">Back</a>
+    </div>
+</form>
+
+@section Scripts {
+    <script>
+        const api = $('meta[name="api-base"]').attr('content');
+        const id  = location.pathname.split('/').pop();
+        let model = {};
+
+        $.getJSON(api + 'api/interview/'+id)
+         .done(data=>{
+            model=data;
+            $('#title').text('Interview #' + id);
+            // populate inputs
+                $('#frm [name]').each(function () {
+                    const n = $(this).attr('name');               // HbitsNo
+                    const cc = n.charAt(0).toLowerCase() + n.slice(1);  // hbitsNo
+                    $(this).val(model[n] ?? model[cc] ?? '');
+                });
+         })
+         .fail(()=>alert('Interview not found'));
+
+        $('#btnSave').on('click',function(e){
+           e.preventDefault();
+           // collect
+           $('#frm [name]').each(function(){
+                model[$(this).attr('name')] = $(this).val();
+           });
+           $.ajax({
+               url: api + 'api/interview/'+id,
+               type:'PUT',
+               contentType:'application/json',
+               data: JSON.stringify(model)
+           })
+           .done(()=>location.href='/interview')
+           .fail(xhr=>alert(xhr.responseText));
+        });
+    </script>
+}

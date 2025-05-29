@@ -1,0 +1,37 @@
+﻿@{
+    ViewBag.Title = "Interviews";
+    Layout = "_Layout";       // your layout file
+}
+<h2>Interviews</h2>
+
+<table id="tbl" class="display table table-striped" style="width:100%">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>HBITS #</th>
+            <th>Position</th>
+            <th>Consultant</th>
+            <th>Interview Date (UTC)</th>
+        </tr>
+    </thead>
+</table>
+
+@section Scripts
+{
+    <script>
+        const base = $('meta[name="api-base"]').attr('content');   // https://localhost:7016/
+        $('#tbl').DataTable({
+            ajax:{ url: base + 'api/interview', dataSrc:'' },
+            columns:[
+                {data:'interviewId',
+                  render:id=>`<a href="/interview/detail/${id}">${id}</a>`},
+                {data:'hbitsNo'},
+                {data:'position'},
+                {data:'consultantName'},
+                {data:'TimeOfInterviewUtc',
+                 render:d=> d ? new Date(d).toLocaleString() : '' }
+            ],
+            order:[[4,'asc']]
+        });
+    </script>
+}
