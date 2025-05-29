@@ -1,0 +1,78 @@
+﻿@model int          
+@{
+    ViewBag.Title = "AP detail";
+    var api = Context.RequestServices.GetRequiredService<IConfiguration>()["ApiBaseUrl"]
+              + $"api/ap/{Model}";
+}
+
+<h2>Accounts Payable #@Model</h2>
+
+<form id="frmAp" class="row g-3">
+    <!-- put as many fields as you need -->
+    <input type="hidden" name="ApId" value="@Model" />
+
+    <div class="col-md-4">
+        <label class="form-label">Consultant</label>
+        <input class="form-control" name="CandidateName">
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label">Vendor</label>
+        <input class="form-control" name="VendorName">
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">Invoice #</label>
+        <input class="form-control" name="InvoiceNumber">
+    </div>
+
+    <div class="col-md-3">
+        <label class="form-label">Payment Due</label>
+        <input type="date" class="form-control" name="PaymentDueDate">
+    </div>
+
+    <!-- … replicate for the rest of the fields … -->
+
+    <div class="col-12">
+        <button id="btnSave" class="btn btn-primary">Save</button>
+        <a href="/ap" class="btn btn-secondary">Back</a>
+    </div>
+</form>
+
+
+@section Scripts
+{
+<script>
+const api = "@api";
+
+$(async function () {
+
+    /* ---- load ---- */
+    const model = await $.getJSON(api);
+
+    $('#frmAp [name]').each(function () {
+        const n  = $(this).attr('name');                   // Pascal
+        const cc = n.charAt(0).toLowerCase()+n.slice(1);   // camel
+        $(this).val(model[n] ?? model[cc] ?? '');
+    });
+
+    /* ---- save ---- */
+    $('#btnSave').click(async e => {
+        e.preventDefault();
+
+        const dto = {};
+        $('#frmAp [name]').each(function () {
+            dto[$(this).attr('name')] = $(this).val();
+        });
+
+        await fetch(api, {
+            method:'PUT',
+            headers:{ 'Content-Type':'application/json' },
+            body: JSON.stringify(dto)
+        });
+
+        alert('Saved ✔');        // or nicer toast
+    });
+});
+</script>
+}

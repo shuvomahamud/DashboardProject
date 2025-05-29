@@ -107,5 +107,22 @@ namespace Infrastructure.Services
             _db.InterviewInformations.Update(e);
             return await _db.SaveChangesAsync() > 0;
         }
+
+
+        // AP Reports
+        public async Task<List<AccountsPayable>> GetApAsync(CancellationToken ct = default) =>
+    await _db.ApReports
+            .OrderBy(a => a.PaymentDueDate)            // any sort you like
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        public async Task<AccountsPayable?> GetApAsync(int id, CancellationToken ct = default) =>
+            await _db.ApReports.FindAsync([id, ct]);
+
+        public async Task<int> UpdateApAsync(AccountsPayable item, CancellationToken ct = default)
+        {
+            _db.ApReports.Update(item);
+            return await _db.SaveChangesAsync(ct);
+        }
     }
 }

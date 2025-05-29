@@ -21,5 +21,10 @@ namespace Application.Interfaces.DAL
         Task<List<Interview>> GetAllInterviewsAsync();
         Task<Interview?> GetInterviewAsync(int id);
         Task<bool> UpdateInterviewAsync(Interview entity);
+
+        /* AP -- list / single / update */
+        Task<List<AccountsPayable>> GetApAsync(CancellationToken ct = default);
+        Task<AccountsPayable?> GetApAsync(int id, CancellationToken ct = default);
+        Task<int> UpdateApAsync(AccountsPayable item, CancellationToken ct = default);
     }
 }

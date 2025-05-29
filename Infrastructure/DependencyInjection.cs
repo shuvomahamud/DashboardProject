@@ -21,7 +21,7 @@ public static class DependencyInjection
         services.AddScoped<IDashboardDal, DashboardDal>();
         services.AddScoped<IInterviewService, InterviewService>();
         services.AddScoped<ITodoService, TodoService>();
-        // …other Infrastructure registrations (DbContext, DAL, etc.)
+        services.AddScoped<IAccountsPayableService, AccountsPayableService>();
         return services;
     }
 }

@@ -1,0 +1,37 @@
+﻿@{
+    ViewBag.Title = "Accounts Payable";
+    var api = Context.RequestServices.GetRequiredService<IConfiguration>()["ApiBaseUrl"]
+              + "api/ap";
+}
+
+<h2>Accounts Payable</h2>
+
+<table id="tblAp" class="display"></table>
+
+@section Scripts
+{
+    <script>
+        $(function () {
+            $('#tblAp').DataTable({
+                ajax: {                 // ← wrap the URL object
+                    url: '@api',
+                    dataSrc: ''         // ← “the entire JSON is the array”
+                },
+                columns: [
+                    {
+                        data: 'apId',
+                        title: 'Id',
+                        render: (d) => `<a href="/ap/detail/${d}">${d}</a>`
+                    },
+                    { data: 'candidateName', title: 'Consultant' },
+                    { data: 'vendorName', title: 'Vendor' },
+                    { data: 'invoiceNumber', title: 'Invoice' },
+                    {
+                        data: 'paymentDueDate', title: 'Due',
+                        render: (d) => d ? d.split('T')[0] : ''
+                    }
+                ]
+            });
+        });
+    </script>
+}
