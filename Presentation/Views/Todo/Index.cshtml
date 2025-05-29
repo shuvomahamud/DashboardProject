@@ -1,0 +1,51 @@
+﻿@{
+    ViewBag.Title = "To-Do List";
+    Layout = "_Layout";
+}
+
+<h2 class="mt-3">To-Do list</h2>
+
+<table id="todoTable" class="display" style="width:100%">
+    <thead>
+        <tr>
+            <th>Task&nbsp;#</th>
+            <th>Category</th>
+            <th>Task&nbsp;Name</th>
+            <th>Trigger&nbsp;Date</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+</table>
+
+@section Scripts {
+    <script>
+        $(function () {
+
+            /* --- build absolute API URL ----------------------------------- */
+            const apiBase = document
+                .querySelector('meta[name="api-base"]').content
+                .replace(/\/?$/, '/');       // exactly one “/”
+            const todoUrl = `${apiBase}api/todo`;
+
+            /* --- DataTable ------------------------------------------------ */
+            $('#todoTable').DataTable({
+                ajax: { url: todoUrl, dataSrc: '' },
+                columns: [
+                    {
+                        data: 'taskId',
+                        render: (id) => `<a href="/todo/detail/${id}">${id}</a>`
+                    },
+                    { data: 'category' },
+                    { data: 'taskName' },
+                    {
+                        data: 'triggerDate',
+                        render: d => d ? new Date(d).toLocaleDateString() : ''
+                    },
+                    { data: 'status' }
+                ],
+                order: [[3, 'asc']],
+                paging: true
+            });
+        });
+    </script>
+}

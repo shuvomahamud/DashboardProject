@@ -12,5 +12,10 @@ namespace Application.Interfaces.DAL
         Task<IReadOnlyList<T>> GetAllAsync<T>() where T : class;
         Task<bool> UpdateAsync<T>(T row) where T : class;
         Task<bool> RemoveAsync<T>(T row) where T : class;
+
+        //Todo
+        Task<IEnumerable<TodoTask>> GetAllTodosAsync();
+        Task<TodoTask?> GetTodoAsync(int id);
+        Task<bool> UpdateTodoAsync(TodoTask dto);
     }
 }

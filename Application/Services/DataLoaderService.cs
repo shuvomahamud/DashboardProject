@@ -51,8 +51,6 @@ namespace Application.Services
                         return rows.Count;
                     }
 
-
-
                 case "todo":
                     csvRdr.Context.RegisterClassMap<TodoTaskMap>();
                     var todos = csvRdr.GetRecords<TodoTask>().ToList();

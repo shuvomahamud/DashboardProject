@@ -56,5 +56,41 @@ namespace Infrastructure.Services
             _db.Set<T>().Remove(row);
             return await _db.SaveChangesAsync() > 0;
         }
+
+        /* ───── To-Do section ───────────────────────── */
+
+        public async Task<IEnumerable<TodoTask>> GetAllTodosAsync() =>
+            await _db.ToDoTasks
+                     .OrderBy(t => t.NextDueDateUtc == null)   // nulls last
+                     .ThenBy(t => t.NextDueDateUtc)
+                     .AsNoTracking()
+                     .ToListAsync();
+
+        public async Task<TodoTask?> GetTodoAsync(int id) =>
+            await _db.ToDoTasks.AsNoTracking()
+                               .FirstOrDefaultAsync(t => t.TaskId == id);
+
+        public async Task<bool> UpdateTodoAsync(TodoTask dto)
+        {
+            var entity = await _db.ToDoTasks.FirstOrDefaultAsync(t => t.TaskId == dto.TaskId);
+            if (entity is null) return false;
+
+            // map whichever fields you allow to be edited
+            entity.Category = dto.Category;
+            entity.TaskName = dto.TaskName;
+            entity.TriggerDateUtc = dto.TriggerDateUtc;
+            entity.AssignedTo = dto.AssignedTo;
+            entity.InternalDueDateUtc = dto.InternalDueDateUtc;
+            entity.ActualDueDateUtc = dto.ActualDueDateUtc;
+            entity.Status = dto.Status;
+            entity.RequiresFiling = dto.RequiresFiling;
+            entity.Filed = dto.Filed;
+            entity.FollowUpNeeded = dto.FollowUpNeeded;
+            entity.Recurring = dto.Recurring;
+            entity.NextDueDateUtc = dto.NextDueDateUtc;
+
+            await _db.SaveChangesAsync();
+            return true;
+        }
     }
 }

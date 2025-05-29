@@ -1,0 +1,39 @@
+﻿@model Domain.Entities.TodoTask
+@{
+    ViewData["Title"] = $"Task #{Model.TaskId}";
+}
+<h2>Task @Model.TaskId</h2>
+<form asp-action="Save" method="post" class="w-50">
+    <input type="hidden" asp-for="TaskId" />
+
+    <div class="mb-2">
+        <label asp-for="Category" class="form-label"></label>
+        <input asp-for="Category" class="form-control" />
+    </div>
+
+    <div class="mb-2">
+        <label asp-for="TaskName" class="form-label"></label>
+        <textarea asp-for="TaskName" rows="3" class="form-control"></textarea>
+    </div>
+
+    <div class="row">
+        <div class="col mb-2">
+            <label asp-for="TriggerDateUtc" class="form-label"></label>
+            <input asp-for="TriggerDateUtc" type="date" class="form-control" />
+        </div>
+        <div class="col mb-2">
+            <label asp-for="NextDueDateUtc" class="form-label"></label>
+            <input asp-for="NextDueDateUtc" type="date" class="form-control" />
+        </div>
+    </div>
+
+    <div class="mb-2">
+        <label asp-for="Status" class="form-label"></label>
+        <input asp-for="Status" class="form-control" />
+    </div>
+
+    <!-- add other fields as required -->
+
+    <button class="btn btn-success">Save</button>
+    <a asp-action="Index" class="btn btn-secondary">Cancel</a>
+</form>
