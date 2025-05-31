@@ -8,6 +8,7 @@ using Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Domain.Entities;          //  <-- add this
 
+
 namespace Infrastructure.Services
 {
     public class DashboardDal : IDashboardDal
@@ -124,5 +125,21 @@ namespace Infrastructure.Services
             _db.ApReports.Update(item);
             return await _db.SaveChangesAsync(ct);
         }
+
+        //Onboarding
+
+        public async Task<IReadOnlyList<Onboarding>> GetOnboardingsAsync()
+        {
+            return await _db.Onboardings
+                            .AsNoTracking()
+                            .OrderByDescending(o => o.CreatedDateUtc)
+                            .ToListAsync();          // ✓ no <T> here
+        }
+
+        public Task<Onboarding?> GetOnboardingAsync(int id) =>
+            _db.Onboardings
+               .Include(o => o.Fields)
+               .AsNoTracking()
+               .FirstOrDefaultAsync(o => o.OnboardingId == id);
     }
 }

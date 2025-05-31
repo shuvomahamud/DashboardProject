@@ -1,0 +1,25 @@
+﻿@{
+    ViewBag.Title = "On-Boarding";
+}
+<h2 class="mb-3">On-Boarding</h2>
+<table id="tblOb" class="table table-striped w-100"></table>
+
+@section Scripts {
+    <script>
+        const base = $('meta[name="api-base"]').attr('content');
+        $(function(){
+            $('#tblOb').DataTable({
+                ajax: { url: base + 'api/onboarding', dataSrc: '' },
+                columns:[
+                    { data:'onboardingId', title:'#',
+                      render:(d)=>`<a href="/onboarding/detail/${d}">${d}</a>` },
+                    { data:'candidateName', title:'Candidate' },
+                    { data:'createdDateUtc', title:'Created',
+                      render:(d)=> d?d.split('T')[0] : '' },
+                    { data:'fields', title:'# Items',
+                      render:(arr)=> arr?.length ?? 0 }
+                ]
+            });
+        });
+    </script>
+}

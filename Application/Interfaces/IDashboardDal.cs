@@ -26,5 +26,9 @@ namespace Application.Interfaces.DAL
         Task<List<AccountsPayable>> GetApAsync(CancellationToken ct = default);
         Task<AccountsPayable?> GetApAsync(int id, CancellationToken ct = default);
         Task<int> UpdateApAsync(AccountsPayable item, CancellationToken ct = default);
+
+        // Onboarding
+        Task<IReadOnlyList<Onboarding>> GetOnboardingsAsync();
+        Task<Onboarding?> GetOnboardingAsync(int id);
     }
 }

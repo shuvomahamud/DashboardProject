@@ -22,6 +22,8 @@ public static class DependencyInjection
         services.AddScoped<IInterviewService, InterviewService>();
         services.AddScoped<ITodoService, TodoService>();
         services.AddScoped<IAccountsPayableService, AccountsPayableService>();
+        services.AddScoped<IOnboardingService, OnboardingService>();
+
         return services;
     }
 }
