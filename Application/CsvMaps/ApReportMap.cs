@@ -9,6 +9,7 @@ public sealed class ApReportMap : ClassMap<AccountsPayable>
 {
     public ApReportMap()
     {
+        Map(m => m.ApId).Name("ApId").Optional();
         Map(m => m.StartEndDate)
             .Name("Start /End Date")
             .Convert(args =>

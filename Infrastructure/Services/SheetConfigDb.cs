@@ -45,21 +45,35 @@ public sealed class SheetConfigDb            // ← NOT a DbContext any more
         return newlyInserted;
     }
 
-    public async Task UpsertAccountsPayableAsync(IEnumerable<AccountsPayable> rows,
-                                                 CancellationToken ct)
+    public async Task<List<AccountsPayable>> UpsertAccountsPayableAsync(IEnumerable<AccountsPayable> rows, CancellationToken ct)
     {
+        var newlyInserted = new List<AccountsPayable>();
+
         foreach (var r in rows)
         {
-            var dbRow = await _db.ApReports
-                                 .FirstOrDefaultAsync(a => a.ApId == r.ApId, ct);
-
-            if (dbRow is null)
-                _db.ApReports.Add(r);
+            if (r.ApId.HasValue && r.ApId.Value > 0)
+            {
+                var dbRow = await _db.ApReports.FirstOrDefaultAsync(a => a.ApId == r.ApId, ct);
+                if (dbRow is null)
+                {
+                    _db.ApReports.Add(r);
+                    newlyInserted.Add(r);
+                }
+                else
+                {
+                    _db.Entry(dbRow).CurrentValues.SetValues(r);
+                }
+            }
             else
-                _db.Entry(dbRow).CurrentValues.SetValues(r);
+            {
+                _db.ApReports.Add(r);
+                newlyInserted.Add(r);
+            }
         }
         await _db.SaveChangesAsync(ct);
+        return newlyInserted;
     }
+
     public async Task<List<TodoTask>> UpsertTodoAsync(IEnumerable<TodoTask> rows, CancellationToken ct)
     {
         var newlyInserted = new List<TodoTask>();

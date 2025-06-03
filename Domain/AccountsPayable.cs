@@ -4,7 +4,7 @@ namespace Domain.Entities
 {
     public class AccountsPayable
     {
-        public int ApId { get; set; }
+        public int? ApId { get; set; }
 
         public DateTime? StartEndDate { get; set; }
         public string AgencyAuthorizedUser { get; set; }

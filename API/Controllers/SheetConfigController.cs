@@ -126,7 +126,8 @@ namespace API.Controllers
                 case "ap":       // accounts-payable
                     rdr.Context.RegisterClassMap<ApReportMap>();
                     var aps = rdr.GetRecords<AccountsPayable>().ToList();
-                    await _cfg.UpsertAccountsPayableAsync(aps, ct);
+                    var newlyInserted = await _cfg.UpsertAccountsPayableAsync(aps, ct);
+                    await WriteBackApIdsToSheetIfNeeded("ap", url, newlyInserted);
                     break;
 
                 case "todo":
@@ -186,6 +187,26 @@ namespace API.Controllers
                 sheetName: sheetName
             );
             await sheetsHelper.WriteInterviewIdsAsync(newlyInserted, firstDataRow: 2);
+        }
+
+        private async Task WriteBackApIdsToSheetIfNeeded(string tableKey, string sheetUrl, List<AccountsPayable>? newlyInserted)
+        {
+            if (!string.Equals(tableKey, "ap", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (newlyInserted == null || newlyInserted.Count == 0)
+                return;
+
+            var spreadsheetId = ExtractSpreadsheetId(sheetUrl);
+            var credentialsPath = _config["GoogleSheets:CredentialsPath"] ?? "secrets/dashboardproject-credentials.json";
+            var sheetName = "Sheet1"; // Adjust as needed
+
+            var sheetsHelper = new GoogleSheetsHelper(
+                credentialsPath: credentialsPath,
+                spreadsheetId: spreadsheetId,
+                sheetName: sheetName
+            );
+            await sheetsHelper.WriteApIdsAsync(newlyInserted, firstDataRow: 2);
         }
 
 
