@@ -2,7 +2,7 @@ namespace Domain.Entities;
 
 public class TodoTask
 {
-    public int TaskId { get; set; }          // PK
+    public int? TaskId { get; set; }          // PK
     public string? Category { get; set; }
     public string? TaskName { get; set; }
 

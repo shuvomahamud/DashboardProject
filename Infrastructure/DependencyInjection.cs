@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<ITodoService, TodoService>();
         services.AddScoped<IAccountsPayableService, AccountsPayableService>();
         services.AddScoped<IOnboardingService, OnboardingService>();
+        services.AddScoped<SheetConfigDb>();
 
         return services;
     }

@@ -11,25 +11,36 @@
         <tr>
             <th>Table</th>
             <th style="width:60%">URL</th>
-            <th>Action</th>
+            <th class="text-nowrap">Action</th>
         </tr>
     </thead>
+
     <tbody>
         @foreach (var key in new[] { "interview", "ap", "onboarding", "todo" })
         {
             <tr data-key="@key">
                 <td class="text-capitalize">@key</td>
+
                 <td>
                     <input class="form-control" disabled value="@Value(key)" />
                 </td>
+
                 <td class="text-nowrap">
+                    <!-- ⬇ NEW sync button -->
+                    <button class="btn btn-sm btn-outline-primary sync"
+                            title="Sync only this table">
+                        <i class="bi bi-cloud-arrow-down"></i>
+                    </button>
+
                     <button class="btn btn-sm btn-outline-secondary edit" title="Edit">
                         <i class="bi bi-pencil"></i>
                     </button>
+
                     <button class="btn btn-sm btn-outline-success save d-none" title="Save">
                         <i class="bi bi-check-lg"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger cancel d-none" title="Cancel">
+
+                    <button class="btn btn-sm btn-outline-danger  cancel d-none" title="Cancel">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </td>
@@ -44,73 +55,86 @@
 
 @section Scripts {
     <script>
-        document.addEventListener("DOMContentLoaded", function () {
-            const api = "https://localhost:7016/";
+        document.addEventListener("DOMContentLoaded", () => {
 
-            document.querySelectorAll("#sheetTable tr").forEach(row => {
+            /*------------------------------------------------------------*/
+            /*  CONFIG                                                    */
+            /*------------------------------------------------------------*/
+            const api = "https://localhost:7016/";          // <-- API root
+            const toast = msg => alert(msg);                // quick / replace w. Toast
+
+            /*------------------------------------------------------------*/
+            /*  PER-ROW HANDLERS                                          */
+            /*------------------------------------------------------------*/
+            document.querySelectorAll("#sheetTable tbody tr").forEach(row => {
+
+                const key = row.dataset.key;          // “todo”, “ap”, …
                 const input = row.querySelector("input");
-                const editBtn = row.querySelector(".edit");
-                const saveBtn = row.querySelector(".save");
-                const cancelBtn = row.querySelector(".cancel");
-
-                if (!input || !editBtn || !saveBtn || !cancelBtn) {
-                    console.warn("Missing buttons or input in a row");
-                    return;
-                }
+                const btnSync = row.querySelector(".sync");
+                const btnEdit = row.querySelector(".edit");
+                const btnSave = row.querySelector(".save");
+                const btnCancel = row.querySelector(".cancel");
 
                 let original = input.value;
 
-                editBtn.onclick = () => {
-                    input.disabled = false;
-                    input.focus();
+                btnSync.onclick = async () => {
+                    try {
+                        btnSync.disabled = true;
+                        const r = await fetch(api + "api/sheets/sync/" + key, {
+                            method: "POST", credentials: "include"
+                        });
+                        toast(await r.text());
+                    } catch (e) {
+                        toast("Sync failed – check API/network");
+                        console.error(e);
+                    } finally {
+                        btnSync.disabled = false;
+                    }
+                };
+
+
+                /*—— edit / save / cancel identical to before ———*/
+                btnEdit.onclick = () => {
+                    input.disabled = false; input.focus();
                     toggle(true);
                 };
-
-                cancelBtn.onclick = () => {
-                    input.value = original;
-                    input.disabled = true;
+                btnCancel.onclick = () => {
+                    input.value = original; input.disabled = true;
                     toggle(false);
                 };
-
-                saveBtn.onclick = async () => {
-                    const key = row.dataset.key;
-                    const body = { [key]: input.value };
-
+                btnSave.onclick = async () => {
                     try {
                         await fetch(api + "api/sheets/config", {
                             method: "PUT",
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(body),
+                            body: JSON.stringify({ [key]: input.value }),
                             credentials: "include"
                         });
-                        original = input.value;
+                        original = input.value;            // commit
                         input.disabled = true;
                         toggle(false);
-                    } catch (err) {
-                        alert("Failed to save. Check API or network.");
-                        console.error(err);
-                    }
+                    } catch (e) { toast("Save failed"); console.error(e); }
                 };
 
                 function toggle(editing) {
-                    editBtn.classList.toggle("d-none", editing);
-                    saveBtn.classList.toggle("d-none", !editing);
-                    cancelBtn.classList.toggle("d-none", !editing);
+                    btnSync.classList.toggle("d-none", editing); // hide while editing
+                    btnEdit.classList.toggle("d-none", editing);
+                    btnSave.classList.toggle("d-none", !editing);
+                    btnCancel.classList.toggle("d-none", !editing);
                 }
             });
 
-            document.getElementById("syncAll")?.addEventListener("click", async () => {
+            /*------------------------------------------------------------*/
+            /*  GLOBAL  “Sync All”                                         */
+            /*------------------------------------------------------------*/
+            document.getElementById("syncAll").onclick = async () => {
                 try {
-                    const res = await fetch(api + "api/sheets/sync", {
-                        method: "POST",
-                        credentials: "include"
+                    const r = await fetch(api + "api/sheets/sync", {
+                        method: "POST", credentials: "include"
                     });
-                    alert(await res.text());
-                } catch (err) {
-                    alert("Sync failed. Check API or network.");
-                    console.error(err);
-                }
-            });
+                    toast(await r.text());
+                } catch (e) { toast("Sync-all failed"); console.error(e); }
+            };
         });
     </script>
 }

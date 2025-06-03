@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="CsvHelper" Version="33.0.1" />
     <PackageReference Include="JsonSchema.Net" Version="7.3.4" />
+	<PackageReference Include="Google.Apis.Sheets.v4" Version="1.69.0.3785" />
   </ItemGroup>
 
   <ItemGroup>

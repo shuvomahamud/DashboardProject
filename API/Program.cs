@@ -58,6 +58,8 @@ builder.Services.AddControllers().AddJsonOptions(opt =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+// Program.cs  (or Startup.cs → ConfigureServices)
+builder.Services.AddHttpClient();          // 👈  register default factory
 
 var app = builder.Build();
 
