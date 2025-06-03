@@ -18,6 +18,7 @@ namespace Application.CsvMaps
 
         public InterviewMap()
         {
+            Map(m => m.InterviewId).Name("InterviewId").Optional();
             Map(m => m.HbitsNo).Name("HbitsNo");
             Map(m => m.Position).Name("Position");
             Map(m => m.Level).Name("Level");

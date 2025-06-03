@@ -5,7 +5,7 @@
 /// </summary>
 public class Interview
 {
-    public int InterviewId { get; set; }          // PK
+    public int? InterviewId { get; set; }          // PK
     public string? HbitsNo { get; set; }
     public string? Position { get; set; }
     public int? Level { get; set; }

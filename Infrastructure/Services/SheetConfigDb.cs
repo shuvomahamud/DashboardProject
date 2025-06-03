@@ -15,20 +15,34 @@ public sealed class SheetConfigDb            // ← NOT a DbContext any more
     // ──────────────────────────────────────────────────────────────
     //  upsert helpers
     // ──────────────────────────────────────────────────────────────
-    public async Task UpsertInterviewsAsync(IEnumerable<Interview> rows,
-                                            CancellationToken ct)
+    public async Task<List<Interview>> UpsertInterviewsAsync(IEnumerable<Interview> rows, CancellationToken ct)
     {
+        var newlyInserted = new List<Interview>();
+
         foreach (var r in rows)
         {
-            var dbRow = await _db.InterviewInformations
-                                 .FirstOrDefaultAsync(i => i.InterviewId == r.InterviewId, ct);
-
-            if (dbRow is null)
-                _db.InterviewInformations.Add(r);      // INSERT
+            if (r.InterviewId.HasValue && r.InterviewId.Value > 0)
+            {
+                var dbRow = await _db.InterviewInformations.FirstOrDefaultAsync(i => i.InterviewId == r.InterviewId, ct);
+                if (dbRow is null)
+                {
+                    _db.InterviewInformations.Add(r);
+                    newlyInserted.Add(r);
+                }
+                else
+                {
+                    _db.Entry(dbRow).CurrentValues.SetValues(r);
+                }
+            }
             else
-                _db.Entry(dbRow).CurrentValues.SetValues(r);  // UPDATE
+            {
+                _db.InterviewInformations.Add(r);
+                newlyInserted.Add(r);
+            }
         }
         await _db.SaveChangesAsync(ct);
+
+        return newlyInserted;
     }
 
     public async Task UpsertAccountsPayableAsync(IEnumerable<AccountsPayable> rows,

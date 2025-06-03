@@ -119,7 +119,8 @@ namespace API.Controllers
                 case "interview":
                     rdr.Context.RegisterClassMap<InterviewMap>();
                     var interviews = rdr.GetRecords<Interview>().ToList();
-                    await _cfg.UpsertInterviewsAsync(interviews, ct);
+                    var newlyInsertedInterview = await _cfg.UpsertInterviewsAsync(interviews, ct);
+                    await WriteBackInterviewIdsToSheetIfNeeded("interview", url, newlyInsertedInterview);
                     break;
 
                 case "ap":       // accounts-payable
@@ -131,8 +132,8 @@ namespace API.Controllers
                 case "todo":
                     rdr.Context.RegisterClassMap<TodoTaskMap>();
                     var todos = rdr.GetRecords<TodoTask>().ToList();
-                    var newlyInserted = await _cfg.UpsertTodoAsync(todos, ct); // <- change: return new tasks
-                    await WriteBackTaskIdsToSheetIfNeeded("todo", url, newlyInserted);
+                    var newlyInsertedTodo = await _cfg.UpsertTodoAsync(todos, ct); // <- change: return new tasks
+                    await WriteBackTaskIdsToSheetIfNeeded("todo", url, newlyInsertedTodo);
                     break;
 
                 // onboarding stays as-is
@@ -167,6 +168,26 @@ namespace API.Controllers
             var match = Regex.Match(url, @"/d/([a-zA-Z0-9-_]+)");
             return match.Success ? match.Groups[1].Value : throw new InvalidOperationException("Could not extract spreadsheetId from url");
         }
+        private async Task WriteBackInterviewIdsToSheetIfNeeded(string tableKey, string sheetUrl, List<Interview>? newlyInserted)
+        {
+            if (!string.Equals(tableKey, "interview", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (newlyInserted == null || newlyInserted.Count == 0)
+                return;
+
+            var spreadsheetId = ExtractSpreadsheetId(sheetUrl);
+            var credentialsPath = _config["GoogleSheets:CredentialsPath"] ?? "secrets/dashboardproject-credentials.json";
+            var sheetName = "Sheet1"; // Adjust if needed
+
+            var sheetsHelper = new GoogleSheetsHelper(
+                credentialsPath: credentialsPath,
+                spreadsheetId: spreadsheetId,
+                sheetName: sheetName
+            );
+            await sheetsHelper.WriteInterviewIdsAsync(newlyInserted, firstDataRow: 2);
+        }
+
 
         // Write TaskIds back to sheet for newly inserted tasks
         private async Task WriteBackTaskIdsToSheetIfNeeded(string tableKey, string sheetUrl, List<TodoTask>? newlyInserted)
