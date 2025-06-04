@@ -9,5 +9,6 @@ namespace Application.Interfaces
         Task<IEnumerable<Interview>> GetAllAsync();
         Task<Interview?> GetAsync(int id);
         Task<bool> UpdateAsync(Interview entity);
+        Task<Interview?> CreateAsync(Interview dto);
     }
 }

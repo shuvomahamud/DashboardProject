@@ -10,5 +10,10 @@ namespace Application.Services
             todo.FollowUpNeeded ??= false;
             todo.Recurring ??= false;
         }
+
+        public static void SetInterviewBooleanDefaults(Interview dto)
+        {
+            dto.InterviewScheduledMailedToMr ??= false;
+        }
     }
 }

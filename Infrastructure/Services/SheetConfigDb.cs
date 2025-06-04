@@ -2,6 +2,7 @@
 using Application.Services;
 using Domain.Entities;
 using Infrastructure;
+using Infrastructure.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 
 public sealed class SheetConfigDb            // ← NOT a DbContext any more
@@ -19,6 +20,10 @@ public sealed class SheetConfigDb            // ← NOT a DbContext any more
     public async Task<List<Interview>> UpsertInterviewsAsync(IEnumerable<Interview> rows, CancellationToken ct)
     {
         var newlyInserted = new List<Interview>();
+
+        // Ensure all Interview bools are never null
+        foreach (var interview in rows)
+            BooleanDefaultsHelper.SetInterviewBooleanDefaults(interview);
 
         foreach (var r in rows)
         {

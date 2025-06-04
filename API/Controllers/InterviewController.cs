@@ -27,4 +27,16 @@ public class InterviewController : ControllerBase
         if (id != dto.InterviewId) return BadRequest();
         return await _svc.UpdateAsync(dto) ? NoContent() : NotFound();
     }
+
+    [HttpPost]
+    public async Task<ActionResult<Interview>> Create(Interview dto)
+    {
+        Application.Services.DateTimeHelper.EnsureAllInterviewDateTimesUtc(dto);
+        var created = await _svc.CreateAsync(dto);
+        if (created is null)
+            return BadRequest("Could not create Interview.");
+        // REST: 201 Created
+        return CreatedAtAction(nameof(Get), new { id = created.InterviewId }, created);
+    }
+
 }

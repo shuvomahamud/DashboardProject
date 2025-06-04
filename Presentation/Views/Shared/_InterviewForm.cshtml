@@ -1,4 +1,5 @@
 ﻿@model Domain.Entities.Interview
+
 @{
     var isEdit = Model.InterviewId.HasValue;
     ViewBag.Title = isEdit ? $"Edit Interview #{Model.InterviewId}" : "Create Interview";
@@ -68,7 +69,7 @@
             <div class="form-check mb-3 mt-2">
                 <input type="hidden" name="InterviewScheduledMailedToMr" value="false" />
                 <input class="form-check-input" type="checkbox" name="InterviewScheduledMailedToMr" value="true"
-                    @(Model.InterviewScheduledMailedToMr ?? false ? "checked" : "") />
+                @(Model.InterviewScheduledMailedToMr ?? false ? "checked" : "") />
                 <label class="form-check-label" for="InterviewScheduledMailedToMr">Interview Scheduled Mailed to MR</label>
                 <span asp-validation-for="InterviewScheduledMailedToMr" class="text-danger"></span>
             </div>

@@ -23,6 +23,8 @@ namespace Application.Services
                 case "interview":
                     csvRdr.Context.RegisterClassMap<InterviewMap>();
                     var interviews = csvRdr.GetRecords<Interview>().ToList();
+                    foreach (var interview in interviews)
+                        BooleanDefaultsHelper.SetInterviewBooleanDefaults(interview);
                     await _dal.BulkInsertAsync(interviews);
                     return interviews.Count;
 

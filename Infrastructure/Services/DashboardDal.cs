@@ -104,12 +104,39 @@ namespace Infrastructure.Services
         public Task<Interview?> GetInterviewAsync(int id)
             => _db.InterviewInformations.FirstOrDefaultAsync(i => i.InterviewId == id);
 
-        public async Task<bool> UpdateInterviewAsync(Interview e)
+        public async Task<bool> UpdateInterviewAsync(Interview dto)
         {
-            _db.InterviewInformations.Update(e);
-            return await _db.SaveChangesAsync() > 0;
-        }
+            Application.Services.DateTimeHelper.EnsureAllInterviewDateTimesUtc(dto);
 
+            var entity = await _db.InterviewInformations
+                .FirstOrDefaultAsync(i => i.InterviewId == dto.InterviewId);
+
+            if (entity is null) return false;
+
+            // Explicitly map each updatable property
+            entity.HbitsNo = dto.HbitsNo;
+            entity.Position = dto.Position;
+            entity.Level = dto.Level;
+            entity.MailReceivedDateUtc = dto.MailReceivedDateUtc;
+            entity.ConsultantName = dto.ConsultantName;
+            entity.ClientSuggestedDates = dto.ClientSuggestedDates;
+            entity.MailedDatesToConsultantUtc = dto.MailedDatesToConsultantUtc;
+            entity.InterviewTimeOptedFor = dto.InterviewTimeOptedFor;
+            entity.InterviewScheduledMailedToMr = dto.InterviewScheduledMailedToMr;
+            entity.InterviewConfirmedByClientUtc = dto.InterviewConfirmedByClientUtc;
+            entity.TimeOfInterviewUtc = dto.TimeOfInterviewUtc;
+            entity.ThruRecruiter = dto.ThruRecruiter;
+            entity.ConsultantContactNo = dto.ConsultantContactNo;
+            entity.ConsultantEmail = dto.ConsultantEmail;
+            entity.VendorPocName = dto.VendorPocName;
+            entity.VendorNumber = dto.VendorNumber;
+            entity.VendorEmailId = dto.VendorEmailId;
+            entity.CandidateSelected = dto.CandidateSelected;
+            entity.MonthYear = dto.MonthYear;
+
+            await _db.SaveChangesAsync();
+            return true;
+        }
 
         // AP Reports
         public async Task<List<AccountsPayable>> GetApAsync(CancellationToken ct = default) =>

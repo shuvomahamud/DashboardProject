@@ -16,5 +16,8 @@ public class InterviewService : IInterviewService
 
     public Task<bool> UpdateAsync(Interview entity)
         => _dal.UpdateInterviewAsync(entity);
+
+    public async Task<Interview?> CreateAsync(Interview dto)
+        => await _dal.AddAsync(dto);
 }
 
