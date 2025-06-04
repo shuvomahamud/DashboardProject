@@ -14,6 +14,7 @@ namespace Application.Interfaces.DAL
         Task<bool> RemoveAsync<T>(T row) where T : class;
 
         //Todo
+        public Task<TodoTask?> CreateTodoAsync(TodoTask dto);
         Task<IEnumerable<TodoTask>> GetAllTodosAsync();
         Task<TodoTask?> GetTodoAsync(int id);
         Task<bool> UpdateTodoAsync(TodoTask dto);

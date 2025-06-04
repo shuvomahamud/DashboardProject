@@ -14,4 +14,8 @@ public sealed class TodoService : ITodoService
     public Task<TodoTask?> GetAsync(int id) => _dal.GetTodoAsync(id);
     public Task<bool> UpdateAsync(TodoTask dto)
                                         => _dal.UpdateTodoAsync(dto);
+    public async Task<TodoTask?> CreateAsync(TodoTask dto)
+    {
+        return await _dal.CreateTodoAsync(dto);
+    }
 }

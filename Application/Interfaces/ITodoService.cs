@@ -13,4 +13,6 @@ public interface ITodoService
 
     /// Updates an existing task (returns false if id-not-found)
     Task<bool> UpdateAsync(TodoTask dto);
+
+    Task<TodoTask?> CreateAsync(TodoTask dto);
 }

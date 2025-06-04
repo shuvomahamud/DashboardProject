@@ -54,6 +54,8 @@ namespace Application.Services
                 case "todo":
                     csvRdr.Context.RegisterClassMap<TodoTaskMap>();
                     var todos = csvRdr.GetRecords<TodoTask>().ToList();
+                    foreach (var todo in todos)
+                        BooleanDefaultsHelper.SetTodoTaskBooleanDefaults(todo);
                     await _dal.BulkInsertAsync(todos);
                     return todos.Count;
 

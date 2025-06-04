@@ -73,6 +73,7 @@ namespace Infrastructure.Services
 
         public async Task<bool> UpdateTodoAsync(TodoTask dto)
         {
+            Application.Services.DateTimeHelper.EnsureAllTodoDateTimesUtc(dto);
             var entity = await _db.ToDoTasks.FirstOrDefaultAsync(t => t.TaskId == dto.TaskId);
             if (entity is null) return false;
 
@@ -141,5 +142,13 @@ namespace Infrastructure.Services
                .Include(o => o.Fields)
                .AsNoTracking()
                .FirstOrDefaultAsync(o => o.OnboardingId == id);
+
+        public async Task<TodoTask?> CreateTodoAsync(TodoTask dto)
+        {
+            _db.ToDoTasks.Add(dto);
+            await _db.SaveChangesAsync();
+            return dto;
+        }
+
     }
 }

@@ -27,6 +27,54 @@ public class TodoController : Controller
         var row = await _api.GetFromJsonAsync<TodoTask>($"api/todo/{id}");
         return row is null ? NotFound() : View(row);
     }
+    [HttpGet("Create")]
+    public IActionResult Create() => View(new TodoTask());
+
+    [HttpPost("Create")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(TodoTask dto)
+    {
+        if (!ModelState.IsValid) return View(dto);
+
+        dto.RequiresFiling = Request.Form["RequiresFiling"].Contains("true") ? true : false;
+        dto.Filed = Request.Form["Filed"].Contains("true") ? true : false;
+        dto.FollowUpNeeded = Request.Form["FollowUpNeeded"].Contains("true") ? true : false;
+        dto.Recurring = Request.Form["Recurring"].Contains("true") ? true : false;
+        
+        // Call API to create (POST/PUT) as needed
+        var resp = await _api.PostAsJsonAsync("api/todo", dto);
+        if (resp.IsSuccessStatusCode)
+            return RedirectToAction("Index");
+        var msg = await resp.Content.ReadAsStringAsync();
+        ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to create task." : msg);
+
+        return View(dto);
+    }
+
+    [HttpGet("Edit/{id:int}")]
+    public async Task<IActionResult> Edit(int id)
+    {
+        var row = await _api.GetFromJsonAsync<TodoTask>($"api/todo/{id}");
+        return row is null ? NotFound() : View(row);
+    }
+
+    [HttpPost("Edit/{id:int}")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Edit(int id, TodoTask dto)
+    {
+        if (!ModelState.IsValid) return View(dto);
+        
+        dto.RequiresFiling = Request.Form["RequiresFiling"].Contains("true") ? true : false;
+        dto.Filed = Request.Form["Filed"].Contains("true") ? true : false;
+        dto.FollowUpNeeded = Request.Form["FollowUpNeeded"].Contains("true") ? true : false;
+        dto.Recurring = Request.Form["Recurring"].Contains("true") ? true : false;
+
+        var resp = await _api.PutAsJsonAsync($"api/todo/{id}", dto);
+        if (resp.IsSuccessStatusCode)
+            return RedirectToAction("Index");
+        ModelState.AddModelError("", "Failed to update task.");
+        return View(dto);
+    }
 
     [HttpPost("Save")]
     public async Task<IActionResult> Save(TodoTask dto)

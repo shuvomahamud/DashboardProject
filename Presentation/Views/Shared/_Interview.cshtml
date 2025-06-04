@@ -1,0 +1,125 @@
+﻿@model Domain.Entities.Interview
+@{
+    var isEdit = Model.InterviewId.HasValue;
+    ViewBag.Title = isEdit ? $"Edit Interview #{Model.InterviewId}" : "Create Interview";
+}
+
+<form asp-action="@ViewBag.FormAction" method="post" class="needs-validation" novalidate>
+    @if (isEdit)
+    {
+        <input type="hidden" asp-for="InterviewId" />
+    }
+    <div class="row">
+        <!-- Left column: text, number, date fields -->
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label asp-for="HbitsNo" class="form-label"></label>
+                <input asp-for="HbitsNo" class="form-control" />
+                <span asp-validation-for="HbitsNo" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Position" class="form-label"></label>
+                <input asp-for="Position" class="form-control" />
+                <span asp-validation-for="Position" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Level" class="form-label"></label>
+                <input asp-for="Level" type="number" class="form-control" />
+                <span asp-validation-for="Level" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="MailReceivedDateUtc" class="form-label"></label>
+                <input asp-for="MailReceivedDateUtc" type="date" class="form-control" />
+                <span asp-validation-for="MailReceivedDateUtc" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="ConsultantName" class="form-label"></label>
+                <input asp-for="ConsultantName" class="form-control" />
+                <span asp-validation-for="ConsultantName" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="ClientSuggestedDates" class="form-label"></label>
+                <input asp-for="ClientSuggestedDates" class="form-control" />
+                <span asp-validation-for="ClientSuggestedDates" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="MailedDatesToConsultantUtc" class="form-label"></label>
+                <input asp-for="MailedDatesToConsultantUtc" type="date" class="form-control" />
+                <span asp-validation-for="MailedDatesToConsultantUtc" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="InterviewTimeOptedFor" class="form-label"></label>
+                <input asp-for="InterviewTimeOptedFor" class="form-control" />
+                <span asp-validation-for="InterviewTimeOptedFor" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="InterviewConfirmedByClientUtc" class="form-label"></label>
+                <input asp-for="InterviewConfirmedByClientUtc" type="date" class="form-control" />
+                <span asp-validation-for="InterviewConfirmedByClientUtc" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="TimeOfInterviewUtc" class="form-label"></label>
+                <input asp-for="TimeOfInterviewUtc" type="datetime-local" class="form-control" />
+                <span asp-validation-for="TimeOfInterviewUtc" class="text-danger"></span>
+            </div>
+        </div>
+        <!-- Right column: checkboxes and contact fields -->
+        <div class="col-md-6">
+            <div class="form-check mb-3 mt-2">
+                <input type="hidden" name="InterviewScheduledMailedToMr" value="false" />
+                <input class="form-check-input" type="checkbox" name="InterviewScheduledMailedToMr" value="true"
+                    @(Model.InterviewScheduledMailedToMr ?? false ? "checked" : "") />
+                <label class="form-check-label" for="InterviewScheduledMailedToMr">Interview Scheduled Mailed to MR</label>
+                <span asp-validation-for="InterviewScheduledMailedToMr" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="ThruRecruiter" class="form-label"></label>
+                <input asp-for="ThruRecruiter" class="form-control" />
+                <span asp-validation-for="ThruRecruiter" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="ConsultantContactNo" class="form-label"></label>
+                <input asp-for="ConsultantContactNo" class="form-control" />
+                <span asp-validation-for="ConsultantContactNo" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="ConsultantEmail" class="form-label"></label>
+                <input asp-for="ConsultantEmail" class="form-control" />
+                <span asp-validation-for="ConsultantEmail" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="VendorPocName" class="form-label"></label>
+                <input asp-for="VendorPocName" class="form-control" />
+                <span asp-validation-for="VendorPocName" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="VendorNumber" class="form-label"></label>
+                <input asp-for="VendorNumber" class="form-control" />
+                <span asp-validation-for="VendorNumber" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="VendorEmailId" class="form-label"></label>
+                <input asp-for="VendorEmailId" class="form-control" />
+                <span asp-validation-for="VendorEmailId" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="CandidateSelected" class="form-label"></label>
+                <input asp-for="CandidateSelected" class="form-control" />
+                <span asp-validation-for="CandidateSelected" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="MonthYear" class="form-label"></label>
+                <input asp-for="MonthYear" class="form-control" />
+                <span asp-validation-for="MonthYear" class="text-danger"></span>
+            </div>
+        </div>
+    </div>
+    <div class="mt-3">
+        <button class="btn btn-success" type="submit">Save</button>
+        <a asp-action="Index" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -1,4 +1,5 @@
 ﻿// Infrastructure/Services/SheetConfigDb.cs
+using Application.Services;
 using Domain.Entities;
 using Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -78,6 +79,10 @@ public sealed class SheetConfigDb            // ← NOT a DbContext any more
     {
         var newlyInserted = new List<TodoTask>();
 
+        // ✅ Ensure all boolean fields are not null before save
+        foreach (var todo in rows)
+            BooleanDefaultsHelper.SetTodoTaskBooleanDefaults(todo);
+
         foreach (var r in rows)
         {
             if (r.TaskId.HasValue && r.TaskId.Value > 0)
@@ -104,4 +109,5 @@ public sealed class SheetConfigDb            // ← NOT a DbContext any more
         // After SaveChangesAsync, newlyInserted[i].TaskId will be set by EF
         return newlyInserted;
     }
+
 }
