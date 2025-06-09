@@ -5,7 +5,6 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 
 namespace Presentation.Controllers
 {
@@ -17,15 +16,11 @@ namespace Presentation.Controllers
     public sealed class OnboardingController : Controller
     {
         private readonly HttpClient _api;
-        private readonly string _apiRoot;
         private readonly ILogger<OnboardingController> _log;
-        public OnboardingController(IHttpClientFactory f, IConfiguration cfg, ILogger<OnboardingController> log)
+        public OnboardingController(IHttpClientFactory f, ILogger<OnboardingController> log)
         {
-            _api = f.CreateClient();                    // default client
-            _apiRoot = cfg["ApiBaseUrl"]
-                     ?? throw new InvalidOperationException("ApiBaseUrl missing");
+            _api = f.CreateClient("APIClient");
             _log = log;
-
         }
 
         // GET  /onboarding
@@ -39,8 +34,6 @@ namespace Presentation.Controllers
             var path = $"api/onboarding/{id}";          // relative to BaseAddress
 
             // Optional: quick log so you see the final URL in the console
-            _api.BaseAddress = new Uri(_apiRoot);
-
             _log.LogInformation("GET {FullUrl}", new Uri(_api.BaseAddress!, path));
             
             // the named client already has BaseAddress = https://localhost:7016/
