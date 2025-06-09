@@ -1,0 +1,7 @@
+@model Domain.Entities.Onboarding
+@{
+    ViewBag.Title = $"Edit Onboarding #{Model.OnboardingId}";
+    ViewBag.FormAction = $"Edit/{Model.OnboardingId}";
+}
+<h2>Edit Onboarding #@Model.OnboardingId</h2>
+<partial name="_OnboardingForm" model="Model" />
