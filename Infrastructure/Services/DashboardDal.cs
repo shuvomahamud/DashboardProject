@@ -146,7 +146,7 @@ namespace Infrastructure.Services
             .ToListAsync(ct);
 
         public async Task<AccountsPayable?> GetApAsync(int id, CancellationToken ct = default) =>
-            await _db.ApReports.FindAsync([id, ct]);
+            await _db.ApReports.FindAsync(new object?[] { id }, ct);
 
         public async Task<int> UpdateApAsync(AccountsPayable item, CancellationToken ct = default)
         {
