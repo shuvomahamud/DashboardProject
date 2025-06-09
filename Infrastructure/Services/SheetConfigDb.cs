@@ -54,12 +54,14 @@ public sealed class SheetConfigDb            // ← NOT a DbContext any more
     public async Task<List<AccountsPayable>> UpsertAccountsPayableAsync(IEnumerable<AccountsPayable> rows, CancellationToken ct)
     {
         var newlyInserted = new List<AccountsPayable>();
+        foreach (var ap in rows)
+            BooleanDefaultsHelper.SetApReportBooleanDefaults(ap);
 
         foreach (var r in rows)
         {
             if (r.ApId.HasValue && r.ApId.Value > 0)
             {
-                var dbRow = await _db.ApReports.FirstOrDefaultAsync(a => a.ApId == r.ApId, ct);
+                var dbRow = await _db.ApReports.FirstOrDefaultAsync(i => i.ApId == r.ApId, ct);
                 if (dbRow is null)
                 {
                     _db.ApReports.Add(r);

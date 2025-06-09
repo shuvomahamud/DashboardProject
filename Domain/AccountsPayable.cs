@@ -24,11 +24,11 @@ namespace Domain.Entities
         public decimal PaidToVendor { get; set; }
 
         public string VendorName { get; set; }
-        public bool HoursMatchInvoice { get; set; }
+        public bool? HoursMatchInvoice { get; set; }
         public string InvoiceNumber { get; set; }
         public DateTime? VendorInvoiceDate { get; set; }
 
-        public bool TimesheetsApproved { get; set; }
+        public bool? TimesheetsApproved { get; set; }
         public string Remark { get; set; }
         public int PaymentTermNet { get; set; }
         public string PaymentMode { get; set; }

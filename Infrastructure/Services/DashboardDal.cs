@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Domain.Entities;          //  <-- add this
+using Application.Services;
 
 
 namespace Infrastructure.Services
@@ -139,18 +140,26 @@ namespace Infrastructure.Services
         }
 
         // AP Reports
-        public async Task<List<AccountsPayable>> GetApAsync(CancellationToken ct = default) =>
-    await _db.ApReports
-            .OrderBy(a => a.PaymentDueDate)            // any sort you like
-            .AsNoTracking()
-            .ToListAsync(ct);
+        public async Task<List<AccountsPayable>> GetApAsync(CancellationToken ct = default)
+    => await _db.ApReports.OrderBy(a => a.PaymentDueDate).AsNoTracking().ToListAsync(ct);
 
-        public async Task<AccountsPayable?> GetApAsync(int id, CancellationToken ct = default) =>
-            await _db.ApReports.FindAsync([id, ct]);
+        public async Task<AccountsPayable?> GetApByIdAsync(int id, CancellationToken ct = default)
+            => await _db.ApReports.FindAsync(new object[] { id }, ct);
 
-        public async Task<int> UpdateApAsync(AccountsPayable item, CancellationToken ct = default)
+        public async Task<AccountsPayable> AddAsync(AccountsPayable ap, CancellationToken ct = default)
         {
-            _db.ApReports.Update(item);
+            Application.Services.DateTimeHelper.EnsureAllApDateTimesUtc(ap);
+            BooleanDefaultsHelper.SetApReportBooleanDefaults(ap);
+            _db.ApReports.Add(ap);
+            await _db.SaveChangesAsync(ct);
+            return ap;
+        }
+
+        public async Task<int> UpdateApAsync(AccountsPayable ap, CancellationToken ct = default)
+        {
+            Application.Services.DateTimeHelper.EnsureAllApDateTimesUtc(ap);
+            BooleanDefaultsHelper.SetApReportBooleanDefaults(ap);
+            _db.ApReports.Update(ap);
             return await _db.SaveChangesAsync(ct);
         }
 

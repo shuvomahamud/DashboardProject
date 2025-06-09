@@ -22,9 +22,12 @@ namespace Application.Services
         {
             if (dto.StartEndDate.HasValue)
                 dto.StartEndDate = DateTime.SpecifyKind(dto.StartEndDate.Value, DateTimeKind.Utc);
+            if (dto.TimesheetApprovalDate.HasValue)
+                dto.TimesheetApprovalDate = DateTime.SpecifyKind(dto.TimesheetApprovalDate.Value, DateTimeKind.Utc);
+            if (dto.VendorInvoiceDate.HasValue)
+                dto.VendorInvoiceDate = DateTime.SpecifyKind(dto.VendorInvoiceDate.Value, DateTimeKind.Utc);
             if (dto.PaymentDueDate.HasValue)
                 dto.PaymentDueDate = DateTime.SpecifyKind(dto.PaymentDueDate.Value, DateTimeKind.Utc);
-            // Add any additional datetime fields here!
         }
 
         // For Interview

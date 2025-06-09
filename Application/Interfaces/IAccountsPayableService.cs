@@ -9,8 +9,9 @@ namespace Application.Interfaces
 {
     public interface IAccountsPayableService
     {
-        Task<List<AccountsPayable>> GetAllAsync(CancellationToken ct = default);
-        Task<AccountsPayable?> GetAsync(int id, CancellationToken ct = default);
-        Task<int> UpdateAsync(AccountsPayable dto, CancellationToken ct = default);
+        Task<IEnumerable<AccountsPayable>> GetAllAsync(CancellationToken ct = default);
+        Task<AccountsPayable?> GetAsync(int id);
+        Task<AccountsPayable?> CreateAsync(AccountsPayable dto);
+        Task<bool> UpdateAsync(AccountsPayable dto);
     }
 }

@@ -15,5 +15,13 @@ namespace Application.Services
         {
             dto.InterviewScheduledMailedToMr ??= false;
         }
+
+        public static void SetApReportBooleanDefaults(AccountsPayable dto)
+        {
+            // If you ever make these nullable:
+            dto.HoursMatchInvoice ??= false;
+            dto.TimesheetsApproved ??= false;
+
+        }
     }
 }

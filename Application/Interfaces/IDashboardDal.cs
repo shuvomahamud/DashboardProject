@@ -25,8 +25,9 @@ namespace Application.Interfaces.DAL
 
         /* AP -- list / single / update */
         Task<List<AccountsPayable>> GetApAsync(CancellationToken ct = default);
-        Task<AccountsPayable?> GetApAsync(int id, CancellationToken ct = default);
-        Task<int> UpdateApAsync(AccountsPayable item, CancellationToken ct = default);
+        Task<AccountsPayable?> GetApByIdAsync(int id, CancellationToken ct = default);
+        Task<AccountsPayable> AddAsync(AccountsPayable ap, CancellationToken ct = default);
+        Task<int> UpdateApAsync(AccountsPayable ap, CancellationToken ct = default);
 
         // Onboarding
         Task<IReadOnlyList<Onboarding>> GetOnboardingsAsync();
