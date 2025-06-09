@@ -179,6 +179,27 @@ namespace Infrastructure.Services
                .AsNoTracking()
                .FirstOrDefaultAsync(o => o.OnboardingId == id);
 
+        public async Task<Onboarding> AddAsync(Onboarding ob)
+        {
+            _db.Onboardings.Add(ob);
+            await _db.SaveChangesAsync();
+            return ob;
+        }
+
+        public async Task<bool> UpdateAsync(Onboarding ob)
+        {
+            // update master
+            _db.Onboardings.Update(ob);
+            foreach (var f in ob.Fields)
+            {
+                if (f.Id == 0)
+                    _db.OnboardingFieldData.Add(f);
+                else
+                    _db.OnboardingFieldData.Update(f);
+            }
+            return await _db.SaveChangesAsync() > 0;
+        }
+
         public async Task<TodoTask?> CreateTodoAsync(TodoTask dto)
         {
             _db.ToDoTasks.Add(dto);

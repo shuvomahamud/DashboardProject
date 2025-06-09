@@ -32,5 +32,7 @@ namespace Application.Interfaces.DAL
         // Onboarding
         Task<IReadOnlyList<Onboarding>> GetOnboardingsAsync();
         Task<Onboarding?> GetOnboardingAsync(int id);
+        Task<Onboarding> AddAsync(Onboarding ob);
+        Task<bool> UpdateAsync(Onboarding ob);
     }
 }

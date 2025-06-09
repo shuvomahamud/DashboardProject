@@ -1,0 +1,95 @@
+@model Domain.Entities.Onboarding
+@{
+    string[] labels = new[] {
+        "Task Order #",
+        "Client/Agency Name (from Onboarding letter)",
+        "Form-2/Form-B",
+        "Insert the agency Name from Form-1/Form",
+        "Job Title",
+        "Work Location",
+        "Project/Program Name",
+        "Name of Recruiter",
+        "Date of confirmation",
+        "Actual Start Date (per client work order)",
+        "End Date (Per client work order)",
+        "Expected onboarding Date",
+        "DOB",
+        "Name of the consultant",
+        "Current Location",
+        "Phone Number of the consultant",
+        "Email address of the consultant",
+        "Hiring Term (W-2, 1099, C2C)",
+        "Mailing address of the consultant",
+        "Onboarding Letter from the client (received)",
+        "Bill Rate (rate from the client)",
+        "Finger Printing to be done (Yes/NO)",
+        "Background Check (Yes or No)",
+        "Onboarding email to the candidate",
+        "Remote log in credentials to the consultant",
+        "Non-Compete Agreement/BNB Consultant Doc-1",
+        "Original SSN and VISA document Needed",
+        "I-9",
+        "Core Form/NDA Form",
+        "Telecommuting",
+        "To Track the Submission (CJIS)",
+        "Name of the vendor, if any",
+        "Phone number of the POC at vendor",
+        "Email address of the POC at vendor",
+        "Pay Rate (Rate to the Vendor/Consultant)",
+        "FED ID of the vendor",
+        "Address of the vendor",
+        "MSA/Employment Letter",
+        "Work Order",
+        "COI",
+        "Billing Terms (Net 30 or Net 45)",
+        "Onboarding email to the vendor",
+        "Upload Payroll information on CEIPAL",
+        "W9/I-9",
+        "Timesheets (Weekly, LATS, Monthly, or Fortnightly)",
+        "Tracking/Arrival/Joining details of the consultant",
+        "* All verifications to be done by the support team",
+        "All files uploaded in DB",
+        "Engagement Length in Months",
+        "Visa/Passport #",
+        "Type of Visa"
+    };
+    var dict = Model.Fields.ToDictionary(f => f.FieldName!, f => f);
+}
+<form asp-action="@ViewBag.FormAction" method="post">
+    @if (Model.OnboardingId != 0)
+    {
+        <input type="hidden" asp-for="OnboardingId" />
+    }
+    <div class="mb-3">
+        <label asp-for="CandidateName" class="form-label"></label>
+        <input asp-for="CandidateName" class="form-control" />
+    </div>
+    <table class="table table-bordered">
+        <thead>
+            <tr><th>Item</th><th>Owner</th><th>Value</th><th>Notes</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+        @for (int i = 0; i < labels.Length; i++)
+        {
+            var lbl = labels[i];
+            dict.TryGetValue(lbl, out var f);
+            <tr>
+                <td>
+                    @lbl
+                    <input type="hidden" name="Fields[@i].FieldName" value="@lbl" />
+                    <input type="hidden" name="Fields[@i].Id" value="@(f?.Id ?? 0)" />
+                    <input type="hidden" name="Fields[@i].OnboardingId" value="@Model.OnboardingId" />
+                </td>
+                <td><input class="form-control" name="Fields[@i].Owner" value="@f?.Owner" /></td>
+                <td><input class="form-control" name="Fields[@i].Value" value="@f?.Value" /></td>
+                <td><input class="form-control" name="Fields[@i].Notes" value="@f?.Notes" /></td>
+                <td><input class="form-control" name="Fields[@i].Date" type="date" value="@f?.Date?.ToString("yyyy-MM-dd")" /></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+    <div class="mt-3">
+        <button class="btn btn-success" type="submit">Save</button>
+        <a asp-action="Index" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>

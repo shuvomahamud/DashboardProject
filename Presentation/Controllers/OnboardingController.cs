@@ -57,5 +57,61 @@ namespace Presentation.Controllers
             var ob = await response.Content.ReadFromJsonAsync<Onboarding>();
             return ob is null ? NotFound() : View(ob);
         }
+
+        [HttpGet("create")]
+        public IActionResult Create()
+        {
+            ViewBag.FormAction = "Create";
+            return View(new Onboarding { CreatedDateUtc = DateTime.UtcNow });
+        }
+
+        [HttpPost("create")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Create(Onboarding dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                ViewBag.FormAction = "Create";
+                return View(dto);
+            }
+
+            var resp = await _api.PostAsJsonAsync("api/onboarding", dto);
+            if (resp.IsSuccessStatusCode)
+                return RedirectToAction("Index");
+
+            var msg = await resp.Content.ReadAsStringAsync();
+            ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to create onboarding." : msg);
+            ViewBag.FormAction = "Create";
+            return View(dto);
+        }
+
+        [HttpGet("edit/{id:int}")]
+        public async Task<IActionResult> Edit(int id)
+        {
+            var row = await _api.GetFromJsonAsync<Onboarding>($"api/onboarding/{id}");
+            if (row == null) return NotFound();
+            ViewBag.FormAction = $"Edit/{id}";
+            return View(row);
+        }
+
+        [HttpPost("edit/{id:int}")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Edit(int id, Onboarding dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                ViewBag.FormAction = $"Edit/{id}";
+                return View(dto);
+            }
+
+            var resp = await _api.PutAsJsonAsync($"api/onboarding/{id}", dto);
+            if (resp.IsSuccessStatusCode)
+                return RedirectToAction("Index");
+
+            var msg = await resp.Content.ReadAsStringAsync();
+            ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to update onboarding." : msg);
+            ViewBag.FormAction = $"Edit/{id}";
+            return View(dto);
+        }
     }
 }
