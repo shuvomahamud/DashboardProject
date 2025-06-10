@@ -11,5 +11,7 @@ namespace Application.Interfaces
     {
         Task<IReadOnlyList<Onboarding>> GetAllAsync();
         Task<Onboarding?> GetAsync(int id);
+        Task<Onboarding?> CreateAsync(Onboarding entity);
+        Task<bool> UpdateAsync(Onboarding entity);
     }
 }
