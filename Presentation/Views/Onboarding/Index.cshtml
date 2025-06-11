@@ -14,13 +14,17 @@
             $('#tblOb').DataTable({
                 ajax: { url: base + 'api/onboarding', dataSrc: '' },
                 columns:[
-                    { data:'onboardingId', title:'#',
+                    { data:'onboardingId', title:'ID',
                       render:(d)=>`<a href="/onboarding/detail/${d}">${d}</a>` },
                     { data:'candidateName', title:'Candidate' },
                     { data:'createdDateUtc', title:'Created',
                       render:(d)=> d?d.split('T')[0] : '' },
-                    { data:'fields', title:'# Items',
-                      render:(arr)=> arr?.length ?? 0 }
+                    { data: null, title: 'Actions', orderable: false,
+                      render: (data, type, row) => `
+                        <a href="/onboarding/detail/${row.onboardingId}" class="btn btn-sm btn-info">Detail</a>
+                        <a href="/onboarding/edit/${row.onboardingId}" class="btn btn-sm btn-primary ms-1">Edit</a>
+                      `
+                    }
                 ]
             });
         });

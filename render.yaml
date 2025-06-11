@@ -1,0 +1,21 @@
+services:
+  - name: dashboard-api
+    type: web
+    env: docker
+    plan: free
+    dockerfilePath: ./API/Dockerfile
+    # Exposes Kestrel default port 8080 inside container
+    envVars:
+      - fromGroup: dashboard-common          # see step 3
+
+  - name: dashboard-ui
+    type: web
+    env: docker
+    plan: free
+    dockerfilePath: ./Presentation/Dockerfile
+    envVars:
+      - fromGroup: dashboard-common
+      - key: API_BASE_URL                    # UI needs this
+        fromService:
+          name: dashboard-api
+          type: web

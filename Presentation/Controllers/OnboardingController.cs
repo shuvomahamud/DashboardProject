@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
+using Application.Services;
 
 namespace Presentation.Controllers
 {
@@ -12,7 +13,7 @@ namespace Presentation.Controllers
     /// UI-side controller (views only).  
     /// All data comes from the API project via HttpClient.
     /// </summary>
-    [Route("[controller]")]
+    [Route("onboarding")]
     public sealed class OnboardingController : Controller
     {
         private readonly HttpClient _api;
@@ -26,6 +27,11 @@ namespace Presentation.Controllers
         // GET  /onboarding
         [HttpGet("")]
         public IActionResult Index() => View();             // table is filled by JS
+
+        // GET  /onboarding/Data - for DataTable AJAX
+        [HttpGet("Data")]
+        public async Task<IActionResult> Data()
+            => Json(await _api.GetFromJsonAsync<IEnumerable<Onboarding>>("api/onboarding"));
 
         // GET  /onboarding/detail/5
         [HttpGet("detail/{id:int}")]
@@ -54,7 +60,6 @@ namespace Presentation.Controllers
         [HttpGet("create")]
         public IActionResult Create()
         {
-            ViewBag.FormAction = "Create";
             return View(new Onboarding { CreatedDateUtc = DateTime.UtcNow });
         }
 
@@ -64,9 +69,10 @@ namespace Presentation.Controllers
         {
             if (!ModelState.IsValid)
             {
-                ViewBag.FormAction = "Create";
                 return View(dto);
             }
+
+            DateTimeHelper.EnsureAllOnboardingDateTimesUtc(dto);
 
             var resp = await _api.PostAsJsonAsync("api/onboarding", dto);
             if (resp.IsSuccessStatusCode)
@@ -74,7 +80,6 @@ namespace Presentation.Controllers
 
             var msg = await resp.Content.ReadAsStringAsync();
             ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to create onboarding." : msg);
-            ViewBag.FormAction = "Create";
             return View(dto);
         }
 
@@ -83,7 +88,6 @@ namespace Presentation.Controllers
         {
             var row = await _api.GetFromJsonAsync<Onboarding>($"api/onboarding/{id}");
             if (row == null) return NotFound();
-            ViewBag.FormAction = $"Edit/{id}";
             return View(row);
         }
 
@@ -93,17 +97,17 @@ namespace Presentation.Controllers
         {
             if (!ModelState.IsValid)
             {
-                ViewBag.FormAction = $"Edit/{id}";
                 return View(dto);
             }
 
+            DateTimeHelper.EnsureAllOnboardingDateTimesUtc(dto);
+
             var resp = await _api.PutAsJsonAsync($"api/onboarding/{id}", dto);
             if (resp.IsSuccessStatusCode)
-                return RedirectToAction("Index");
+                return RedirectToAction("Detail", new { id = id });
 
             var msg = await resp.Content.ReadAsStringAsync();
             ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to update onboarding." : msg);
-            ViewBag.FormAction = $"Edit/{id}";
             return View(dto);
         }
     }

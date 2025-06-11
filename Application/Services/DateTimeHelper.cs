@@ -4,51 +4,60 @@ namespace Application.Services
 {
     public static class DateTimeHelper
     {
+        /// <summary>
+        /// Converts a DateTime? to UTC, handling all Kind scenarios properly for PostgreSQL
+        /// </summary>
+        public static DateTime? ToUtc(DateTime? dt)
+            => dt.HasValue
+                 ? DateTime.SpecifyKind(
+                       dt.Value.Kind == DateTimeKind.Utc
+                           ? dt.Value
+                           : (dt.Value.Kind == DateTimeKind.Unspecified
+                               ? DateTime.SpecifyKind(dt.Value, DateTimeKind.Local).ToUniversalTime()
+                               : dt.Value.ToUniversalTime()),
+                       DateTimeKind.Utc)
+                 : null;
+
         // For TodoTask
         public static void EnsureAllTodoDateTimesUtc(TodoTask dto)
         {
-            if (dto.TriggerDateUtc.HasValue)
-                dto.TriggerDateUtc = DateTime.SpecifyKind(dto.TriggerDateUtc.Value, DateTimeKind.Utc);
-            if (dto.InternalDueDateUtc.HasValue)
-                dto.InternalDueDateUtc = DateTime.SpecifyKind(dto.InternalDueDateUtc.Value, DateTimeKind.Utc);
-            if (dto.ActualDueDateUtc.HasValue)
-                dto.ActualDueDateUtc = DateTime.SpecifyKind(dto.ActualDueDateUtc.Value, DateTimeKind.Utc);
-            if (dto.NextDueDateUtc.HasValue)
-                dto.NextDueDateUtc = DateTime.SpecifyKind(dto.NextDueDateUtc.Value, DateTimeKind.Utc);
+            dto.TriggerDateUtc = ToUtc(dto.TriggerDateUtc);
+            dto.InternalDueDateUtc = ToUtc(dto.InternalDueDateUtc);
+            dto.ActualDueDateUtc = ToUtc(dto.ActualDueDateUtc);
+            dto.NextDueDateUtc = ToUtc(dto.NextDueDateUtc);
         }
 
         // For AccountsPayable
         public static void EnsureAllApDateTimesUtc(AccountsPayable dto)
         {
-            if (dto.StartEndDate.HasValue)
-                dto.StartEndDate = DateTime.SpecifyKind(dto.StartEndDate.Value, DateTimeKind.Utc);
-            if (dto.TimesheetApprovalDate.HasValue)
-                dto.TimesheetApprovalDate = DateTime.SpecifyKind(dto.TimesheetApprovalDate.Value, DateTimeKind.Utc);
-            if (dto.VendorInvoiceDate.HasValue)
-                dto.VendorInvoiceDate = DateTime.SpecifyKind(dto.VendorInvoiceDate.Value, DateTimeKind.Utc);
-            if (dto.PaymentDueDate.HasValue)
-                dto.PaymentDueDate = DateTime.SpecifyKind(dto.PaymentDueDate.Value, DateTimeKind.Utc);
+            dto.StartEndDate = ToUtc(dto.StartEndDate);
+            dto.TimesheetApprovalDate = ToUtc(dto.TimesheetApprovalDate);
+            dto.VendorInvoiceDate = ToUtc(dto.VendorInvoiceDate);
+            dto.PaymentDueDate = ToUtc(dto.PaymentDueDate);
         }
 
         // For Interview
         public static void EnsureAllInterviewDateTimesUtc(Interview dto)
         {
-            if (dto.MailReceivedDateUtc.HasValue)
-                dto.MailReceivedDateUtc = DateTime.SpecifyKind(dto.MailReceivedDateUtc.Value, DateTimeKind.Utc);
-            if (dto.MailedDatesToConsultantUtc.HasValue)
-                dto.MailedDatesToConsultantUtc = DateTime.SpecifyKind(dto.MailedDatesToConsultantUtc.Value, DateTimeKind.Utc);
-            if (dto.InterviewConfirmedByClientUtc.HasValue)
-                dto.InterviewConfirmedByClientUtc = DateTime.SpecifyKind(dto.InterviewConfirmedByClientUtc.Value, DateTimeKind.Utc);
-            if (dto.TimeOfInterviewUtc.HasValue)
-                dto.TimeOfInterviewUtc = DateTime.SpecifyKind(dto.TimeOfInterviewUtc.Value, DateTimeKind.Utc);
+            dto.MailReceivedDateUtc = ToUtc(dto.MailReceivedDateUtc);
+            dto.MailedDatesToConsultantUtc = ToUtc(dto.MailedDatesToConsultantUtc);
+            dto.InterviewConfirmedByClientUtc = ToUtc(dto.InterviewConfirmedByClientUtc);
+            dto.TimeOfInterviewUtc = ToUtc(dto.TimeOfInterviewUtc);
         }
 
-        // For Onboarding (if you have DateTime fields)
+        // For Onboarding
         public static void EnsureAllOnboardingDateTimesUtc(Onboarding dto)
         {
-            if (dto.CreatedDateUtc.HasValue)
-                dto.CreatedDateUtc = DateTime.SpecifyKind(dto.CreatedDateUtc.Value, DateTimeKind.Utc);
-            // Add any more Onboarding date/time fields here!
+            dto.CreatedDateUtc = ToUtc(dto.CreatedDateUtc);
+            
+            // Handle all dynamic field dates
+            if (dto.Fields != null)
+            {
+                foreach (var field in dto.Fields)
+                {
+                    field.Date = ToUtc(field.Date);
+                }
+            }
         }
     }
 }

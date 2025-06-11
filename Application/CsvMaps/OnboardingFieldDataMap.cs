@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Application.Services;
 
 namespace Application.CsvMaps
 {
@@ -70,16 +71,15 @@ namespace Application.CsvMaps
                         this, memberMapData, text, row.Context,
                         $"\"{item}\" expects MM/dd/yyyy – got \"{text}\".");
 
-                // Parse as *local* date then convert to UTC (so it can be
-                // written into a timestamp-with-time-zone column or be
-                // converted later).
+                // Parse as *local* date then convert to UTC using DateTimeHelper
                 DateTime local = DateTime.ParseExact(
                                     match.Value,
                                     "MM/dd/yyyy",
                                     CultureInfo.InvariantCulture,
                                     DateTimeStyles.AssumeLocal);
 
-                return DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+                // Use DateTimeHelper.ToUtc to properly convert to UTC for PostgreSQL
+                return DateTimeHelper.ToUtc(DateTime.SpecifyKind(local, DateTimeKind.Unspecified));
             }
         }
     }

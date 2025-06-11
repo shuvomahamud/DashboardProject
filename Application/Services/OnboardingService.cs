@@ -16,10 +16,17 @@ namespace Application.Services
 
         public Task<IReadOnlyList<Onboarding>> GetAllAsync() => _dal.GetOnboardingsAsync();
         public Task<Onboarding?> GetAsync(int id) => _dal.GetOnboardingAsync(id);
-        public Task<Onboarding?> CreateAsync(Onboarding entity)
-                    => _dal.AddAsync(entity);
+        
+        public async Task<Onboarding?> CreateAsync(Onboarding entity)
+        {
+            DateTimeHelper.EnsureAllOnboardingDateTimesUtc(entity);
+            return await _dal.AddAsync(entity);
+        }
 
-        public Task<bool> UpdateAsync(Onboarding entity)
-            => _dal.UpdateAsync(entity);
+        public async Task<bool> UpdateAsync(Onboarding entity)
+        {
+            DateTimeHelper.EnsureAllOnboardingDateTimesUtc(entity);
+            return await _dal.UpdateAsync(entity);
+        }
     }
 }

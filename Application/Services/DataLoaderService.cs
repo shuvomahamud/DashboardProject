@@ -24,13 +24,18 @@ namespace Application.Services
                     csvRdr.Context.RegisterClassMap<InterviewMap>();
                     var interviews = csvRdr.GetRecords<Interview>().ToList();
                     foreach (var interview in interviews)
+                    {
                         BooleanDefaultsHelper.SetInterviewBooleanDefaults(interview);
+                        DateTimeHelper.EnsureAllInterviewDateTimesUtc(interview);
+                    }
                     await _dal.BulkInsertAsync(interviews);
                     return interviews.Count;
 
                 case "ap":
                     csvRdr.Context.RegisterClassMap<ApReportMap>();
                     var aps = csvRdr.GetRecords<AccountsPayable>().ToList();
+                    foreach (var ap in aps)
+                        DateTimeHelper.EnsureAllApDateTimesUtc(ap);
                     await _dal.BulkInsertAsync(aps);
                     return aps.Count;
 
@@ -49,6 +54,7 @@ namespace Application.Services
                             CreatedDateUtc = DateTime.UtcNow,  // keep this one truly UTC
                             Fields = rows
                         };
+                        DateTimeHelper.EnsureAllOnboardingDateTimesUtc(master);
                         await _dal.BulkInsertAsync(master);
                         return rows.Count;
                     }
@@ -57,7 +63,10 @@ namespace Application.Services
                     csvRdr.Context.RegisterClassMap<TodoTaskMap>();
                     var todos = csvRdr.GetRecords<TodoTask>().ToList();
                     foreach (var todo in todos)
+                    {
                         BooleanDefaultsHelper.SetTodoTaskBooleanDefaults(todo);
+                        DateTimeHelper.EnsureAllTodoDateTimesUtc(todo);
+                    }
                     await _dal.BulkInsertAsync(todos);
                     return todos.Count;
 

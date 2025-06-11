@@ -128,6 +128,7 @@ namespace Infrastructure
                 e.Property(o => o.CandidateName).HasColumnName("candidatename");
                 e.Property(o => o.CreatedDateUtc)
                     .HasColumnName("createddate")
+                    .HasColumnType("timestamptz")
                     .HasConversion(v => v.GetValueOrDefault(), d => DateTime.SpecifyKind(d, DateTimeKind.Utc));
             });
 
@@ -145,7 +146,7 @@ namespace Infrastructure
                 e.Property(f => f.Notes).HasColumnName("notes");
                 e.Property(f => f.Date)
                     .HasColumnName("dateutc")
-                    .HasColumnType("timestamp");        // nullable
+                    .HasColumnType("timestamptz");        // nullable
 
                 e.HasOne(f => f.Onboarding)
                  .WithMany(o => o.Fields)

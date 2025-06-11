@@ -27,6 +27,7 @@ namespace Infrastructure.Services
         {
             try
             {
+                Application.Services.DateTimeHelper.EnsureAllOnboardingDateTimesUtc(master);
                 _db.Onboardings.Add(master);
                 await _db.SaveChangesAsync();
             }
@@ -181,6 +182,7 @@ namespace Infrastructure.Services
 
         public async Task<Onboarding> AddAsync(Onboarding ob)
         {
+            Application.Services.DateTimeHelper.EnsureAllOnboardingDateTimesUtc(ob);
             _db.Onboardings.Add(ob);
             await _db.SaveChangesAsync();
             return ob;
@@ -188,6 +190,7 @@ namespace Infrastructure.Services
 
         public async Task<bool> UpdateAsync(Onboarding ob)
         {
+            Application.Services.DateTimeHelper.EnsureAllOnboardingDateTimesUtc(ob);
             // update master
             _db.Onboardings.Update(ob);
             foreach (var f in ob.Fields)
