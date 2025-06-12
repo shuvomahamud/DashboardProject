@@ -12,6 +12,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 builder.Services.AddInfrastructure(builder.Configuration);
 
+var apiBaseFromEnv = Environment.GetEnvironmentVariable("API_BASE_URL");
+
+if (!string.IsNullOrWhiteSpace(apiBaseFromEnv))
+    builder.Configuration["API:BaseAddress"] = apiBaseFromEnv;
 // Register the API HttpClient
 builder.Services.AddHttpClient("APIClient", client =>
 {
