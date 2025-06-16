@@ -1,0 +1,32 @@
+name: Deploy API to Azure Web App
+
+on:
+  push:
+    branches: [ production ]       # deploy only this branch
+    paths:
+      - 'API/**'                   # build only when API changed
+      - '.github/workflows/api-deploy.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Publish API
+      run: dotnet publish API/API.csproj -c Release -o publish
+
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: dash-api-prod                       # exact Web App name
+        slot-name: production
+        publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
+        package: publish
