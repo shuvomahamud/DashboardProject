@@ -1,7 +1,7 @@
 ﻿using Application.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
-namespace API.Controllers
+namespace Presentation.Controllers.Api
 {
     [Route("api/[controller]"), ApiController]
     public sealed class OnboardingController : ControllerBase

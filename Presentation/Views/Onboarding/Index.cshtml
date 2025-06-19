@@ -9,7 +9,7 @@
 
 @section Scripts {
     <script>
-        const base = $('meta[name="api-base"]').attr('content');
+        const base = "/";   // Local API calls
         $(function(){
             $('#tblOb').DataTable({
                 ajax: { url: base + 'api/onboarding', dataSrc: '' },

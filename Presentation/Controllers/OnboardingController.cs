@@ -1,26 +1,23 @@
-﻿using System.IO;
-using System.Net;
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Application.Services;
+using Application.Interfaces;
 
 namespace Presentation.Controllers
 {
     /// <summary>
     /// UI-side controller (views only).  
-    /// All data comes from the API project via HttpClient.
+    /// All data comes from services directly.
     /// </summary>
     [Route("onboarding")]
     public sealed class OnboardingController : Controller
     {
-        private readonly HttpClient _api;
+        private readonly IOnboardingService _onboardingService;
         private readonly ILogger<OnboardingController> _log;
-        public OnboardingController(IHttpClientFactory f, ILogger<OnboardingController> log)
+        public OnboardingController(IOnboardingService onboardingService, ILogger<OnboardingController> log)
         {
-            _api = f.CreateClient("APIClient");
+            _onboardingService = onboardingService;
             _log = log;
         }
 
@@ -31,29 +28,15 @@ namespace Presentation.Controllers
         // GET  /onboarding/Data - for DataTable AJAX
         [HttpGet("Data")]
         public async Task<IActionResult> Data()
-            => Json(await _api.GetFromJsonAsync<IEnumerable<Onboarding>>("api/onboarding"));
+            => Json(await _onboardingService.GetAllAsync());
 
         // GET  /onboarding/detail/5
         [HttpGet("detail/{id:int}")]
         public async Task<IActionResult> Detail(int id)
         {
-            var path = $"api/onboarding/{id}";          // relative to BaseAddress
+            _log.LogInformation("Getting onboarding details for ID: {Id}", id);
 
-            // Optional: quick log so you see the final URL in the console
-            _log.LogInformation("GET {FullUrl}", new Uri(_api.BaseAddress!, path));
-
-            // the named client already has BaseAddress = https://localhost:7016/
-            var response = await _api.GetAsync(path);
-
-            if (response.StatusCode == HttpStatusCode.NotFound)
-                return NotFound();
-
-            if (!response.IsSuccessStatusCode)
-                // bubble the real status back to the browser instead of 500
-                return StatusCode((int)response.StatusCode,
-                                  $"API error: {(int)response.StatusCode}");
-
-            var ob = await response.Content.ReadFromJsonAsync<Onboarding>();
+            var ob = await _onboardingService.GetAsync(id);
             return ob is null ? NotFound() : View(ob);
         }
 
@@ -74,19 +57,18 @@ namespace Presentation.Controllers
 
             DateTimeHelper.EnsureAllOnboardingDateTimesUtc(dto);
 
-            var resp = await _api.PostAsJsonAsync("api/onboarding", dto);
-            if (resp.IsSuccessStatusCode)
+            var result = await _onboardingService.CreateAsync(dto);
+            if (result != null)
                 return RedirectToAction("Index");
 
-            var msg = await resp.Content.ReadAsStringAsync();
-            ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to create onboarding." : msg);
+            ModelState.AddModelError("", "Failed to create onboarding.");
             return View(dto);
         }
 
         [HttpGet("edit/{id:int}")]
         public async Task<IActionResult> Edit(int id)
         {
-            var row = await _api.GetFromJsonAsync<Onboarding>($"api/onboarding/{id}");
+            var row = await _onboardingService.GetAsync(id);
             if (row == null) return NotFound();
             return View(row);
         }
@@ -102,12 +84,11 @@ namespace Presentation.Controllers
 
             DateTimeHelper.EnsureAllOnboardingDateTimesUtc(dto);
 
-            var resp = await _api.PutAsJsonAsync($"api/onboarding/{id}", dto);
-            if (resp.IsSuccessStatusCode)
+            var success = await _onboardingService.UpdateAsync(dto);
+            if (success)
                 return RedirectToAction("Detail", new { id = id });
 
-            var msg = await resp.Content.ReadAsStringAsync();
-            ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to update onboarding." : msg);
+            ModelState.AddModelError("", "Failed to update onboarding.");
             return View(dto);
         }
     }

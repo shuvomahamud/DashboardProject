@@ -4,14 +4,16 @@ namespace Presentation.Controllers
 {
     public class SheetSyncController : Controller
     {
-        private readonly HttpClient _api;
+        private readonly HttpClient _httpClient;
         public SheetSyncController(IHttpClientFactory f)
-            => _api = f.CreateClient("APIClient");     // BaseAddress = https://localhost:7016/
+            => _httpClient = f.CreateClient();     // Use default HTTP client for local calls
 
         public async Task<IActionResult> Index()
         {
-            var dict = await _api.GetFromJsonAsync<Dictionary<string, string>>(
-                           "api/sheets/config") ?? new();
+            // Call the local API endpoint
+            var baseUrl = $"{Request.Scheme}://{Request.Host}";
+            var dict = await _httpClient.GetFromJsonAsync<Dictionary<string, string>>(
+                           $"{baseUrl}/api/sheets/config") ?? new();
             return View(dict);   // dictionary => ViewBag for Razor simplicity
         }
     }

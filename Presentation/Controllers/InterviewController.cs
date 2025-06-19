@@ -1,7 +1,7 @@
 ﻿using Domain.Entities;
+using Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Net.Http.Json;
 
 namespace Presentation.Controllers;
 
@@ -9,21 +9,21 @@ namespace Presentation.Controllers;
 [Route("interview")]
 public class InterviewController : Controller
 {
-    private readonly HttpClient _api;
-    public InterviewController(IHttpClientFactory f)
-        => _api = f.CreateClient("APIClient");
+    private readonly IInterviewService _interviewService;
+    public InterviewController(IInterviewService interviewService)
+        => _interviewService = interviewService;
 
     [HttpGet("")]
     public IActionResult Index() => View();
 
     [HttpGet("Data")]
     public async Task<IActionResult> Data()
-        => Json(await _api.GetFromJsonAsync<IEnumerable<Interview>>("api/interview"));
+        => Json(await _interviewService.GetAllAsync());
 
     [HttpGet("Detail/{id:int}")]
     public async Task<IActionResult> Detail(int id)
     {
-        var row = await _api.GetFromJsonAsync<Interview>($"api/interview/{id}");
+        var row = await _interviewService.GetAsync(id);
         return row is null ? NotFound() : View(row);
     }
 
@@ -49,12 +49,11 @@ public class InterviewController : Controller
 
         // DateTimeHelper.EnsureAllInterviewDateTimesUtc(dto); // Call your helper if you use it
 
-        var resp = await _api.PostAsJsonAsync("api/interview", dto);
-        if (resp.IsSuccessStatusCode)
+        var result = await _interviewService.CreateAsync(dto);
+        if (result != null)
             return RedirectToAction("Index");
 
-        var msg = await resp.Content.ReadAsStringAsync();
-        ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to create interview." : msg);
+        ModelState.AddModelError("", "Failed to create interview.");
         ViewBag.FormAction = "Create";
         return View(dto);
     }
@@ -62,7 +61,7 @@ public class InterviewController : Controller
     [HttpGet("Edit/{id:int}")]
     public async Task<IActionResult> Edit(int id)
     {
-        var row = await _api.GetFromJsonAsync<Interview>($"api/interview/{id}");
+        var row = await _interviewService.GetAsync(id);
         if (row == null) return NotFound();
         ViewBag.FormAction = $"Edit/{id}";
         return View(row);
@@ -82,12 +81,11 @@ public class InterviewController : Controller
 
         // DateTimeHelper.EnsureAllInterviewDateTimesUtc(dto); // Call your helper if you use it
 
-        var resp = await _api.PutAsJsonAsync($"api/interview/{id}", dto);
-        if (resp.IsSuccessStatusCode)
+        var success = await _interviewService.UpdateAsync(dto);
+        if (success)
             return RedirectToAction("Index");
 
-        var msg = await resp.Content.ReadAsStringAsync();
-        ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to update interview." : msg);
+        ModelState.AddModelError("", "Failed to update interview.");
         ViewBag.FormAction = $"Edit/{id}";
         return View(dto);
     }
@@ -96,9 +94,9 @@ public class InterviewController : Controller
     [HttpPost("Save")]
     public async Task<IActionResult> Save(Interview dto)
     {
-        var resp = await _api.PutAsJsonAsync($"api/interview/{dto.InterviewId}", dto);
-        return resp.IsSuccessStatusCode
+        var success = await _interviewService.UpdateAsync(dto);
+        return success
              ? RedirectToAction("Index")
-             : StatusCode((int)resp.StatusCode);
+             : StatusCode(500);
     }
 }

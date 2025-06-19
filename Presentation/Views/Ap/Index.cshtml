@@ -24,9 +24,7 @@
 @section Scripts {
     <script>
         $(function () {
-            const apiBase = document
-                .querySelector('meta[name="api-base"]').content
-                .replace(/\/?$/, '/');
+                        const apiBase = "/";       // Local API calls
             const apUrl = `${apiBase}api/accountspayable`;
 
             $('#apTable').DataTable({

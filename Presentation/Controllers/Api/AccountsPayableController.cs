@@ -3,7 +3,7 @@ using Application.Services;
 using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
-namespace API.Controllers;
+namespace Presentation.Controllers.Api;
 
 [ApiController]
 [Route("api/accountspayable")]

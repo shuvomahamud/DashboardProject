@@ -23,7 +23,7 @@ document.getElementById('uploadForm').addEventListener('submit', async e => {
     e.preventDefault();
     const fd = new FormData(e.target);
 
-    const res = await fetch('https://localhost:7016/api/dataloader', {
+            const res = await fetch('/api/dataloader', {
         method: 'POST',
         body: fd,
         credentials: 'include'        // <<<<<<< send cookie!

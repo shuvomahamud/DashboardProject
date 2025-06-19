@@ -29,8 +29,8 @@
             const srcForm = new FormData(e.target);
             const payload = Object.fromEntries(srcForm.entries());
 
-            /* 1️⃣  remote API ------------------------------------------------ */
-            const apiRes = await fetch('https://localhost:7016/api/account/login', {
+            /* 1️⃣  local API ------------------------------------------------ */
+            const apiRes = await fetch('/api/account/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',

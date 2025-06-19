@@ -10,7 +10,7 @@ using Application.Services; // For GoogleSheetsHelper
 using Microsoft.Extensions.Configuration;
 using System.Text.RegularExpressions;
 
-namespace API.Controllers
+namespace Presentation.Controllers.Api
 {
     [ApiController]
     [Route("api/sheets")]

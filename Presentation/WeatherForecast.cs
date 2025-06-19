@@ -1,4 +1,4 @@
-namespace API
+namespace Presentation
 {
     public class WeatherForecast
     {

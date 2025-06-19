@@ -21,7 +21,7 @@
 @section Scripts
 {
     <script>
-        const base = $('meta[name="api-base"]').attr('content');   // https://localhost:7016/
+                    const base = "/";   // Local API calls
         $('#tbl').DataTable({
             ajax:{ url: base + 'api/interview', dataSrc:'' },
             columns:[

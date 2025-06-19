@@ -2,29 +2,28 @@
 using Domain.Entities;                 // TodoTask
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Net.Http.Json;
+using Application.Interfaces;
 
 namespace Presentation.Controllers;
 [Authorize]
 [Route("[controller]")]      //  <-- will become “/Todo”
 public class TodoController : Controller
 {
-    private readonly HttpClient _api;
-    public TodoController(IHttpClientFactory f)
-        => _api = f.CreateClient("APIClient");
+    private readonly ITodoService _todoService;
+    public TodoController(ITodoService todoService)
+        => _todoService = todoService;
 
     [HttpGet("")]
     public IActionResult Index() => View();
 
     [HttpGet("Data")]
     public async Task<IActionResult> Data()
-        => Json(await _api.GetFromJsonAsync<IEnumerable<TodoTask>>(
-                   "api/todo?sort=nextduedate"));
+        => Json(await _todoService.GetAllAsync());
 
     [HttpGet("Detail/{id:int}")]
     public async Task<IActionResult> Detail(int id)
     {
-        var row = await _api.GetFromJsonAsync<TodoTask>($"api/todo/{id}");
+        var row = await _todoService.GetAsync(id);
         return row is null ? NotFound() : View(row);
     }
     [HttpGet("Create")]
@@ -41,12 +40,11 @@ public class TodoController : Controller
         dto.FollowUpNeeded = Request.Form["FollowUpNeeded"].Contains("true") ? true : false;
         dto.Recurring = Request.Form["Recurring"].Contains("true") ? true : false;
         
-        // Call API to create (POST/PUT) as needed
-        var resp = await _api.PostAsJsonAsync("api/todo", dto);
-        if (resp.IsSuccessStatusCode)
+        // Call service directly to create
+        var result = await _todoService.CreateAsync(dto);
+        if (result != null)
             return RedirectToAction("Index");
-        var msg = await resp.Content.ReadAsStringAsync();
-        ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to create task." : msg);
+        ModelState.AddModelError("", "Failed to create task.");
 
         return View(dto);
     }
@@ -54,7 +52,7 @@ public class TodoController : Controller
     [HttpGet("Edit/{id:int}")]
     public async Task<IActionResult> Edit(int id)
     {
-        var row = await _api.GetFromJsonAsync<TodoTask>($"api/todo/{id}");
+        var row = await _todoService.GetAsync(id);
         return row is null ? NotFound() : View(row);
     }
 
@@ -69,8 +67,8 @@ public class TodoController : Controller
         dto.FollowUpNeeded = Request.Form["FollowUpNeeded"].Contains("true") ? true : false;
         dto.Recurring = Request.Form["Recurring"].Contains("true") ? true : false;
 
-        var resp = await _api.PutAsJsonAsync($"api/todo/{id}", dto);
-        if (resp.IsSuccessStatusCode)
+        var success = await _todoService.UpdateAsync(dto);
+        if (success)
             return RedirectToAction("Index");
         ModelState.AddModelError("", "Failed to update task.");
         return View(dto);
@@ -79,9 +77,9 @@ public class TodoController : Controller
     [HttpPost("Save")]
     public async Task<IActionResult> Save(TodoTask dto)
     {
-        var resp = await _api.PutAsJsonAsync($"api/todo/{dto.TaskId}", dto);
-        return resp.IsSuccessStatusCode
+        var success = await _todoService.UpdateAsync(dto);
+        return success 
              ? RedirectToAction("Index")
-             : StatusCode((int)resp.StatusCode);
+             : StatusCode(500);
     }
 }

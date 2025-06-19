@@ -1,26 +1,31 @@
 ﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Presentation.Models;
+using Domain.IdentityModels;
 using System.Collections.Generic;
-using System.Data;
-using System.Net.Http;
 using System.Security.Claims;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
-using static System.Net.WebRequestMethods;
 
 namespace Presentation.Controllers
 {
     public class AccountController : Controller
     {
-        private readonly HttpClient _httpClient;
-        public AccountController(IHttpClientFactory httpClientFactory)
+        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly RoleManager<IdentityRole> _roleManager;
+
+        public AccountController(
+            UserManager<ApplicationUser> userManager, 
+            SignInManager<ApplicationUser> signInManager,
+            RoleManager<IdentityRole> roleManager)
         {
-            _httpClient = httpClientFactory.CreateClient("APIClient");
+            _userManager = userManager;
+            _signInManager = signInManager;
+            _roleManager = roleManager;
         }
 
         [HttpGet]
@@ -31,46 +36,42 @@ namespace Presentation.Controllers
         {
             if (!ModelState.IsValid) return View(model);
 
-            var json = JsonSerializer.Serialize(model);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync("api/account/login", content);
-            var body = await response.Content.ReadAsStringAsync();
-            var doc = JsonDocument.Parse(body);
-            var role = doc.RootElement.TryGetProperty("role", out var r) ? r.GetString() : "User";
-
-            if (response.IsSuccessStatusCode)
+            var user = await _userManager.FindByEmailAsync(model.Email);
+            if (user == null)
             {
-                // Create claims and sign in
-                var claims = new List<Claim>
-                {
-                    new Claim(ClaimTypes.Name, model.Email),
-                    new Claim(ClaimTypes.Role, role)
-                    // Optionally: new Claim(ClaimTypes.Role, "Admin") if you know their role
-                };
-                var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-                await HttpContext.SignInAsync(
-                    CookieAuthenticationDefaults.AuthenticationScheme,
-                    new ClaimsPrincipal(identity));
-
-                return RedirectToAction("Index", "Dashboard");
+                ModelState.AddModelError("", "Invalid email or password.");
+                return View(model);
             }
 
-            ModelState.AddModelError("", "Login failed. Check your credentials or approval status.");
-            return View(model);
+            if (!user.IsApproved)
+            {
+                ModelState.AddModelError("", "Your account is pending admin approval.");
+                return View(model);
+            }
+
+            var result = await _signInManager.PasswordSignInAsync(user, model.Password, false, false);
+            if (!result.Succeeded)
+            {
+                ModelState.AddModelError("", "Invalid email or password.");
+                return View(model);
+            }
+
+            return RedirectToAction("Index", "Dashboard");
         }
-        [HttpPost]                      // ⬅ must be POST (no [Authorize])
+
+        [HttpPost]
         [Route("/Account/LocalSignIn")]
-        [ValidateAntiForgeryToken]      // basic CSRF protection
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> LocalSignIn(
-        [FromForm] string email,
-        [FromForm] string role)
+            [FromForm] string email,
+            [FromForm] string role)
         {
             // Build the claims
             var claims = new List<Claim>
-        {
-            new(ClaimTypes.Name,  email),
-            new(ClaimTypes.Role,  role)
-        };
+            {
+                new(ClaimTypes.Name, email),
+                new(ClaimTypes.Role, role)
+            };
             var id = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             var user = new ClaimsPrincipal(id);
 
@@ -78,56 +79,66 @@ namespace Presentation.Controllers
                 CookieAuthenticationDefaults.AuthenticationScheme,
                 user);
 
-            // ➜ go to dashboard (will no longer redirect back to /Login)
             return RedirectToAction("Index", "Dashboard");
         }
+
         [HttpGet]
         public IActionResult Register()
         {
             ViewBag.Roles = new List<SelectListItem>
-    {
-        new SelectListItem("User",  "User"),
-        new SelectListItem("Admin", "Admin")
-    };
+            {
+                new SelectListItem("User", "User"),
+                new SelectListItem("Admin", "Admin")
+            };
             return View(new RegisterViewModel());
         }
-
 
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Register(RegisterViewModel model)
         {
-            var errors = ModelState.Values.SelectMany(v => v.Errors)
-                              .Select(e => e.ErrorMessage)
-                              .ToList();
-
             if (!ModelState.IsValid)
             {
                 // Re-populate Roles on error
                 ViewBag.Roles = new List<SelectListItem>
                 {
-                    new SelectListItem("User","User"),
-                    new SelectListItem("Admin","Admin")
+                    new SelectListItem("User", "User"),
+                    new SelectListItem("Admin", "Admin")
                 };
                 return View(model);
             }
 
-            var json = JsonSerializer.Serialize(model);
-            Console.WriteLine(json);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var resp = await _httpClient.PostAsync("api/account/register", content);
+            var user = new ApplicationUser
+            {
+                UserName = model.Email,
+                Email = model.Email,
+                Name = model.Name,
+                IsApproved = false // New users must be approved by an admin.
+            };
 
-            var body = await resp.Content.ReadAsStringAsync();   // ⭐ see the details
-            Console.WriteLine(body);
+            var result = await _userManager.CreateAsync(user, model.Password);
+            if (result.Succeeded)
+            {
+                var role = string.IsNullOrWhiteSpace(model.Role) ? "User" : model.Role;
+                if (!await _roleManager.RoleExistsAsync(role))
+                    await _roleManager.CreateAsync(new IdentityRole(role));
 
-            if (resp.IsSuccessStatusCode)
+                // Assign the role
+                await _userManager.AddToRoleAsync(user, role);
+                
+                TempData["Message"] = "Registration successful. Your account is pending admin approval.";
                 return RedirectToAction("Login");
+            }
 
-            ModelState.AddModelError("", "Registration failed");
+            foreach (var error in result.Errors)
+            {
+                ModelState.AddModelError("", error.Description);
+            }
+
             ViewBag.Roles = new List<SelectListItem>
             {
-                new SelectListItem("User","User"),
-                new SelectListItem("Admin","Admin")
+                new SelectListItem("User", "User"),
+                new SelectListItem("Admin", "Admin")
             };
             return View(model);
         }
@@ -140,20 +151,45 @@ namespace Presentation.Controllers
         {
             if (!ModelState.IsValid) return View(model);
 
-            var json = JsonSerializer.Serialize(model);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            await _httpClient.PostAsync("api/account/forgotpassword", content);
+            var user = await _userManager.FindByEmailAsync(model.Email);
+            if (user == null)
+            {
+                ViewBag.Message = "If an account with that email exists, a reset message was sent.";
+                return View();
+            }
 
-            ViewBag.Message = "If an account with that email exists, a reset message was sent.";
+            // Generate new random password (ensure it meets your complexity requirements)
+            var newPassword = GenerateRandomPassword();
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var resetResult = await _userManager.ResetPasswordAsync(user, token, newPassword);
+            
+            if (resetResult.Succeeded)
+            {
+                // Here you would integrate an email service to send the new password to the user's email.
+                ViewBag.Message = "Password reset successfully. Please check your email.";
+                // Note: In production, don't display the password
+                ViewBag.NewPassword = newPassword; // Only for demo purposes
+            }
+            else
+            {
+                ViewBag.Message = "Password reset failed.";
+            }
+
             return View();
         }
 
         [HttpPost]
         public async Task<IActionResult> Logout()
         {
-            // Sign out of the cookie scheme
-            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            await _signInManager.SignOutAsync();
             return RedirectToAction("Login");
+        }
+
+        private string GenerateRandomPassword()
+        {
+            // For demonstration, returning a hard-coded password.
+            // In a real scenario, generate a random password meeting your security criteria.
+            return "NewRandomPass123!";
         }
     }
 }

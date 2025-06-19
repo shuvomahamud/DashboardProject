@@ -2,7 +2,7 @@
 using Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
-namespace API.Controllers;
+namespace Presentation.Controllers.Api;
 
 [Route("api/[controller]"), ApiController]
 public class InterviewController : ControllerBase

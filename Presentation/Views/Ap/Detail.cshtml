@@ -42,7 +42,7 @@
     <script>
         $(async function () {
             const id = @Model.ApId;
-            const apiBase = document.querySelector('meta[name="api-base"]').content.replace(/\/?$/, '/');
+            const apiBase = "/";   // Local API calls
             const data = await fetch(`${apiBase}api/accountspayable/${id}`).then(r => r.json());
 
             let html = '<table class="table table-bordered w-75">';

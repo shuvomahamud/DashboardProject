@@ -26,9 +26,7 @@
         $(function () {
 
             /* --- build absolute API URL ----------------------------------- */
-            const apiBase = document
-                .querySelector('meta[name="api-base"]').content
-                .replace(/\/?$/, '/');       // exactly one “/”
+            const apiBase = "/";       // Local API calls
             const todoUrl = `${apiBase}api/todo`;
 
             /* --- DataTable ------------------------------------------------ */

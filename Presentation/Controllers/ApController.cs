@@ -1,7 +1,7 @@
 ﻿using Domain.Entities;
+using Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Net.Http.Json;
 
 namespace Presentation.Controllers
 {
@@ -9,21 +9,21 @@ namespace Presentation.Controllers
     [Route("ap")]
     public class ApController : Controller
     {
-        private readonly HttpClient _api;
-        public ApController(IHttpClientFactory f)
-            => _api = f.CreateClient("APIClient");
+        private readonly IAccountsPayableService _apService;
+        public ApController(IAccountsPayableService apService)
+            => _apService = apService;
 
         [HttpGet("")]
         public IActionResult Index() => View();
 
         [HttpGet("Data")]
         public async Task<IActionResult> Data()
-            => Json(await _api.GetFromJsonAsync<IEnumerable<AccountsPayable>>("api/ap"));
+            => Json(await _apService.GetAllAsync());
 
         [HttpGet("Detail/{id:int}")]
         public async Task<IActionResult> Detail(int id)
         {
-            var row = await _api.GetFromJsonAsync<AccountsPayable>($"api/accountspayable/{id}");
+            var row = await _apService.GetAsync(id);
             return row is null ? NotFound() : View(row);
         }
 
@@ -41,11 +41,10 @@ namespace Presentation.Controllers
             dto.HoursMatchInvoice = Request.Form["HoursMatchInvoice"].Contains("true");
             dto.TimesheetsApproved = Request.Form["TimesheetsApproved"].Contains("true");
 
-            var resp = await _api.PostAsJsonAsync("api/accountspayable", dto);
-            if (resp.IsSuccessStatusCode)
+            var result = await _apService.CreateAsync(dto);
+            if (result != null)
                 return RedirectToAction("Index");
-            var msg = await resp.Content.ReadAsStringAsync();
-            ModelState.AddModelError("", string.IsNullOrWhiteSpace(msg) ? "Failed to create record." : msg);
+            ModelState.AddModelError("", "Failed to create record.");
 
             return View(dto);
         }
@@ -53,7 +52,7 @@ namespace Presentation.Controllers
         [HttpGet("Edit/{id:int}")]
         public async Task<IActionResult> Edit(int id)
         {
-            var row = await _api.GetFromJsonAsync<AccountsPayable>($"api/accountspayable/{id}");
+            var row = await _apService.GetAsync(id);
             return row is null ? NotFound() : View(row);
         }
 
@@ -67,8 +66,8 @@ namespace Presentation.Controllers
             dto.HoursMatchInvoice = Request.Form["HoursMatchInvoice"].Contains("true");
             dto.TimesheetsApproved = Request.Form["TimesheetsApproved"].Contains("true");
 
-            var resp = await _api.PutAsJsonAsync($"api/accountspayable/{id}", dto);
-            if (resp.IsSuccessStatusCode)
+            var success = await _apService.UpdateAsync(dto);
+            if (success)
                 return RedirectToAction("Index");
             ModelState.AddModelError("", "Failed to update record.");
             return View(dto);
@@ -77,10 +76,10 @@ namespace Presentation.Controllers
         [HttpPost("Save")]
         public async Task<IActionResult> Save(AccountsPayable dto)
         {
-            var resp = await _api.PutAsJsonAsync($"api/accountspayable/{dto.ApId}", dto);
-            return resp.IsSuccessStatusCode
+            var success = await _apService.UpdateAsync(dto);
+            return success
                  ? RedirectToAction("Index")
-                 : StatusCode((int)resp.StatusCode);
+                 : StatusCode(500);
         }
     }
 }
