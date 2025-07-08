@@ -1,0 +1,42 @@
+{
+  "name": "dashboard-next",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "setup": "npx tsx scripts/setup-env.ts",
+    "test-db": "npx tsx scripts/test-db-and-create-user.ts",
+    "setup-and-test": "npm run setup && npm run test-db"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "^2.10.0",
+    "@prisma/client": "^6.11.1",
+    "@types/react-bootstrap": "^1.0.1",
+    "bcrypt": "^6.0.0",
+    "bootstrap": "^5.3.7",
+    "date-fns": "^4.1.0",
+    "next": "15.3.5",
+    "next-auth": "^4.24.11",
+    "prisma": "^6.11.1",
+    "react": "^19.0.0",
+    "react-bootstrap": "^3.0.0-beta.2",
+    "react-data-table-component": "^7.7.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/bcrypt": "^5.0.2",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.3.5",
+    "tailwindcss": "^4",
+    "tsx": "^4.20.0",
+    "typescript": "^5"
+  }
+}

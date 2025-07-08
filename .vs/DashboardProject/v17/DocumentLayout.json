@@ -1,0 +1,110 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{70422CF9-A579-4FCB-8476-D3373233D3F2}|API\\API.csproj|c:\\users\\shuvo-user\\source\\repos\\shuvomahamud\\dashboardproject\\api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{70422CF9-A579-4FCB-8476-D3373233D3F2}|API\\API.csproj|solutionrelative:api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{70422CF9-A579-4FCB-8476-D3373233D3F2}|API\\API.csproj|c:\\users\\shuvo-user\\source\\repos\\shuvomahamud\\dashboardproject\\api\\secrets\\dashboardproject-credentials.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{70422CF9-A579-4FCB-8476-D3373233D3F2}|API\\API.csproj|solutionrelative:api\\secrets\\dashboardproject-credentials.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{BA1D4447-1608-4B7E-9BD1-7BC012DD08DF}|Presentation\\Presentation.csproj|c:\\users\\shuvo-user\\source\\repos\\shuvomahamud\\dashboardproject\\presentation\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{BA1D4447-1608-4B7E-9BD1-7BC012DD08DF}|Presentation\\Presentation.csproj|solutionrelative:presentation\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{BA1D4447-1608-4B7E-9BD1-7BC012DD08DF}|Presentation\\Presentation.csproj|c:\\users\\shuvo-user\\source\\repos\\shuvomahamud\\dashboardproject\\presentation\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{BA1D4447-1608-4B7E-9BD1-7BC012DD08DF}|Presentation\\Presentation.csproj|solutionrelative:presentation\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{70422CF9-A579-4FCB-8476-D3373233D3F2}|API\\API.csproj|c:\\users\\shuvo-user\\source\\repos\\shuvomahamud\\dashboardproject\\api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{70422CF9-A579-4FCB-8476-D3373233D3F2}|API\\API.csproj|solutionrelative:api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 6,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{0174dea2-fdbe-4ef1-8f99-c0beae78880f}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "dashboardproject-credentials.json",
+              "DocumentMoniker": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\API\\secrets\\dashboardproject-credentials.json",
+              "RelativeDocumentMoniker": "API\\secrets\\dashboardproject-credentials.json",
+              "ToolTip": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\API\\secrets\\dashboardproject-credentials.json",
+              "RelativeToolTip": "API\\secrets\\dashboardproject-credentials.json",
+              "ViewState": "AgIAAAkAAAAAAAAAAAAAAA0AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-06-12T16:46:36.369Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\Presentation\\Program.cs",
+              "RelativeDocumentMoniker": "Presentation\\Program.cs",
+              "ToolTip": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\Presentation\\Program.cs",
+              "RelativeToolTip": "Presentation\\Program.cs",
+              "ViewState": "AgIAAAYAAAAAAAAAAAAAABEAAAAsAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-06-11T20:07:40.484Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\Presentation\\appsettings.json",
+              "RelativeDocumentMoniker": "Presentation\\appsettings.json",
+              "ToolTip": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\Presentation\\appsettings.json",
+              "RelativeToolTip": "Presentation\\appsettings.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA0AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-06-11T19:58:35.655Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\API\\Program.cs",
+              "RelativeDocumentMoniker": "API\\Program.cs",
+              "ToolTip": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\API\\Program.cs",
+              "RelativeToolTip": "API\\Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-06-11T19:58:25.316Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "appsettings.json",
+              "DocumentMoniker": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\API\\appsettings.json",
+              "RelativeDocumentMoniker": "API\\appsettings.json",
+              "ToolTip": "C:\\Users\\Shuvo-User\\source\\repos\\shuvomahamud\\DashboardProject\\API\\appsettings.json",
+              "RelativeToolTip": "API\\appsettings.json",
+              "ViewState": "AgIAAAcAAAAAAAAAAAAowAwAAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2025-06-11T19:58:11.996Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

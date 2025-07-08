@@ -1,7 +1,0 @@
-﻿@model Domain.Entities.TodoTask
-@{
-    ViewBag.Title = $"Edit Task #{Model.TaskId}";
-    ViewBag.FormAction = "Edit"; // Controller Post action
-}
-<h2>Edit Task #@Model.TaskId</h2>
-<partial name="_TodoForm" model="Model" />

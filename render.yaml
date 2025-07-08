@@ -1,21 +1,9 @@
 services:
-  - name: dashboard-api
+  - name: dashboard-app
     type: web
-    env: docker
+    env: node
     plan: free
-    dockerfilePath: ./API/Dockerfile
-    # Exposes Kestrel default port 8080 inside container
-    envVars:
-      - fromGroup: dashboard-common          # see step 3
-
-  - name: dashboard-ui
-    type: web
-    env: docker
-    plan: free
-    dockerfilePath: ./Presentation/Dockerfile
+    buildCommand: npm install && npm run build
+    startCommand: npm start
     envVars:
       - fromGroup: dashboard-common
-      - key: API_BASE_URL                    # UI needs this
-        fromService:
-          name: dashboard-api
-          type: web

@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AP_Report {
+  AP_ID                    Int      @id(map: "PK_AP_Report") @default(autoincrement())
+  StartEndDate             DateTime @db.Timestamptz(6)
+  AgencyAuthorizedUser     String
+  TaskOrderNumber          String
+  CandidateName            String
+  Region                   Int
+  JobTitle                 String
+  SkillLevel               Int
+  TotalHours               Decimal  @db.Decimal
+  TimesheetApprovalDate    DateTime @db.Timestamptz(6)
+  HourlyWageRateBase       Decimal  @db.Decimal
+  MarkUpPercent            Decimal  @db.Decimal
+  HourlyWageRateWithMarkup Decimal  @db.Decimal
+  TotalBilledOGSClient     Decimal  @db.Decimal
+  PaidToVendor             Decimal  @db.Decimal
+  VendorName               String
+  HoursMatchInvoice        Boolean
+  InvoiceNumber            String
+  VendorInvoiceDate        DateTime @db.Timestamptz(6)
+  TimesheetsApproved       Boolean
+  Remark                   String
+  PaymentTermNet           Int
+  PaymentMode              String
+  PaymentDueDate           DateTime @db.Timestamptz(6)
+  Check                    String   @default("") @db.VarChar(20)
+}
+
+model AspNetRoleClaims {
+  Id          Int         @id(map: "PK_AspNetRoleClaims") @default(autoincrement())
+  RoleId      String
+  ClaimType   String?
+  ClaimValue  String?
+  AspNetRoles AspNetRoles @relation(fields: [RoleId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetRoleClaims_AspNetRoles_RoleId")
+
+  @@index([RoleId], map: "IX_AspNetRoleClaims_RoleId")
+}
+
+model AspNetRoles {
+  Id               String             @id(map: "PK_AspNetRoles")
+  Name             String?            @db.VarChar(256)
+  NormalizedName   String?            @unique(map: "RoleNameIndex") @db.VarChar(256)
+  ConcurrencyStamp String?
+  AspNetRoleClaims AspNetRoleClaims[]
+  AspNetUserRoles  AspNetUserRoles[]
+}
+
+model AspNetUserClaims {
+  Id          Int         @id(map: "PK_AspNetUserClaims") @default(autoincrement())
+  UserId      String
+  ClaimType   String?
+  ClaimValue  String?
+  AspNetUsers AspNetUsers @relation(fields: [UserId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserClaims_AspNetUsers_UserId")
+
+  @@index([UserId], map: "IX_AspNetUserClaims_UserId")
+}
+
+model AspNetUserLogins {
+  LoginProvider       String
+  ProviderKey         String
+  ProviderDisplayName String?
+  UserId              String
+  AspNetUsers         AspNetUsers @relation(fields: [UserId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserLogins_AspNetUsers_UserId")
+
+  @@id([LoginProvider, ProviderKey], map: "PK_AspNetUserLogins")
+  @@index([UserId], map: "IX_AspNetUserLogins_UserId")
+}
+
+model AspNetUserRoles {
+  UserId      String
+  RoleId      String
+  AspNetRoles AspNetRoles @relation(fields: [RoleId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserRoles_AspNetRoles_RoleId")
+  AspNetUsers AspNetUsers @relation(fields: [UserId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserRoles_AspNetUsers_UserId")
+
+  @@id([UserId, RoleId], map: "PK_AspNetUserRoles")
+  @@index([RoleId], map: "IX_AspNetUserRoles_RoleId")
+}
+
+model AspNetUserTokens {
+  UserId        String
+  LoginProvider String
+  Name          String
+  Value         String?
+  AspNetUsers   AspNetUsers @relation(fields: [UserId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserTokens_AspNetUsers_UserId")
+
+  @@id([UserId, LoginProvider, Name], map: "PK_AspNetUserTokens")
+}
+
+model AspNetUsers {
+  Id                   String             @id(map: "PK_AspNetUsers")
+  UserName             String?            @db.VarChar(256)
+  NormalizedUserName   String?            @unique(map: "UserNameIndex") @db.VarChar(256)
+  Email                String?            @db.VarChar(256)
+  NormalizedEmail      String?            @db.VarChar(256)
+  EmailConfirmed       Boolean
+  PasswordHash         String?
+  SecurityStamp        String?
+  ConcurrencyStamp     String?
+  PhoneNumber          String?
+  PhoneNumberConfirmed Boolean
+  TwoFactorEnabled     Boolean
+  LockoutEnd           DateTime?          @db.Timestamptz(6)
+  LockoutEnabled       Boolean
+  AccessFailedCount    Int
+  IsApproved           Boolean            @default(false)
+  Name                 String             @default("")
+  AspNetUserClaims     AspNetUserClaims[]
+  AspNetUserLogins     AspNetUserLogins[]
+  AspNetUserRoles      AspNetUserRoles[]
+  AspNetUserTokens     AspNetUserTokens[]
+
+  @@index([NormalizedEmail], map: "EmailIndex")
+}
+
+model InterviewInformation {
+  Id              Int                     @id(map: "PK_InterviewInformation") @default(autoincrement())
+  HbitNo          String
+  ConsultantLevel String
+  InterviewDate   DateTime                @db.Timestamptz(6)
+  InterviewTime   Unsupported("interval")
+  SourceLink      String
+}
+
+model EFMigrationsHistory {
+  MigrationId    String @id(map: "PK___EFMigrationsHistory") @db.VarChar(150)
+  ProductVersion String @db.VarChar(32)
+
+  @@map("__EFMigrationsHistory")
+}
+
+model ap_report {
+  ap_id                 Int       @id @default(autoincrement())
+  startenddate          DateTime? @db.Date
+  agency                String?   @db.VarChar(255)
+  taskordernumber       String?   @db.VarChar(50)
+  candidatename         String?   @db.VarChar(255)
+  region                Int?
+  jobtitle              String?   @db.VarChar(255)
+  skilllevel            Int?
+  totalhours            Float?
+  timesheetapprovaldate DateTime? @db.Date
+  hourlywagerate        Decimal?  @db.Decimal(10, 2)
+  vendorname            String?   @db.VarChar(255)
+  invoicenumber         String?   @db.VarChar(50)
+  invoicedate           DateTime? @db.Date
+  paymentmode           String?   @db.VarChar(50)
+  paymentduedate        DateTime? @db.Date
+  monthyear             String?   @db.VarChar(7)
+}
+
+model interviews {
+  interviewid                  Int       @id @default(autoincrement())
+  hbits_no                     String?   @db.VarChar(50)
+  position                     String?   @db.VarChar(255)
+  level                        Int?
+  mailreceiveddate             DateTime? @db.Date
+  consultantname               String?   @db.VarChar(255)
+  clientsuggesteddates         String?
+  maileddatestoconsultant      DateTime? @db.Date
+  interviewtimeoptedfor        String?
+  interviewscheduledmailedtomr Boolean?
+  interviewconfirmedbyclient   DateTime? @db.Date
+  timeofinterview              DateTime? @db.Timestamp(6)
+  thrurecruiter                String?   @db.VarChar(255)
+  consultantcontactno          String?   @db.VarChar(50)
+  consultantemail              String?   @db.VarChar(255)
+  vendorpocname                String?   @db.VarChar(255)
+  vendornumber                 String?   @db.VarChar(50)
+  vendoremailid                String?   @db.VarChar(255)
+  candidateselected            String?   @db.VarChar(50)
+  monthyear                    String?   @db.VarChar(7)
+}
+
+model onboarding {
+  onboardingid        Int                   @id @default(autoincrement())
+  candidatename       String?               @db.VarChar(255)
+  createddate         DateTime?             @default(dbgenerated("CURRENT_DATE")) @db.Date
+  onboardingfielddata onboardingfielddata[]
+}
+
+model onboardingfielddata {
+  id           Int         @id @default(autoincrement())
+  onboardingid Int?
+  fieldname    String?     @db.VarChar(255)
+  detailsvalue String?
+  owner        String?     @db.VarChar(255)
+  notes        String?
+  dateutc      DateTime?   @db.Timestamptz(6)
+  onboarding   onboarding? @relation(fields: [onboardingid], references: [onboardingid], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model sheet_config {
+  id          Int      @id @default(autoincrement())
+  table_key   String   @unique @db.VarChar(20)
+  sheet_url   String
+  updated_utc DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model todo_list {
+  taskid          Int       @id @default(autoincrement())
+  category        String?   @db.VarChar(255)
+  taskname        String?
+  triggerdate     DateTime? @db.Date
+  assignedto      String?   @db.VarChar(255)
+  internalduedate DateTime? @db.Date
+  actualduedate   DateTime? @db.Date
+  status          String?   @db.VarChar(50)
+  requiresfiling  Boolean?
+  filed           Boolean?
+  followupneeded  Boolean?
+  recurring       Boolean?
+  nextduedate     DateTime? @db.Date
+}
