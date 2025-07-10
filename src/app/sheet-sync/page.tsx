@@ -95,13 +95,30 @@ export default function SheetSyncPage() {
     setSyncingRows(prev => new Set(prev).add(tableKey));
     
     try {
-      const response = await fetch(`/api/sheets/sync/${tableKey}`, {
+      // Use specialized todo sync endpoint for todo_list
+      const endpoint = tableKey === 'todo_list' 
+        ? '/api/sheets/todo/sync'
+        : `/api/sheets/sync/${tableKey}`;
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
       });
 
       const data = await response.json();
       if (response.ok) {
-        setMessage({ type: 'success', text: data.message });
+        // Handle different response formats
+        if (tableKey === 'todo_list') {
+          const { inserted, updated, deleted } = data;
+          setMessage({ 
+            type: 'success', 
+            text: `Todo List synced (${inserted} inserts, ${updated} updates, ${deleted} deletions)` 
+          });
+        } else {
+          setMessage({ type: 'success', text: data.message });
+        }
+        
+        // Refresh configs to update last-synced timestamp
+        fetchConfigs();
       } else {
         setMessage({ type: 'error', text: data.error || 'Sync failed' });
       }
@@ -179,7 +196,14 @@ export default function SheetSyncPage() {
                 
                 return (
                   <tr key={tableKey}>
-                    <td className="text-capitalize">{tableKey}</td>
+                    <td className="text-capitalize">
+                      {tableKey}
+                      {tableKey === 'todo_list' && (
+                        <span className="badge bg-info ms-2" title="Advanced sync with INSERT/UPDATE/DELETE">
+                          <i className="bi bi-gear-fill"></i> Advanced
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <Form.Control
                         type="text"
@@ -198,12 +222,15 @@ export default function SheetSyncPage() {
                             className="me-2"
                             onClick={() => handleSync(tableKey)}
                             disabled={isSyncing || !configs[tableKey]}
-                            title="Sync only this table"
+                            title={tableKey === 'todo_list' ? "Advanced Todo Sync (INSERT/UPDATE/DELETE)" : "Sync only this table"}
                           >
                             {isSyncing ? (
                               <Spinner as="span" animation="border" size="sm" />
                             ) : (
-                              <i className="bi bi-cloud-arrow-down"></i>
+                              <>
+                                <i className="bi bi-cloud-arrow-down"></i>
+                                {tableKey === 'todo_list' && <i className="bi bi-gear-fill ms-1" style={{fontSize: '0.7em'}}></i>}
+                              </>
                             )}
                           </Button>
                           <Button 
