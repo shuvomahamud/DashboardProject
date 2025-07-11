@@ -1,8 +1,9 @@
 import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcrypt";
+import { NextAuthOptions } from "next-auth";
 
-export const authOptions = {
+export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "credentials",
@@ -49,7 +50,7 @@ export const authOptions = {
               }
             });
 
-            const roles = userRoles.map((ur: any) => ur.AspNetRoles.Name).filter(Boolean);
+            const roles = userRoles.map((ur) => ur.AspNetRoles?.Name).filter(Boolean);
             
             return {
               id: user.Id,
@@ -70,18 +71,18 @@ export const authOptions = {
   ],
   session: { strategy: "jwt" as const },
   callbacks: {
-    async jwt({ token, user }: any) {
+    async jwt({ token, user }) {
       if (user) {
         token.role = user.role;
         token.isApproved = user.isApproved;
       }
       return token;
     },
-    async session({ session, token }: any) {
-      if (token) {
-        session.user.id = token.sub;
-        session.user.role = token.role;
-        session.user.isApproved = token.isApproved;
+    async session({ session, token }) {
+      if (token && session.user) {
+        (session.user as any).id = token.sub;
+        (session.user as any).role = token.role;
+        (session.user as any).isApproved = token.isApproved;
       }
       return session;
     }
