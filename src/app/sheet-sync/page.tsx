@@ -19,7 +19,7 @@ export default function SheetSyncPage() {
   const [syncingRows, setSyncingRows] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  const tableKeys = ['todo', 'interview', 'ap'];
+  const tableKeys = ['todo_list', 'interview', 'ap'];
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -197,7 +197,7 @@ export default function SheetSyncPage() {
                 return (
                   <tr key={tableKey}>
                     <td className="text-capitalize">
-                      {tableKey}
+                      {tableKey === 'todo_list' ? 'Todo List' : tableKey}
                       {tableKey === 'todo_list' && (
                         <span className="badge bg-info ms-2" title="Advanced sync with INSERT/UPDATE/DELETE">
                           <i className="bi bi-gear-fill"></i> Advanced
