@@ -5,7 +5,6 @@ const nextConfig = {
     // You can remove this later and fix the ESLint errors
     ignoreDuringBuilds: true,
   },
-  output: 'standalone',
   typescript: {
     ignoreBuildErrors: true,
   },

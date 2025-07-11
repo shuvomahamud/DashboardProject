@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "postinstall": "prisma generate",
     "setup": "npx tsx scripts/setup-env.ts",
     "test-db": "npx tsx scripts/test-db-and-create-user.ts",
     "setup-and-test": "npm run setup && npm run test-db"
