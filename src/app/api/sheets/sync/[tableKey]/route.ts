@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { syncSheetToDatabase } from '@/lib/googleSheetsSyncHelper';
-
-const prisma = new PrismaClient();
 
 export async function POST(
   request: NextRequest,
@@ -20,11 +18,11 @@ export async function POST(
     
     // Get sheet configuration for this table
     const config = await prisma.$queryRaw`
-      SELECT "SheetUrl" as sheeturl 
+      SELECT sheet_url as sheeturl 
       FROM sheet_config 
-      WHERE "TableKey" = ${tableKey}
-      AND "SheetUrl" IS NOT NULL 
-      AND "SheetUrl" != ''
+      WHERE table_key = ${tableKey}
+      AND sheet_url IS NOT NULL 
+      AND sheet_url != ''
     ` as Array<{sheeturl: string}>;
     
     if (config.length === 0) {

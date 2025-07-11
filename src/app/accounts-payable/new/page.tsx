@@ -13,7 +13,7 @@ export default function NewAccountsPayablePage() {
     startenddate: '',
     agency: '',
     taskordernumber: '',
-    candidatename: '',
+    consultantname: '',
     region: '',
     jobtitle: '',
     skilllevel: '',
@@ -131,8 +131,8 @@ export default function NewAccountsPayablePage() {
                         <Form.Label>Candidate Name</Form.Label>
                         <Form.Control
                           type="text"
-                          name="candidatename"
-                          value={formData.candidatename}
+                                          name="consultantname"
+                value={formData.consultantname}
                           onChange={handleChange}
                           placeholder="Enter candidate name"
                         />

@@ -81,14 +81,13 @@ export default function CsvImportPage() {
         filename = 'interviews_template.csv';
         break;
       case 'accounts-payable':
-        csvContent = 'startenddate,agency,taskordernumber,candidatename,region,jobtitle,skilllevel,totalhours,timesheetapprovaldate,hourlywagerate,vendorname,invoicenumber,invoicedate,paymentmode,paymentduedate,monthyear\n';
+        csvContent = 'startenddate,agency,taskordernumber,consultantname,region,jobtitle,skilllevel,totalhours,timesheetapprovaldate,hourlywagerate,vendorname,invoicenumber,invoicedate,paymentmode,paymentduedate,monthyear\n';
         csvContent += '2024-01-01,ABC Agency,TO123,John Doe,1,Software Developer,3,40,2024-01-05,75.00,XYZ Vendor,INV001,2024-01-10,Check,2024-01-30,01/2024\n';
         filename = 'accounts_payable_template.csv';
         break;
       case 'onboarding':
-        csvContent = 'candidatename,fieldname,detailsvalue,owner,notes,dateutc\n';
-        csvContent += 'John Doe,Background Check,Completed,HR Team,All clear,2024-01-15T10:00:00Z\n';
-        csvContent += 'John Doe,Equipment Setup,In Progress,IT Team,Laptop ordered,2024-01-16T14:30:00Z\n';
+        csvContent = 'taskOrder,clientAgencyName,consultantName,recruiterName,expectedOnboardingDate,actualStartDate,endDate,consultantPhone,consultantEmail,hiringTerm,consultantMailingAddress,vendorName,payRateToVendor\n';
+        csvContent += 'TO123,ABC Corp,John Doe,Jane Smith,2024-01-15T10:00:00Z,2024-01-20T09:00:00Z,2024-12-31T17:00:00Z,555-1234,john@example.com,W-2,"123 Main St",Vendor Corp,75.00\n';
         filename = 'onboarding_template.csv';
         break;
       default:

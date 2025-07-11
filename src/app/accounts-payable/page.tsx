@@ -56,7 +56,7 @@ export default function AccountsPayablePage() {
     },
     { 
       name: 'Candidate', 
-      selector: (row: any) => row.candidatename, 
+      selector: (row: any) => row.consultantname, 
       sortable: true,
       wrap: true
     },

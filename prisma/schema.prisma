@@ -143,7 +143,7 @@ model ap_report {
   startenddate          DateTime? @db.Date
   agency                String?   @db.VarChar(255)
   taskordernumber       String?   @db.VarChar(50)
-  candidatename         String?   @db.VarChar(255)
+  consultantname        String?   @db.VarChar(255)
   region                Int?
   jobtitle              String?   @db.VarChar(255)
   skilllevel            Int?
@@ -182,21 +182,70 @@ model interviews {
 }
 
 model onboarding {
-  onboardingid        Int                   @id @default(autoincrement())
-  candidatename       String?               @db.VarChar(255)
-  createddate         DateTime?             @default(dbgenerated("CURRENT_DATE")) @db.Date
-  onboardingfielddata onboardingfielddata[]
-}
-
-model onboardingfielddata {
-  id           Int         @id @default(autoincrement())
-  onboardingid Int?
-  fieldname    String?     @db.VarChar(255)
-  detailsvalue String?
-  owner        String?     @db.VarChar(255)
-  notes        String?
-  dateutc      DateTime?   @db.Timestamptz(6)
-  onboarding   onboarding? @relation(fields: [onboardingid], references: [onboardingid], onDelete: Cascade, onUpdate: NoAction)
+  onboardingid                  Int       @id @default(autoincrement())
+  taskOrder                     String?   @db.Text
+  clientAgencyName              String?   @db.Text
+  form2FormB                    String?   @db.Text
+  resumeAndForm1FormB           String?   @db.Text
+  agencyNameFromForm1           String?   @db.Text
+  employerNameMatchMsa          String?   @db.Text
+  dateOfConfirmation            DateTime? @db.Timestamptz(6)
+  recruiterName                 String?   @db.Text
+  expectedOnboardingDate        DateTime? @db.Timestamptz(6)
+  actualStartDate               DateTime? @db.Timestamptz(6)
+  endDate                       DateTime? @db.Timestamptz(6)
+  engagementLengthMonths        String?   @db.Text
+  consultantName                String?   @db.Text
+  dob                           DateTime? @db.Timestamptz(6)
+  currentLocation               String?   @db.Text
+  consultantPhone               String?   @db.Text
+  consultantEmail               String?   @db.Text
+  hiringTerm                    String?   @db.Text
+  consultantMailingAddress      String?   @db.Text
+  onboardingLetterReceived      String?   @db.Text
+  billRateFromClient            String?   @db.Text
+  fingerPrintingRequired        String?   @db.Text
+  backgroundCheckRequired       String?   @db.Text
+  trackSubmission               String?   @db.Text
+  remoteLoginCredentials        String?   @db.Text
+  nonCompeteAgreement           String?   @db.Text
+  idDocsRequired                String?   @db.Text
+  onboardingEmailToCandidate    String?   @db.Text
+  coreForm                      String?   @db.Text
+  telecommuting                 String?   @db.Text
+  softcopyBeforeMail            String?   @db.Text
+  employerNameConsistency       String?   @db.Text
+  vendorName                    String?   @db.Text
+  vendorPocPhone                String?   @db.Text
+  vendorPocEmail                String?   @db.Text
+  payRateToVendor               String?   @db.Text
+  vendorFedId                   String?   @db.Text
+  vendorAddress                 String?   @db.Text
+  msaEmploymentLetter           String?   @db.Text
+  workOrder                     String?   @db.Text
+  w9                            String?   @db.Text
+  coi                           String?   @db.Text
+  billingTerms                  String?   @db.Text
+  onboardingEmailToVendor       String?   @db.Text
+  postOnboardingVendorBGC       String?   @db.Text
+  firstDayInstructions          String?   @db.Text
+  completeI9                    String?   @db.Text
+  createAccountAdp              String?   @db.Text
+  simpleIraInclusion            String?   @db.Text
+  offerLetter                   String?   @db.Text
+  uploadPayrollInfoCeipal       String?   @db.Text
+  timesheets                    String?   @db.Text
+  trackingArrivalDetails        String?   @db.Text
+  allVerificationsDone          String?   @db.Text
+  allFilesUploaded              String?   @db.Text
+  actualEndDate                 DateTime? @db.Timestamptz(6)
+  noticePeriod                  String?   @db.Text
+  returnOfAssets                String?   @db.Text
+  refundDeposit                 String?   @db.Text
+  closeSimpleIra                String?   @db.Text
+  terminateEmploymentAdp        String?   @db.Text
+  exitInterview                 String?   @db.Text
+  createddate                   DateTime? @default(dbgenerated("CURRENT_DATE")) @db.Date
 }
 
 model sheet_config {

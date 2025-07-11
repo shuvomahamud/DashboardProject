@@ -49,8 +49,8 @@ export default function OnboardingPage() {
       width: '80px'
     },
     { 
-      name: 'Candidate Name', 
-      selector: (row: any) => row.candidatename, 
+      name: 'Consultant Name', 
+      selector: (row: any) => row.consultantName, 
       sortable: true,
       wrap: true
     },
@@ -61,10 +61,10 @@ export default function OnboardingPage() {
       cell: (row: any) => <DateTime value={row.createddate} />
     },
     { 
-      name: 'Field Data Count', 
-      selector: (row: any) => row.onboardingfielddata?.length || 0, 
+      name: 'Client Agency', 
+      selector: (row: any) => row.clientAgencyName || 'N/A', 
       sortable: true,
-      width: '150px'
+      wrap: true
     },
     { 
       name: 'Actions', 

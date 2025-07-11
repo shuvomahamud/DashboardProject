@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { syncSheetToDatabase } from '@/lib/googleSheetsSyncHelper';
-
-const prisma = new PrismaClient();
 
 export async function POST() {
   try {
@@ -15,9 +13,9 @@ export async function POST() {
 
     // Get all sheet configurations
     const configs = await prisma.$queryRaw`
-      SELECT "TableKey" as tablekey, "SheetUrl" as sheeturl 
+      SELECT table_key as tablekey, sheet_url as sheeturl 
       FROM sheet_config 
-      WHERE "SheetUrl" IS NOT NULL AND "SheetUrl" != ''
+      WHERE sheet_url IS NOT NULL AND sheet_url != ''
     ` as Array<{tablekey: string, sheeturl: string}>;
     
     const report: string[] = [];

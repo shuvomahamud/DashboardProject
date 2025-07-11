@@ -46,7 +46,6 @@ export async function PUT(
       position,
       consultantname,
       timeofinterview,
-      candidatename,
       clientname,
       level,
       candidateselected,
@@ -65,7 +64,7 @@ export async function PUT(
     if (position !== undefined) updateData.position = position;
     if (consultantname !== undefined) updateData.consultantname = consultantname;
     if (timeofinterview !== undefined) updateData.timeofinterview = timeofinterview ? new Date(timeofinterview) : null;
-    if (candidatename !== undefined) updateData.candidatename = candidatename;
+
     if (clientname !== undefined) updateData.clientname = clientname;
     if (level !== undefined) updateData.level = level;
     if (candidateselected !== undefined) updateData.candidateselected = candidateselected;

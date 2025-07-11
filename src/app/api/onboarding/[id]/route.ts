@@ -9,17 +9,27 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
+    console.log('GET /api/onboarding/[id] - Session:', session ? 'Found' : 'Not found');
+    
     if (!session) {
+      console.log('GET /api/onboarding/[id] - No session found');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const params = await context.params;
+    console.log('Fetching onboarding for ID:', params.id);
+    
     const onboarding = await prisma.onboarding.findUnique({
-      where: { onboardingid: parseInt(params.id) },
-      include: {
-        onboardingfielddata: true
-      }
+      where: { onboardingid: parseInt(params.id) }
     });
+
+    console.log('Onboarding found from DB:', onboarding ? 'Yes' : 'No');
+    if (onboarding) {
+      console.log('DB Data - Consultant Name:', onboarding.consultantName);
+      console.log('DB Data - Task Order:', onboarding.taskOrder);
+      console.log('DB Data - Client Agency:', onboarding.clientAgencyName);
+      console.log('DB Data - All fields:', Object.keys(onboarding));
+    }
 
     if (!onboarding) {
       return NextResponse.json({ error: 'Onboarding record not found' }, { status: 404 });
@@ -43,54 +53,19 @@ export async function PUT(
     }
 
     const params = await context.params;
-    const body = await request.json();
-    const { 
-      candidatename,
-      jobtitle,
-      department,
-      startdate,
-      enddate,
-      status,
-      comments,
-      fieldData = []
-    } = body;
+    const data = await request.json();
 
-    // Start transaction
-    const result = await prisma.$transaction(async (tx) => {
-             // Update onboarding record
-       const onboarding = await tx.onboarding.update({
-         where: { onboardingid: parseInt(params.id) },
-         data: {
-           candidatename
-         }
-       });
-
-      // Delete existing field data
-      await tx.onboardingfielddata.deleteMany({
-        where: { onboardingid: parseInt(params.id) }
-      });
-
-      // Create new field data
-      if (fieldData.length > 0) {
-        await tx.onboardingfielddata.createMany({
-          data: fieldData.map((field: any) => ({
-            onboardingid: parseInt(params.id),
-            fieldname: field.fieldname,
-            fieldvalue: field.fieldvalue
-          }))
-        });
+    // Update onboarding record with flat data
+    const onboarding = await prisma.onboarding.update({
+      where: { onboardingid: parseInt(params.id) },
+      data: {
+        ...data,
+        // Preserve the original creation date, don't update it
+        createddate: undefined
       }
-
-      // Return updated record with field data
-      return await tx.onboarding.findUnique({
-        where: { onboardingid: parseInt(params.id) },
-        include: {
-          onboardingfielddata: true
-        }
-      });
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json(onboarding);
   } catch (error) {
     console.error('Error updating onboarding:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -108,15 +83,9 @@ export async function DELETE(
     }
 
     const params = await context.params;
-    // Delete in transaction (field data will be deleted due to cascade)
-    await prisma.$transaction(async (tx) => {
-      await tx.onboardingfielddata.deleteMany({
-        where: { onboardingid: parseInt(params.id) }
-      });
-      
-      await tx.onboarding.delete({
-        where: { onboardingid: parseInt(params.id) }
-      });
+    // Delete onboarding record
+    await prisma.onboarding.delete({
+      where: { onboardingid: parseInt(params.id) }
     });
 
     return NextResponse.json({ message: 'Onboarding record deleted successfully' });

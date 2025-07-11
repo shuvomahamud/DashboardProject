@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
         startenddate: data.startenddate ? new Date(data.startenddate) : null,
         agency: data.agency,
         taskordernumber: data.taskordernumber,
-        candidatename: data.candidatename,
+        consultantname: data.consultantname,
         region: data.region,
         jobtitle: data.jobtitle,
         skilllevel: data.skilllevel,

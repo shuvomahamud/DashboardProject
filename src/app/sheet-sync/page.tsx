@@ -19,7 +19,7 @@ export default function SheetSyncPage() {
   const [syncingRows, setSyncingRows] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  const tableKeys = ['todo', 'interview', 'ap', 'onboarding'];
+  const tableKeys = ['todo', 'interview', 'ap'];
 
   useEffect(() => {
     if (status === 'loading') return;

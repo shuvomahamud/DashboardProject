@@ -45,7 +45,7 @@ export async function PUT(
       startenddate,
       agency,
       taskordernumber,
-      candidatename,
+              consultantname,
       region,
       jobtitle,
       skilllevel,
@@ -65,7 +65,7 @@ export async function PUT(
     if (startenddate !== undefined) updateData.startenddate = startenddate ? new Date(startenddate) : null;
     if (agency !== undefined) updateData.agency = agency;
     if (taskordernumber !== undefined) updateData.taskordernumber = taskordernumber;
-    if (candidatename !== undefined) updateData.candidatename = candidatename;
+          if (consultantname !== undefined) updateData.consultantname = consultantname;
     if (region !== undefined) updateData.region = region;
     if (jobtitle !== undefined) updateData.jobtitle = jobtitle;
     if (skilllevel !== undefined) updateData.skilllevel = skilllevel;

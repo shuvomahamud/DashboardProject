@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
-const prisma = new PrismaClient();
+// Column name constant to prevent future typos
+const SHEET_CONFIG_SELECT = 'table_key AS tablekey, sheet_url AS sheeturl';
 
 export async function GET() {
   try {
@@ -14,7 +15,7 @@ export async function GET() {
 
     // Get all sheet configurations
     const configs = await prisma.$queryRaw`
-      SELECT "TableKey" as tablekey, "SheetUrl" as sheeturl 
+      SELECT table_key AS tablekey, sheet_url AS sheeturl 
       FROM sheet_config 
       WHERE 1=1
     ` as Array<{tablekey: string, sheeturl: string}>;
@@ -44,12 +45,12 @@ export async function PUT(request: NextRequest) {
     for (const [tableKey, sheetUrl] of Object.entries(data)) {
       if (typeof sheetUrl === 'string' && sheetUrl.trim()) {
         await prisma.$executeRaw`
-          INSERT INTO sheet_config ("TableKey", "SheetUrl", "UpdatedUtc") 
+          INSERT INTO sheet_config (table_key, sheet_url, updated_utc) 
           VALUES (${tableKey}, ${sheetUrl}, NOW())
-          ON CONFLICT ("TableKey") 
+          ON CONFLICT (table_key) 
           DO UPDATE SET 
-            "SheetUrl" = EXCLUDED."SheetUrl",
-            "UpdatedUtc" = EXCLUDED."UpdatedUtc"
+            sheet_url = EXCLUDED.sheet_url,
+            updated_utc = EXCLUDED.updated_utc
         `;
       }
     }

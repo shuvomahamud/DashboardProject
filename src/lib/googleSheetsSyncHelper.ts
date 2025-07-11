@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 interface CsvRow {
   [key: string]: string;
@@ -61,9 +59,6 @@ async function syncCsvToDatabase(tableKey: string, csvData: string): Promise<voi
     case 'ap':
       await syncApData(rows);
       break;
-    case 'onboarding':
-      await syncOnboardingData(rows);
-      break;
     default:
       throw new Error(`Unknown table key: ${tableKey}`);
   }
@@ -93,27 +88,56 @@ function parseCsv(csvData: string): CsvRow[] {
 }
 
 async function syncTodoData(rows: CsvRow[]): Promise<void> {
+  // Helper function to safely parse dates
+  const parseDate = (dateStr: string): string | null => {
+    if (!dateStr || dateStr.trim() === '') return null;
+    
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      console.warn(`Invalid date format: "${dateStr}" - skipping this date`);
+      return null;
+    }
+    
+    return date.toISOString().split('T')[0];
+  };
+
+  // Get all existing tasks from database
+  const existingTasks = await prisma.$queryRaw`
+    SELECT taskid, taskname FROM todo_list
+  ` as Array<{taskid: number, taskname: string}>;
+
+  // Create a Set of tasknames from the Google Sheet
+  const sheetTaskNames = new Set(
+    rows.filter(row => row.taskname?.trim()).map(row => row.taskname.trim())
+  );
+
+  // 1. DELETE: Remove tasks that are no longer in the Google Sheet
+  for (const existingTask of existingTasks) {
+    if (!sheetTaskNames.has(existingTask.taskname)) {
+      await prisma.$executeRaw`
+        DELETE FROM todo_list WHERE taskid = ${existingTask.taskid}
+      `;
+      console.log(`Deleted task: ${existingTask.taskname}`);
+    }
+  }
+
+  // 2. INSERT/UPDATE: Process each row from Google Sheet
   for (const row of rows) {
     if (!row.taskname?.trim()) continue;
     
     const taskData = {
       taskname: row.taskname,
-      category: row.category || '',
-      description: row.description || '',
-      plannedstartdate: row.plannedstartdate ? new Date(row.plannedstartdate) : null,
-      plannedenddate: row.plannedenddate ? new Date(row.plannedenddate) : null,
-      actualstartdate: row.actualstartdate ? new Date(row.actualstartdate) : null,
-      actualenddate: row.actualenddate ? new Date(row.actualenddate) : null,
-      priority: row.priority || 'Medium',
-      status: row.status || 'Not Started',
-      completedpercentage: row.completedpercentage ? parseInt(row.completedpercentage) : 0,
-      isactive: row.isactive?.toLowerCase() === 'true',
-      iscritical: row.iscritical?.toLowerCase() === 'true',
-      isdelayed: row.isdelayed?.toLowerCase() === 'true',
-      isescalated: row.isescalated?.toLowerCase() === 'true',
-      comments: row.comments || '',
-      createddate: new Date(),
-      updateddate: new Date()
+      category: (row.category || '').substring(0, 255),
+      triggerdate: parseDate(row.triggerdate),
+      assignedto: (row.assignedto || '').substring(0, 255),
+      internalduedate: parseDate(row.internalduedate),
+      actualduedate: parseDate(row.actualduedate),
+      status: (row.status || 'Not Started').substring(0, 50),
+      requiresfiling: row.requiresfiling?.toLowerCase() === 'true',
+      filed: row.filed?.toLowerCase() === 'true',
+      followupneeded: row.followupneeded?.toLowerCase() === 'true',
+      recurring: row.recurring?.toLowerCase() === 'true',
+      nextduedate: parseDate(row.nextduedate)
     };
     
     // Check if task exists by name
@@ -122,22 +146,82 @@ async function syncTodoData(rows: CsvRow[]): Promise<void> {
     ` as Array<{taskid: number}>;
     
     if (existingTask.length === 0) {
-      // Insert new task
+      // INSERT: Add new task
       await prisma.$executeRaw`
         INSERT INTO todo_list (
-          taskname, category, description, plannedstartdate, plannedenddate,
-          actualstartdate, actualenddate, priority, status, completedpercentage,
-          isactive, iscritical, isdelayed, isescalated, comments, createddate, updateddate
+          taskname, category, triggerdate, assignedto, internalduedate,
+          actualduedate, status, requiresfiling, filed, followupneeded,
+          recurring, nextduedate
         ) VALUES (
-          ${taskData.taskname}, ${taskData.category}, ${taskData.description},
-          ${taskData.plannedstartdate}, ${taskData.plannedenddate},
-          ${taskData.actualstartdate}, ${taskData.actualenddate},
-          ${taskData.priority}, ${taskData.status}, ${taskData.completedpercentage},
-          ${taskData.isactive}, ${taskData.iscritical}, ${taskData.isdelayed},
-          ${taskData.isescalated}, ${taskData.comments}, ${taskData.createddate},
-          ${taskData.updateddate}
+          ${taskData.taskname}, ${taskData.category}, ${taskData.triggerdate}::date,
+          ${taskData.assignedto}, ${taskData.internalduedate}::date, ${taskData.actualduedate}::date,
+          ${taskData.status}, ${taskData.requiresfiling}, ${taskData.filed},
+          ${taskData.followupneeded}, ${taskData.recurring}, ${taskData.nextduedate}::date
         )
       `;
+      console.log(`Inserted new task: ${taskData.taskname}`);
+    } else {
+      // UPDATE: Update existing task
+      await prisma.$executeRaw`
+        UPDATE todo_list SET
+          category = ${taskData.category},
+          triggerdate = ${taskData.triggerdate}::date,
+          assignedto = ${taskData.assignedto},
+          internalduedate = ${taskData.internalduedate}::date,
+          actualduedate = ${taskData.actualduedate}::date,
+          status = ${taskData.status},
+          requiresfiling = ${taskData.requiresfiling},
+          filed = ${taskData.filed},
+          followupneeded = ${taskData.followupneeded},
+          recurring = ${taskData.recurring},
+          nextduedate = ${taskData.nextduedate}::date
+        WHERE taskid = ${existingTask[0].taskid}
+      `;
+      console.log(`Updated task: ${taskData.taskname}`);
+    }
+  }
+}
+
+async function syncApData(rows: CsvRow[]): Promise<void> {
+  for (const row of rows) {
+    if (!row.consultantname?.trim()) continue;
+    
+    const apData = {
+      consultantname: row.consultantname,
+      startenddate: row.startenddate ? new Date(row.startenddate) : null,
+      agency: row.agency || '',
+      taskordernumber: row.taskordernumber || '',
+      region: row.region ? parseInt(row.region) : null,
+      jobtitle: row.jobtitle || '',
+      skilllevel: row.skilllevel ? parseInt(row.skilllevel) : null,
+      totalhours: row.totalhours ? parseFloat(row.totalhours) : null,
+      timesheetapprovaldate: row.timesheetapprovaldate ? new Date(row.timesheetapprovaldate) : null,
+      hourlywagerate: row.hourlywagerate ? parseFloat(row.hourlywagerate) : null,
+      vendorname: row.vendorname || '',
+      invoicenumber: row.invoicenumber || '',
+      invoicedate: row.invoicedate ? new Date(row.invoicedate) : null,
+      paymentmode: row.paymentmode || '',
+      paymentduedate: row.paymentduedate ? new Date(row.paymentduedate) : null,
+      monthyear: row.monthyear || '',
+    };
+
+    // Check if record exists
+    const existing = await prisma.ap_report.findFirst({
+      where: { 
+        consultantname: row.consultantname,
+        invoicenumber: row.invoicenumber
+      }
+    });
+
+    if (existing) {
+      await prisma.ap_report.update({
+        where: { ap_id: existing.ap_id },
+        data: apData,
+      });
+    } else {
+      await prisma.ap_report.create({
+        data: apData,
+      });
     }
   }
 }
@@ -148,140 +232,43 @@ async function syncInterviewData(rows: CsvRow[]): Promise<void> {
     
     const interviewData = {
       hbits_no: row.hbits_no || '',
+      position: row.position || '',
+      level: row.level ? parseInt(row.level) : null,
+      mailreceiveddate: row.mailreceiveddate ? new Date(row.mailreceiveddate) : null,
       consultantname: row.consultantname,
+      clientsuggesteddates: row.clientsuggesteddates || '',
+      maileddatestoconsultant: row.maileddatestoconsultant ? new Date(row.maileddatestoconsultant) : null,
+      interviewtimeoptedfor: row.interviewtimeoptedfor || '',
+      interviewscheduledmailedtomr: row.interviewscheduledmailedtomr === 'true',
+      interviewconfirmedbyclient: row.interviewconfirmedbyclient ? new Date(row.interviewconfirmedbyclient) : null,
       timeofinterview: row.timeofinterview ? new Date(row.timeofinterview) : null,
-      interviewfeedback: row.interviewfeedback || '',
-      candidatename: row.candidatename || '',
-      clientname: row.clientname || '',
-      recruiterleadname: row.recruiterleadname || '',
-      recruiterleadcontact: row.recruiterleadcontact || '',
-      interviewstatus: row.interviewstatus || 'Pending',
-      interviewtype: row.interviewtype || 'Phone',
-      interviewrating: row.interviewrating ? parseInt(row.interviewrating) : null,
-      comments: row.comments || '',
-      createddate: new Date(),
-      updateddate: new Date()
-    };
-    
-    // Check if interview exists by consultant name and client
-    const existingInterview = await prisma.$queryRaw`
-      SELECT interviewid FROM interviews 
-      WHERE consultantname = ${interviewData.consultantname} 
-      AND clientname = ${interviewData.clientname}
-      AND timeofinterview = ${interviewData.timeofinterview}
-    ` as Array<{interviewid: number}>;
-    
-    if (existingInterview.length === 0) {
-      // Insert new interview
-      await prisma.$executeRaw`
-        INSERT INTO interviews (
-          hbits_no, consultantname, timeofinterview, interviewfeedback,
-          candidatename, clientname, recruiterleadname, recruiterleadcontact,
-          interviewstatus, interviewtype, interviewrating, comments,
-          createddate, updateddate
-        ) VALUES (
-          ${interviewData.hbits_no}, ${interviewData.consultantname},
-          ${interviewData.timeofinterview}, ${interviewData.interviewfeedback},
-          ${interviewData.candidatename}, ${interviewData.clientname},
-          ${interviewData.recruiterleadname}, ${interviewData.recruiterleadcontact},
-          ${interviewData.interviewstatus}, ${interviewData.interviewtype},
-          ${interviewData.interviewrating}, ${interviewData.comments},
-          ${interviewData.createddate}, ${interviewData.updateddate}
-        )
-      `;
-    }
-  }
-}
-
-async function syncApData(rows: CsvRow[]): Promise<void> {
-  for (const row of rows) {
-    if (!row.candidatename?.trim()) continue;
-    
-    const apData = {
-      startenddate: row.startenddate || '',
-      agency: row.agency || '',
-      taskordernumber: row.taskordernumber || '',
-      candidatename: row.candidatename,
-      region: row.region || '',
-      jobtitle: row.jobtitle || '',
-      skilllevel: row.skilllevel || '',
-      totalhours: row.totalhours ? parseFloat(row.totalhours) : 0,
-      timesheetapprovaldate: row.timesheetapprovaldate ? new Date(row.timesheetapprovaldate) : null,
-      hourlywagerate: row.hourlywagerate ? parseFloat(row.hourlywagerate) : 0,
-      vendorname: row.vendorname || '',
-      invoicenumber: row.invoicenumber || '',
-      invoicedate: row.invoicedate ? new Date(row.invoicedate) : null,
-      paymentmode: row.paymentmode || '',
-      paymentduedate: row.paymentduedate ? new Date(row.paymentduedate) : null,
+      thrurecruiter: row.thrurecruiter || '',
+      consultantcontactno: row.consultantcontactno || '',
+      consultantemail: row.consultantemail || '',
+      vendorpocname: row.vendorpocname || '',
+      vendornumber: row.vendornumber || '',
+      vendoremailid: row.vendoremailid || '',
+      candidateselected: row.candidateselected || '',
       monthyear: row.monthyear || '',
-      createddate: new Date(),
-      updateddate: new Date()
     };
-    
-    // Check if AP record exists by candidate name and invoice number
-    const existingAp = await prisma.$queryRaw`
-      SELECT ap_id FROM ap_report 
-      WHERE candidatename = ${apData.candidatename} 
-      AND invoicenumber = ${apData.invoicenumber}
-    ` as Array<{ap_id: number}>;
-    
-    if (existingAp.length === 0) {
-      // Insert new AP record
-      await prisma.$executeRaw`
-        INSERT INTO ap_report (
-          startenddate, agency, taskordernumber, candidatename, region,
-          jobtitle, skilllevel, totalhours, timesheetapprovaldate,
-          hourlywagerate, vendorname, invoicenumber, invoicedate,
-          paymentmode, paymentduedate, monthyear, createddate, updateddate
-        ) VALUES (
-          ${apData.startenddate}, ${apData.agency}, ${apData.taskordernumber},
-          ${apData.candidatename}, ${apData.region}, ${apData.jobtitle},
-          ${apData.skilllevel}, ${apData.totalhours}, ${apData.timesheetapprovaldate},
-          ${apData.hourlywagerate}, ${apData.vendorname}, ${apData.invoicenumber},
-          ${apData.invoicedate}, ${apData.paymentmode}, ${apData.paymentduedate},
-          ${apData.monthyear}, ${apData.createddate}, ${apData.updateddate}
-        )
-      `;
-    }
-  }
-}
 
-async function syncOnboardingData(rows: CsvRow[]): Promise<void> {
-  for (const row of rows) {
-    if (!row.candidatename?.trim()) continue;
-    
-    const onboardingData = {
-      candidatename: row.candidatename,
-      jobtitle: row.jobtitle || '',
-      department: row.department || '',
-      startdate: row.startdate ? new Date(row.startdate) : null,
-      enddate: row.enddate ? new Date(row.enddate) : null,
-      status: row.status || 'Pending',
-      comments: row.comments || '',
-      createddate: new Date(),
-      updateddate: new Date()
-    };
-    
-    // Check if onboarding record exists by candidate name
-    const existingOnboarding = await prisma.$queryRaw`
-      SELECT onboardingid FROM onboarding 
-      WHERE candidatename = ${onboardingData.candidatename}
-    ` as Array<{onboardingid: number}>;
-    
-    if (existingOnboarding.length === 0) {
-      // Insert new onboarding record
-      await prisma.$executeRaw`
-        INSERT INTO onboarding (
-          candidatename, jobtitle, department, startdate, enddate,
-          status, comments, createddate, updateddate
-        ) VALUES (
-          ${onboardingData.candidatename}, ${onboardingData.jobtitle},
-          ${onboardingData.department}, ${onboardingData.startdate},
-          ${onboardingData.enddate}, ${onboardingData.status},
-          ${onboardingData.comments}, ${onboardingData.createddate},
-          ${onboardingData.updateddate}
-        )
-      `;
+    // Check if record exists
+    const existing = await prisma.interviews.findFirst({
+      where: { 
+        consultantname: row.consultantname,
+        timeofinterview: interviewData.timeofinterview
+      }
+    });
+
+    if (existing) {
+      await prisma.interviews.update({
+        where: { interviewid: existing.interviewid },
+        data: interviewData,
+      });
+    } else {
+      await prisma.interviews.create({
+        data: interviewData,
+      });
     }
   }
 } 
