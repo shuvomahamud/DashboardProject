@@ -81,6 +81,19 @@ export default function TodoPage() {
       cell: (row: any) => <BooleanBadge value={row.filed} />
     },
     { 
+      name: 'Note', 
+      cell: (row: any) => (
+        row.note ? (
+          <span className="badge bg-info" title={row.note}>
+            📝 Note
+          </span>
+        ) : (
+          <span className="text-muted">-</span>
+        )
+      ),
+      width: '80px'
+    },
+    { 
       name: 'Actions', 
       cell: (row: any) => (
         <div className="d-flex gap-2">

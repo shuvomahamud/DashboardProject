@@ -25,7 +25,7 @@ function getGoogleCredentials() {
 const EXPECTED_HEADERS = [
   'category', 'taskname', 'triggerdate', 'assignedto', 'internalduedate', 
   'actualduedate', 'status', 'requiresfiling', 'filed', 'followupneeded', 
-  'recurring', 'nextduedate'
+  'recurring', 'nextduedate', 'note'
 ];
 
 interface TodoItem {
@@ -41,6 +41,7 @@ interface TodoItem {
   followupneeded?: boolean;
   recurring?: boolean;
   nextduedate?: Date | null;
+  note?: string;
 }
 
 interface SyncResult {
@@ -163,6 +164,9 @@ export async function POST(request: NextRequest) {
           case 'recurring':
             item[cleanHeader] = value.toLowerCase() === 'true';
             break;
+          case 'note':
+            item[cleanHeader] = value || null;
+            break;
           default:
             item[cleanHeader] = value || null;
         }
@@ -211,6 +215,7 @@ export async function POST(request: NextRequest) {
               followupneeded: sheetItem.followupneeded,
               recurring: sheetItem.recurring,
               nextduedate: sheetItem.nextduedate,
+              note: sheetItem.note,
             }
           });
           inserted++;
@@ -225,6 +230,7 @@ export async function POST(request: NextRequest) {
             dbItem.filed !== sheetItem.filed ||
             dbItem.followupneeded !== sheetItem.followupneeded ||
             dbItem.recurring !== sheetItem.recurring ||
+            dbItem.note !== sheetItem.note ||
             (dbItem.triggerdate?.toDateString() !== sheetItem.triggerdate?.toDateString()) ||
             (dbItem.internalduedate?.toDateString() !== sheetItem.internalduedate?.toDateString()) ||
             (dbItem.actualduedate?.toDateString() !== sheetItem.actualduedate?.toDateString()) ||
@@ -248,6 +254,7 @@ export async function POST(request: NextRequest) {
                 followupneeded: sheetItem.followupneeded,
                 recurring: sheetItem.recurring,
                 nextduedate: sheetItem.nextduedate,
+                note: sheetItem.note,
               }
             });
             updated++;

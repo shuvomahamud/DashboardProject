@@ -269,4 +269,5 @@ model todo_list {
   followupneeded  Boolean?
   recurring       Boolean?
   nextduedate     DateTime? @db.Date
+  note            String?   @db.Text
 }

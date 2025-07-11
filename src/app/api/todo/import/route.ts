@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const expectedHeaders = [
       'category', 'taskname', 'triggerdate', 'assignedto', 'internalduedate', 
       'actualduedate', 'status', 'requiresfiling', 'filed', 'followupneeded', 
-      'recurring', 'nextduedate'
+      'recurring', 'nextduedate', 'note'
     ];
 
     // Validate headers
@@ -64,6 +64,9 @@ export async function POST(request: NextRequest) {
             case 'followupneeded':
             case 'recurring':
               rowData[header] = value.toLowerCase() === 'true';
+              break;
+            case 'note':
+              rowData[header] = value || null;
               break;
             default:
               rowData[header] = value || null;

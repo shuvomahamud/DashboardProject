@@ -44,7 +44,7 @@ export async function PUT(
     const { 
       taskname, category, assignedto, status, triggerdate, 
       internalduedate, actualduedate, nextduedate, 
-      requiresfiling, filed, followupneeded, recurring 
+      requiresfiling, filed, followupneeded, recurring, note 
     } = body;
 
     const todo = await prisma.todo_list.update({
@@ -61,7 +61,8 @@ export async function PUT(
         requiresfiling: Boolean(requiresfiling),
         filed: Boolean(filed),
         followupneeded: Boolean(followupneeded),
-        recurring: Boolean(recurring)
+        recurring: Boolean(recurring),
+        note
       }
     });
 

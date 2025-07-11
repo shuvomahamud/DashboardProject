@@ -21,7 +21,8 @@ export default function NewTodoPage() {
     filed: false,
     followupneeded: false,
     recurring: false,
-    nextduedate: ''
+    nextduedate: '',
+    note: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -194,6 +195,22 @@ export default function NewTodoPage() {
                           name="nextduedate"
                           value={formData.nextduedate}
                           onChange={handleChange}
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+
+                  <Row>
+                    <Col>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Note</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={3}
+                          name="note"
+                          value={formData.note}
+                          onChange={handleChange}
+                          placeholder="Add any additional notes or details about this task..."
                         />
                       </Form.Group>
                     </Col>

@@ -137,7 +137,8 @@ async function syncTodoData(rows: CsvRow[]): Promise<void> {
       filed: row.filed?.toLowerCase() === 'true',
       followupneeded: row.followupneeded?.toLowerCase() === 'true',
       recurring: row.recurring?.toLowerCase() === 'true',
-      nextduedate: parseDate(row.nextduedate)
+      nextduedate: parseDate(row.nextduedate),
+      note: row.note || null
     };
     
     // Check if task exists by name
@@ -151,12 +152,12 @@ async function syncTodoData(rows: CsvRow[]): Promise<void> {
         INSERT INTO todo_list (
           taskname, category, triggerdate, assignedto, internalduedate,
           actualduedate, status, requiresfiling, filed, followupneeded,
-          recurring, nextduedate
+          recurring, nextduedate, note
         ) VALUES (
           ${taskData.taskname}, ${taskData.category}, ${taskData.triggerdate}::date,
           ${taskData.assignedto}, ${taskData.internalduedate}::date, ${taskData.actualduedate}::date,
           ${taskData.status}, ${taskData.requiresfiling}, ${taskData.filed},
-          ${taskData.followupneeded}, ${taskData.recurring}, ${taskData.nextduedate}::date
+          ${taskData.followupneeded}, ${taskData.recurring}, ${taskData.nextduedate}::date, ${taskData.note}
         )
       `;
       console.log(`Inserted new task: ${taskData.taskname}`);
@@ -174,7 +175,8 @@ async function syncTodoData(rows: CsvRow[]): Promise<void> {
           filed = ${taskData.filed},
           followupneeded = ${taskData.followupneeded},
           recurring = ${taskData.recurring},
-          nextduedate = ${taskData.nextduedate}::date
+          nextduedate = ${taskData.nextduedate}::date,
+          note = ${taskData.note}
         WHERE taskid = ${existingTask[0].taskid}
       `;
       console.log(`Updated task: ${taskData.taskname}`);

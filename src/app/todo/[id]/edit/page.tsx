@@ -23,7 +23,8 @@ export default function EditTodoPage() {
     filed: false,
     followupneeded: false,
     recurring: false,
-    nextduedate: ''
+    nextduedate: '',
+    note: ''
   });
 
   useEffect(() => {
@@ -50,7 +51,8 @@ export default function EditTodoPage() {
           filed: todo.filed || false,
           followupneeded: todo.followupneeded || false,
           recurring: todo.recurring || false,
-          nextduedate: todo.nextduedate ? todo.nextduedate.split('T')[0] : ''
+          nextduedate: todo.nextduedate ? todo.nextduedate.split('T')[0] : '',
+          note: todo.note || ''
         });
       } else {
         setError('Todo not found');
@@ -242,6 +244,22 @@ export default function EditTodoPage() {
                           name="nextduedate"
                           value={formData.nextduedate}
                           onChange={handleChange}
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+
+                  <Row>
+                    <Col>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Note</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={3}
+                          name="note"
+                          value={formData.note}
+                          onChange={handleChange}
+                          placeholder="Add any additional notes or details about this task..."
                         />
                       </Form.Group>
                     </Col>

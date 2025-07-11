@@ -195,6 +195,18 @@ export default function TodoDetailPage() {
                     </div>
                   </Col>
                 </Row>
+
+                {todo.note && (
+                  <>
+                    <hr />
+                    <h6 className="mb-3">Notes</h6>
+                    <div className="bg-light p-3 rounded">
+                      <pre className="mb-0" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>
+                        {todo.note}
+                      </pre>
+                    </div>
+                  </>
+                )}
               </Card.Body>
             </Card>
           </Col>

@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
         filed: data.filed,
         followupneeded: data.followupneeded,
         recurring: data.recurring,
-        nextduedate: data.nextduedate ? new Date(data.nextduedate) : null
+        nextduedate: data.nextduedate ? new Date(data.nextduedate) : null,
+        note: data.note
       }
     });
     return NextResponse.json(created, { status: 201 });
