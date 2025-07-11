@@ -1,6 +1,6 @@
 import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "@/lib/prisma";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { NextAuthOptions } from "next-auth";
 
 export const authOptions: NextAuthOptions = {
@@ -50,7 +50,7 @@ export const authOptions: NextAuthOptions = {
               }
             });
 
-            const roles = userRoles.map((ur) => ur.AspNetRoles?.Name).filter(Boolean);
+            const roles = userRoles.map((ur: any) => ur.AspNetRoles?.Name).filter(Boolean);
             
             return {
               id: user.Id,

@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import prisma from "../src/lib/prisma";
 
 async function testDatabaseAndCreateUser() {
