@@ -9,9 +9,9 @@ async function createAdminUser() {
     console.log('🔧 Creating admin user...');
 
     // Admin user details - UPDATE THESE!
-    const adminEmail = 'dave@yourdomain.com'; // Change this to your email
-    const adminPassword = 'DaveSahai123!'; // Change this to a secure password
-    const adminName = 'Administrator';
+    const adminEmail = 'test@example.com'; // Change this to your email
+    const adminPassword = 'TestPassword123!'; // Change this to a secure password
+    const adminName = 'Test Administrator';
 
     // Check if admin user already exists
     const existingUser = await prisma.aspNetUsers.findFirst({

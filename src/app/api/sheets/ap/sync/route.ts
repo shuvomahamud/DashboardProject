@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
+import { apReportSchema } from '@/lib/validations/apReportSchema';
+import { z } from 'zod';
 
 // Google service account credentials from environment variables
 function getGoogleCredentials() {
@@ -23,14 +25,13 @@ function getGoogleCredentials() {
 
 // Expected headers for AP_Report (AP_ID will be auto-managed)
 const EXPECTED_HEADERS = [
-  'ap_id', 'start date', 'end date', 'agency / authorized user', 'task order #(s)', 
-  'candidate name', 'region', 'job title', 'skill level', 'total hours', 
-  'timesheet approved date', 'hourly wage rate (base)', 'mark-up %', 
-  'hourly wage rate (+ mark-up)', 'total billed to ogs / client', 'paid to vendor',
-  'vendor name', 'hours on vendor invoice', 'hours match invoice (y/n)', 
-  'invoice #', 'vendor invoice remarks', 'vendor invoice date', 
-  'timesheets approved (y/n)', 'remark', 'payment term net', 'payment mode',
-  'payment due date', 'check #'
+  'ap_id', 'startdate', 'enddate', 'authorizeduser', 'taskorder', 
+  'candidatename', 'region', 'jobtitle', 'totalhours', 
+  'approvedtimesheetreceived', 'hourlywagerate', 'hourlywageratewithmarkup', 
+  'markup', 'totalbilledtoclient', 'paidtovendor', 'vendorname', 
+  'hrssharedbyvendor', 'hoursmatchinvoice', 'invoice', 'vendorinvoiceremarks', 
+  'vendorinvoicedate', 'istimesheetapproved', 'remark', 'pmttermnet', 
+  'paymentmode', 'paymentduedate', 'check'
 ];
 
 interface APReportItem {
@@ -288,31 +289,26 @@ export async function POST(request: NextRequest) {
     console.log(`Raw headers from sheet: [${rows[0].join(', ')}]`);
     console.log(`Processed headers (lowercase): [${headers.join(', ')}]`);
     
-    // Check for required headers with flexible matching
-    const requiredHeadersMap = {
-      'candidate name': ['candidate name', 'candidatename', 'candidate'],
-      'total hours': ['total hours', 'totalhours', 'hours'],
-      'invoice #': ['invoice #', 'invoice number', 'inv.no', 'invoice no', 'invno', 'inv no']
-    };
-    
+    // Check for required headers using the new simplified header names
+    const requiredHeaders = ['candidatename', 'totalhours', 'invoice'];
     const missingHeaders = [];
-    for (const [standardHeader, variations] of Object.entries(requiredHeadersMap)) {
-      const found = variations.some(variation => headers.includes(variation));
-      if (!found) {
-        missingHeaders.push(standardHeader);
+    
+    for (const requiredHeader of requiredHeaders) {
+      if (!headers.includes(requiredHeader)) {
+        missingHeaders.push(requiredHeader);
       }
     }
     
     // Special validation for date columns - accept either separate start/end dates OR combined date
-    const hasStartDate = headers.includes('start date');
-    const hasEndDate = headers.includes('end date');
-    const hasCombinedDate = headers.includes('start /end date') || headers.includes('start/end date');
+    const hasStartDate = headers.includes('startdate');
+    const hasEndDate = headers.includes('enddate');
+    const hasCombinedDate = headers.includes('start/enddate') || headers.includes('startenddate');
     
     if (!hasStartDate && !hasCombinedDate) {
-      missingHeaders.push('start date (or combined start/end date)');
+      missingHeaders.push('startdate');
     }
     if (!hasEndDate && !hasCombinedDate) {
-      missingHeaders.push('end date (or combined start/end date)');
+      missingHeaders.push('enddate');
     }
     
     if (missingHeaders.length > 0) {
@@ -322,58 +318,102 @@ export async function POST(request: NextRequest) {
 DETECTED HEADERS: [${headers.join(', ')}]
 RAW HEADERS: [${rows[0].join(', ')}]
 
-Make sure you have columns with headers matching one of these patterns (case-insensitive):
-- Candidate Name: ${requiredHeadersMap['candidate name'].join(', ')}
-- Total Hours: ${requiredHeadersMap['total hours'].join(', ')}
-- Invoice #: ${requiredHeadersMap['invoice #'].join(', ')}
-- Date: Either separate 'Start Date' and 'End Date' columns, OR a single 'Start /End Date' column` 
+Make sure you have columns with headers matching these simplified names (case-insensitive):
+- candidatename (for candidate name)
+- totalhours (for total hours)
+- invoice (for invoice number)
+- startdate and enddate (for separate date columns)
+- OR start/enddate (for combined date column)` 
       }, { status: 422 });
     }
 
     // Helper function to map headers to standard field names
-    const getStandardFieldName = (header: string): string => {
-      const headerMappings: { [key: string]: string[] } = {
-        'AP_ID': ['ap_id'],
-        'StartDate': ['start date', 'start /end date', 'start/end date'],
-        'EndDate': ['end date'],
-        'AgencyAuthorizedUser': ['agency / authorized user', 'agency/authorized user', 'agency'],
-        'TaskOrderNumber': ['task order #(s)', 'task order', 'task order number'],
-        'CandidateName': ['candidate name', 'candidatename', 'candidate'],
-        'Region': ['region'],
-        'JobTitle': ['job title', 'jobtitle'],
-        'SkillLevel': ['skill level', 'skilllevel'],
-        'TotalHours': ['total hours', 'totalhours', 'hours'],
-        'TimesheetApprovalDate': ['timesheet approved date', 'date when approved timesheet was received', 'timesheet approval date'],
-        'HourlyWageRateBase': ['hourly wage rate (base)', 'hourly rate'],
-        'MarkUpPercent': ['mark-up %', 'mark-up', 'markup'],
-        'HourlyWageRateWithMarkup': ['hourly wage rate (+ mark-up)', 'hourly wage rate with markup'],
-        'TotalBilledOGSClient': ['total billed to ogs / client', 'total billed to ogs/client', 'total billed'],
-        'PaidToVendor': ['paid to vendor', 'paidtovendor'],
-        'VendorName': ['vendor name', 'vendorname'],
-        'VendorHours': ['hours on vendor invoice', 'hrs shared by vendor', 'vendor hours'],
-        'HoursMatchInvoice': ['hours match invoice (y/n)', 'hours match invoice', 'hours match'],
-        'InvoiceNumber': ['invoice #', 'invoice number', 'inv.no', 'invoice no', 'invno', 'inv no'],
-        'VendorInvoiceRemarks': ['vendor invoice remarks', 'invoice remarks', 'remarks'],
-        'VendorInvoiceDate': ['vendor invoice date', 'invoice date'],
-        'TimesheetsApproved': ['timesheets approved (y/n)', 'timesheets approved', 'timesheet approved'],
-        'Remark': ['remark', 'remarks'],
-        'PaymentTermNet': ['payment term net', 'pmt term @ net', 'payment term'],
-        'PaymentMode': ['payment mode', 'payment method'],
-        'PaymentDueDate': ['payment due date', 'due date'],
-        'Check': ['check #', 'check', 'check number', 'check#']
-      };
-      
-      for (const [standardField, variations] of Object.entries(headerMappings)) {
-        if (variations.includes(header)) {
-          return standardField;
+    function clean(h: string) {
+      return h.toLowerCase().replace(/\s|_/g, "");
+    }
+
+    function sheetHeadersToDbFields(headerRow: string[]) {
+      const map: Record<number, string> = {};
+
+      headerRow.forEach((h, idx) => {
+        switch (clean(h)) {
+          case "apid":                     map[idx] = "AP_ID"; break;
+          case "startdate":                map[idx] = "StartDate"; break;
+          case "enddate":                  map[idx] = "EndDate"; break;
+          case "authorizeduser":
+          case "agencyauthorizeduser":
+          case "agency/authorizeduser":
+          case "agency":                   map[idx] = "AgencyAuthorizedUser"; break;
+          case "taskorder":
+          case "taskorder#(s)":
+          case "taskordernumber":          map[idx] = "TaskOrderNumber"; break;
+          case "candidatename":
+          case "candidate":                map[idx] = "CandidateName"; break;
+          case "region":                   map[idx] = "Region"; break;
+          case "jobtitle":                 map[idx] = "JobTitle"; break;
+          case "skilllevel":               map[idx] = "SkillLevel"; break;
+          case "totalhours":
+          case "hours":                    map[idx] = "TotalHours"; break;
+          case "approvedtimesheetreceived":
+          case "timesheetapprovaldate":
+          case "timesheetapproveddate":    map[idx] = "TimesheetApprovalDate"; break;
+          case "hourlywagerate":
+          case "hourlyrate":
+          case "hourlywagerate(base)":     map[idx] = "HourlyWageRateBase"; break;
+          case "hourlywageratewithmarkup":
+          case "hourlywagerate(+mark-up)": map[idx] = "HourlyWageRateWithMarkup"; break;
+          case "markup":
+          case "mark-up":
+          case "mark-up%":                 map[idx] = "MarkUpPercent"; break;
+          case "totalbilledtoclient":
+          case "totalbilledtoogs/client":
+          case "totalbilled":              map[idx] = "TotalBilledOGSClient"; break;
+          case "paidtovendor":             map[idx] = "PaidToVendor"; break;
+          case "vendorname":               map[idx] = "VendorName"; break;
+          case "hrssharedbyvendor":
+          case "vendorhours":
+          case "hoursonvendorinvoice":     map[idx] = "VendorHours"; break;
+          case "hoursmatchinvoice":
+          case "hoursmatchinvoice(y/n)":   map[idx] = "HoursMatchInvoice"; break;
+          case "invoice":
+          case "invoice#":
+          case "invoiceno":
+          case "inv.no":
+          case "invno":
+          case "invoicenumber":            map[idx] = "InvoiceNumber"; break;
+          case "vendorinvoiceremarks":
+          case "invoiceremarks":
+          case "remarks":                  map[idx] = "VendorInvoiceRemarks"; break;
+          case "vendorinvoicedate":
+          case "invoicedate":              map[idx] = "VendorInvoiceDate"; break;
+          case "istimesheetapproved":
+          case "timesheetsapproved":
+          case "timesheetsapproved(y/n)":  map[idx] = "TimesheetsApproved"; break;
+          case "remark":                   map[idx] = "Remark"; break;
+          case "pmttermnet":
+          case "paymentterm":
+          case "paymenttermnet":           map[idx] = "PaymentTermNet"; break;
+          case "paymentmode":
+          case "paymentmethod":            map[idx] = "PaymentMode"; break;
+          case "paymentduedate":
+          case "duedate":                  map[idx] = "PaymentDueDate"; break;
+          case "check":
+          case "check#":
+          case "checknumber":              map[idx] = "Check"; break;
+          // SNo intentionally ignored
         }
-      }
-      return header; // Return original if no mapping found
-    };
+      });
+
+      return map;
+    }
+
+    // Generate header-to-field mapping
+    const headerToFieldMap = sheetHeadersToDbFields(headers);
 
     // Parse sheet data into APReportItems
     const sheetData = new Map<string, APReportItem>();
     const newItemsWithoutApId: APReportItem[] = [];
+    const validationFailures: Array<{ row: number, candidateName: string, errors: string[] }> = [];
     
     console.log(`Processing ${rows.length - 1} data rows from Google Sheets`);
     
@@ -389,27 +429,25 @@ Make sure you have columns with headers matching one of these patterns (case-ins
         console.log(`🔍 Row ${i} raw data: [${row.join(' | ')}]`);
       }
       
-      // Map each column to the corresponding field
-      headers.forEach((header: string, index: number) => {
-        const value = row[index] || '';
-        let standardField = getStandardFieldName(header);
-        
-        // Handle duplicate column names by position
-        if (header === 'hourly wage rate') {
-          // Find all instances of "hourly wage rate" and use position to determine which one
-          const hourlyRateIndices = headers.map((h, i) => h === 'hourly wage rate' ? i : -1).filter(i => i !== -1);
-          if (hourlyRateIndices.length > 1) {
-            if (index === hourlyRateIndices[0]) {
-              standardField = 'HourlyWageRateBase';
-            } else if (index === hourlyRateIndices[1]) {
-              standardField = 'HourlyWageRateWithMarkup';
-            }
-          } else {
-            standardField = 'HourlyWageRateBase'; // Default to base if only one
+      // Debug: Show header mapping for first few rows
+      if (i <= 3) {
+        console.log(`🔍 Row ${i} header mapping:`, headerToFieldMap);
+      }
+      
+              // Map each column to the corresponding field
+        headers.forEach((header: string, index: number) => {
+          const value = row[index] || '';
+          const standardField = headerToFieldMap[index];
+          
+          // Debug: Show field mapping for first few rows
+          if (i <= 3) {
+            console.log(`🔍 Row ${i} Column ${index}: "${header}" -> "${standardField}" = "${value}"`);
           }
-        }
-        
-        switch (standardField) {
+          
+          // Skip if no mapping found for this column
+          if (!standardField) return;
+          
+          switch (standardField) {
           case 'AP_ID':
             const trimmedValue = String(value).trim();
             item.AP_ID = trimmedValue && !isNaN(Number(trimmedValue)) && Number(trimmedValue) > 0 ? Number(trimmedValue) : null;
@@ -442,19 +480,19 @@ Make sure you have columns with headers matching one of these patterns (case-ins
             item.CandidateName = value || '';
             break;
           case 'Region':
-            const regionValue = value && value.trim() ? parseInt(value.trim()) : 0;
-            item.Region = isNaN(regionValue) ? 0 : regionValue;
+            const regionValue = value && value.trim() && value.trim().toUpperCase() !== 'NA' ? parseInt(value.trim()) : 0;
+            item.Region = isNaN(regionValue) || regionValue < 0 ? 0 : regionValue;
             break;
           case 'JobTitle':
             item.JobTitle = value || '';
             break;
           case 'SkillLevel':
-            const skillValue = value && value.trim() ? parseInt(value.trim()) : 0;
-            item.SkillLevel = isNaN(skillValue) ? 0 : skillValue;
+            const skillValue = value && value.trim() && value.trim().toUpperCase() !== 'NA' ? parseInt(value.trim()) : 0;
+            item.SkillLevel = isNaN(skillValue) || skillValue < 0 ? 0 : skillValue;
             break;
           case 'TotalHours':
             const totalHoursValue = value && value.trim() ? parseFloat(value.trim()) : 0;
-            item.TotalHours = isNaN(totalHoursValue) ? 0 : totalHoursValue;
+            item.TotalHours = isNaN(totalHoursValue) || totalHoursValue < 0 ? 0 : totalHoursValue;
             break;
           case 'TimesheetApprovalDate':
             const timesheetDate = value && value.trim() ? new Date(value.trim()) : null;
@@ -462,38 +500,42 @@ Make sure you have columns with headers matching one of these patterns (case-ins
             item.TimesheetApprovalDate = timesheetIsValidDate ? timesheetDate : null;
             break;
           case 'HourlyWageRateBase':
-            const baseRateValue = value && value.trim() ? parseFloat(value.trim()) : 0;
-            item.HourlyWageRateBase = isNaN(baseRateValue) ? 0 : baseRateValue;
+            const baseRateValue = value && value.trim() ? parseFloat(value.trim().replace(/[$,]/g, '')) : 0;
+            item.HourlyWageRateBase = isNaN(baseRateValue) || baseRateValue < 0 ? 0 : baseRateValue;
             break;
           case 'MarkUpPercent':
-            const markupValue = value && value.trim() ? parseFloat(value.trim()) : 0;
-            item.MarkUpPercent = isNaN(markupValue) ? 0 : markupValue;
+            const markupValue = value && value.trim() ? parseFloat(value.trim().replace(/[%]/g, '')) : 0;
+            item.MarkUpPercent = isNaN(markupValue) || markupValue < 0 ? 0 : markupValue;
             break;
           case 'HourlyWageRateWithMarkup':
-            const markupRateValue = value && value.trim() ? parseFloat(value.trim()) : 0;
-            item.HourlyWageRateWithMarkup = isNaN(markupRateValue) ? 0 : markupRateValue;
+            const markupRateValue = value && value.trim() ? parseFloat(value.trim().replace(/[$,]/g, '')) : 0;
+            item.HourlyWageRateWithMarkup = isNaN(markupRateValue) || markupRateValue < 0 ? 0 : markupRateValue;
             break;
           case 'TotalBilledOGSClient':
-            const billedValue = value && value.trim() ? parseFloat(value.trim()) : 0;
-            item.TotalBilledOGSClient = isNaN(billedValue) ? 0 : billedValue;
+            const billedValue = value && value.trim() ? parseFloat(value.trim().replace(/[$,]/g, '')) : 0;
+            item.TotalBilledOGSClient = isNaN(billedValue) || billedValue < 0 ? 0 : billedValue;
             break;
           case 'PaidToVendor':
-            const paidValue = value && value.trim() ? parseFloat(value.trim()) : 0;
-            item.PaidToVendor = isNaN(paidValue) ? 0 : paidValue;
+            const paidValue = value && value.trim() ? parseFloat(value.trim().replace(/[$,]/g, '')) : 0;
+            item.PaidToVendor = isNaN(paidValue) || paidValue < 0 ? 0 : paidValue;
             break;
           case 'VendorName':
-            item.VendorName = value || '';
+            // Handle cases where vendor name might be "-" or empty
+            const vendorValue = value && value.trim() && value.trim() !== '-' ? value.trim() : '';
+            item.VendorName = vendorValue;
             break;
           case 'VendorHours':
             const vendorHoursValue = value && value.trim() ? parseFloat(value.trim()) : null;
-            item.VendorHours = vendorHoursValue && !isNaN(vendorHoursValue) ? vendorHoursValue : null;
+            item.VendorHours = vendorHoursValue && !isNaN(vendorHoursValue) && vendorHoursValue >= 0 ? vendorHoursValue : null;
             break;
           case 'HoursMatchInvoice':
             const hoursMatchValue = value && value.trim() ? value.trim().toLowerCase() : '';
             item.HoursMatchInvoice = hoursMatchValue === 'y' || hoursMatchValue === 'yes' || hoursMatchValue === 'true';
             break;
           case 'InvoiceNumber':
-            item.InvoiceNumber = value || '';
+            // Handle cases where invoice number might be "-" or empty
+            const invoiceValue = value && value.trim() && value.trim() !== '-' ? value.trim() : '';
+            item.InvoiceNumber = invoiceValue;
             break;
           case 'VendorInvoiceRemarks':
             item.VendorInvoiceRemarks = value && value.trim() ? value.trim() : null;
@@ -512,7 +554,7 @@ Make sure you have columns with headers matching one of these patterns (case-ins
             break;
           case 'PaymentTermNet':
             const paymentTermValue = value && value.trim() ? parseInt(value.trim()) : 0;
-            item.PaymentTermNet = isNaN(paymentTermValue) ? 0 : paymentTermValue;
+            item.PaymentTermNet = isNaN(paymentTermValue) || paymentTermValue < 0 ? 0 : paymentTermValue;
             break;
           case 'PaymentMode':
             item.PaymentMode = value || '';
@@ -528,73 +570,38 @@ Make sure you have columns with headers matching one of these patterns (case-ins
         }
       });
 
-      // Skip rows without required fields
-      if (!item.CandidateName?.trim() || !item.InvoiceNumber?.trim()) {
-        console.log(`Skipping row ${i} - missing required fields: CandidateName or InvoiceNumber`);
-        continue;
+      // Debug: Show all parsed fields before validation
+      if (i <= 3) {
+        console.log(`🔍 Row ${i} ALL parsed fields:`, item);
       }
       
-      // Validate required dates
-      if (!item.StartDate || !item.EndDate || !item.TimesheetApprovalDate || !item.VendorInvoiceDate || !item.PaymentDueDate) {
-        console.log(`Skipping row ${i} - missing required dates:`, {
-          StartDate: item.StartDate,
-          EndDate: item.EndDate,
-          TimesheetApprovalDate: item.TimesheetApprovalDate,
-          VendorInvoiceDate: item.VendorInvoiceDate,
-          PaymentDueDate: item.PaymentDueDate
-        });
-        continue;
+      // Ensure CandidateName has a default value if empty
+      if (!item.CandidateName?.trim()) {
+        item.CandidateName = 'Unknown';
+        console.log(`⚠️ Row ${i} - empty CandidateName, setting to 'Unknown'`);
       }
       
-      // Validate other required fields
-      if (!item.AgencyAuthorizedUser?.trim() || !item.TaskOrderNumber?.trim() || !item.JobTitle?.trim() || !item.VendorName?.trim() || !item.PaymentMode?.trim()) {
-        console.log(`Skipping row ${i} - missing required text fields`);
-        continue;
+      // Log missing fields but let Zod schema handle defaults
+      if (!item.StartDate) {
+        console.log(`⚠️ Row ${i} - missing StartDate, will be set to null`);
       }
-      
-      // Ensure boolean fields are properly set
-      if (item.HoursMatchInvoice === undefined) {
-        item.HoursMatchInvoice = false;
+      if (!item.EndDate) {
+        console.log(`⚠️ Row ${i} - missing EndDate, will be set to null`);
       }
-      if (item.TimesheetsApproved === undefined) {
-        item.TimesheetsApproved = false;
+      if (!item.AgencyAuthorizedUser?.trim()) {
+        console.log(`⚠️ Row ${i} - missing AgencyAuthorizedUser, will be set to empty string`);
       }
-      
-      // Ensure numeric fields are valid
-      if (item.Region === undefined || isNaN(item.Region)) {
-        item.Region = 0;
+      if (!item.TaskOrderNumber?.trim()) {
+        console.log(`⚠️ Row ${i} - missing TaskOrderNumber, will be set to empty string`);
       }
-      if (item.SkillLevel === undefined || isNaN(item.SkillLevel)) {
-        item.SkillLevel = 0;
+      if (!item.JobTitle?.trim()) {
+        console.log(`⚠️ Row ${i} - missing JobTitle, will be set to empty string`);
       }
-      if (item.TotalHours === undefined || isNaN(item.TotalHours)) {
-        item.TotalHours = 0;
+      if (!item.VendorName?.trim()) {
+        console.log(`⚠️ Row ${i} - missing VendorName, will be set to empty string`);
       }
-      if (item.HourlyWageRateBase === undefined || isNaN(item.HourlyWageRateBase)) {
-        item.HourlyWageRateBase = 0;
-      }
-      if (item.MarkUpPercent === undefined || isNaN(item.MarkUpPercent)) {
-        item.MarkUpPercent = 0;
-      }
-      if (item.HourlyWageRateWithMarkup === undefined || isNaN(item.HourlyWageRateWithMarkup)) {
-        item.HourlyWageRateWithMarkup = 0;
-      }
-      if (item.TotalBilledOGSClient === undefined || isNaN(item.TotalBilledOGSClient)) {
-        item.TotalBilledOGSClient = 0;
-      }
-      if (item.PaidToVendor === undefined || isNaN(item.PaidToVendor)) {
-        item.PaidToVendor = 0;
-      }
-      if (item.PaymentTermNet === undefined || isNaN(item.PaymentTermNet)) {
-        item.PaymentTermNet = 0;
-      }
-      
-      // Ensure string fields are not null
-      if (!item.Remark) {
-        item.Remark = '';
-      }
-      if (!item.Check) {
-        item.Check = '';
+      if (!item.PaymentMode?.trim()) {
+        console.log(`⚠️ Row ${i} - missing PaymentMode, will be set to empty string`);
       }
       
       // Debug: Show parsed item data for first few rows
@@ -611,19 +618,75 @@ Make sure you have columns with headers matching one of these patterns (case-ins
           HourlyWageRateBase: item.HourlyWageRateBase
         });
       }
-
-      if (item.AP_ID && item.AP_ID > 0) {
-        // Existing item with valid AP_ID
-        console.log(`Row ${i}: Existing item with AP_ID ${item.AP_ID} - "${item.CandidateName}"`);
-        sheetData.set(`ap_id_${item.AP_ID}`, item);
-      } else {
-        // New item without AP_ID (or invalid AP_ID)
-        console.log(`Row ${i}: New item without AP_ID - "${item.CandidateName}" (AP_ID value was: "${row[apIdColumnIndex] || 'empty'}")`);
-        newItemsWithoutApId.push(item);
+      
+      // Validate and transform item using Zod schema (with defaults)
+      let validatedItem: any;
+      try {
+        validatedItem = apReportSchema.parse(item);
+        console.log(`✅ Row ${i} validation passed for "${validatedItem.CandidateName}"`);
+      } catch (validationError) {
+        console.error(`❌ Row ${i} validation failed for "${item.CandidateName}":`, validationError);
+        console.error(`❌ Row ${i} raw data:`, row);
+        console.error(`❌ Row ${i} parsed data:`, item);
+        
+        // Collect validation errors for summary
+        const errors: string[] = [];
+        if (validationError instanceof z.ZodError) {
+          console.error(`❌ Row ${i} validation errors:`, validationError.issues);
+          validationError.issues.forEach((error: z.ZodIssue, errorIndex: number) => {
+            const errorMsg = `${error.path.join('.')} - ${error.message}`;
+            console.error(`   Error ${errorIndex + 1}: ${errorMsg} (got: ${error.code})`);
+            errors.push(errorMsg);
+          });
+        }
+        
+        // Add to validation failures summary
+        validationFailures.push({
+          row: i,
+          candidateName: item.CandidateName || 'Unknown',
+          errors: errors
+        });
+        
+        // Skip this row due to validation failure
+        continue;
       }
+      
+      // Use the validated item with defaults applied
+      Object.assign(item, validatedItem);
+
+              if (item.AP_ID && item.AP_ID > 0) {
+          // Existing item with valid AP_ID
+          console.log(`✅ Row ${i}: Existing item with AP_ID ${item.AP_ID} - "${item.CandidateName}"`);
+          sheetData.set(`ap_id_${item.AP_ID}`, item);
+        } else {
+          // New item without AP_ID (or invalid AP_ID)
+          console.log(`✅ Row ${i}: New item without AP_ID - "${item.CandidateName}" (AP_ID value was: "${row[apIdColumnIndex] || 'empty'}")`);
+          newItemsWithoutApId.push(item);
+        }
+        
+        // Debug: Show what was added to arrays
+        if (i <= 3) {
+          console.log(`🔍 Row ${i} added to arrays. sheetData size: ${sheetData.size}, newItemsWithoutApId length: ${newItemsWithoutApId.length}`);
+        }
     }
     
+    console.log(`📊 FINAL PROCESSING SUMMARY:`);
     console.log(`Found ${sheetData.size} existing items and ${newItemsWithoutApId.length} new items`);
+    
+    // Log validation failures summary
+    if (validationFailures.length > 0) {
+      console.log(`\n🚨 VALIDATION FAILURES SUMMARY:`);
+      console.log(`${validationFailures.length} rows failed validation and were skipped:`);
+      validationFailures.forEach((failure, index) => {
+        console.log(`\n  ${index + 1}. Row ${failure.row} - "${failure.candidateName}":`);
+        failure.errors.forEach((error, errorIndex) => {
+          console.log(`     • ${error}`);
+        });
+      });
+      console.log(`\n💡 TIP: Fix these validation issues in your Google Sheet and try syncing again.`);
+    } else {
+      console.log(`✅ All rows passed validation!`);
+    }
 
     // Get current database data
     const dbRecords = await prisma.aP_Report.findMany();
@@ -633,11 +696,16 @@ Make sure you have columns with headers matching one of these patterns (case-ins
       dbData.set(record.AP_ID, record);
     });
 
+    console.log(`📊 Database has ${dbRecords.length} existing records`);
+    console.log(`📊 About to start transaction processing...`);
+
     // Perform sync within a transaction
     const result: SyncResult = await prisma.$transaction(async (tx) => {
       let inserted = 0;
       let updated = 0;
       let deleted = 0;
+      
+      console.log(`📊 Starting transaction - processing ${sheetData.size} updates...`);
 
       // Process existing items with AP_ID first (UPDATE operations)
       for (const [key, sheetItem] of sheetData.entries()) {
@@ -646,6 +714,7 @@ Make sure you have columns with headers matching one of these patterns (case-ins
           
           if (dbItem) {
             // Update existing record
+            console.log(`🔄 UPDATING existing record AP_ID: ${sheetItem.AP_ID} - ${sheetItem.CandidateName}`);
             await tx.aP_Report.update({
               where: { AP_ID: dbItem.AP_ID },
               data: {
@@ -687,9 +756,9 @@ Make sure you have columns with headers matching one of these patterns (case-ins
       }
 
       // Process new items without AP_ID (INSERT operations)
-      console.log(`Inserting ${newItemsWithoutApId.length} new items into database`);
+      console.log(`📊 Starting INSERT operations - ${newItemsWithoutApId.length} new items...`);
       for (const newItem of newItemsWithoutApId) {
-        console.log(`  Inserting: "${newItem.CandidateName}" (Invoice: ${newItem.InvoiceNumber}, row: ${newItem.rowIndex})`);
+        console.log(`➕ INSERTING: "${newItem.CandidateName}" (Invoice: ${newItem.InvoiceNumber}, row: ${newItem.rowIndex})`);
         
         const createdItem = await tx.aP_Report.create({
           data: {
@@ -785,7 +854,9 @@ Make sure you have columns with headers matching one of these patterns (case-ins
     }
 
     const duration = Date.now() - startTime;
-    console.log(`AP Report sync completed: ${result.inserted} inserted, ${result.updated} updated, ${result.deleted} deleted (${duration}ms)`);
+    console.log(`📊 SYNC COMPLETED:`);
+    console.log(`📊 Final result: ${result.inserted} inserted, ${result.updated} updated, ${result.deleted} deleted (${duration}ms)`);
+    console.log(`📊 Result object:`, result);
 
     return NextResponse.json(result);
   } catch (error) {

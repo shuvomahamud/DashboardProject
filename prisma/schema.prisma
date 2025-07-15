@@ -11,8 +11,8 @@ model AP_Report {
   AP_ID                     Int      @id @default(autoincrement())
 
   /** ✨ NEW – replaces StartEndDate */
-  StartDate                 DateTime @db.Timestamptz(6)
-  EndDate                   DateTime @db.Timestamptz(6)
+  StartDate                 DateTime? @db.Timestamptz(6)
+  EndDate                   DateTime? @db.Timestamptz(6)
 
   AgencyAuthorizedUser      String
   TaskOrderNumber           String
@@ -22,7 +22,7 @@ model AP_Report {
   SkillLevel                Int
 
   TotalHours                Decimal  @db.Decimal
-  TimesheetApprovalDate     DateTime @db.Timestamptz(6)
+  TimesheetApprovalDate     DateTime? @db.Timestamptz(6)
   HourlyWageRateBase        Decimal  @db.Decimal
   MarkUpPercent             Decimal  @db.Decimal
   HourlyWageRateWithMarkup  Decimal  @db.Decimal
@@ -36,12 +36,12 @@ model AP_Report {
   VendorInvoiceRemarks      String?
 
   InvoiceNumber             String
-  VendorInvoiceDate         DateTime @db.Timestamptz(6)
+  VendorInvoiceDate         DateTime? @db.Timestamptz(6)
   TimesheetsApproved        Boolean
   Remark                    String
   PaymentTermNet            Int
   PaymentMode               String
-  PaymentDueDate            DateTime @db.Timestamptz(6)
+  PaymentDueDate            DateTime? @db.Timestamptz(6)
   Check                     String   @default("") @db.VarChar(20)
 }
 
