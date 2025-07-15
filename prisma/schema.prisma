@@ -8,31 +8,41 @@ datasource db {
 }
 
 model AP_Report {
-  AP_ID                    Int      @id(map: "PK_AP_Report") @default(autoincrement())
-  StartEndDate             DateTime @db.Timestamptz(6)
-  AgencyAuthorizedUser     String
-  TaskOrderNumber          String
-  CandidateName            String
-  Region                   Int
-  JobTitle                 String
-  SkillLevel               Int
-  TotalHours               Decimal  @db.Decimal
-  TimesheetApprovalDate    DateTime @db.Timestamptz(6)
-  HourlyWageRateBase       Decimal  @db.Decimal
-  MarkUpPercent            Decimal  @db.Decimal
-  HourlyWageRateWithMarkup Decimal  @db.Decimal
-  TotalBilledOGSClient     Decimal  @db.Decimal
-  PaidToVendor             Decimal  @db.Decimal
-  VendorName               String
-  HoursMatchInvoice        Boolean
-  InvoiceNumber            String
-  VendorInvoiceDate        DateTime @db.Timestamptz(6)
-  TimesheetsApproved       Boolean
-  Remark                   String
-  PaymentTermNet           Int
-  PaymentMode              String
-  PaymentDueDate           DateTime @db.Timestamptz(6)
-  Check                    String   @default("") @db.VarChar(20)
+  AP_ID                     Int      @id @default(autoincrement())
+
+  /** ✨ NEW – replaces StartEndDate */
+  StartDate                 DateTime @db.Timestamptz(6)
+  EndDate                   DateTime @db.Timestamptz(6)
+
+  AgencyAuthorizedUser      String
+  TaskOrderNumber           String
+  CandidateName             String
+  Region                    Int
+  JobTitle                  String
+  SkillLevel                Int
+
+  TotalHours                Decimal  @db.Decimal
+  TimesheetApprovalDate     DateTime @db.Timestamptz(6)
+  HourlyWageRateBase        Decimal  @db.Decimal
+  MarkUpPercent             Decimal  @db.Decimal
+  HourlyWageRateWithMarkup  Decimal  @db.Decimal
+  TotalBilledOGSClient      Decimal  @db.Decimal
+  PaidToVendor              Decimal  @db.Decimal
+  VendorName                String
+
+  /** ✨ NEW columns */
+  VendorHours               Decimal? @db.Decimal
+  HoursMatchInvoice         Boolean
+  VendorInvoiceRemarks      String?
+
+  InvoiceNumber             String
+  VendorInvoiceDate         DateTime @db.Timestamptz(6)
+  TimesheetsApproved        Boolean
+  Remark                    String
+  PaymentTermNet            Int
+  PaymentMode               String
+  PaymentDueDate            DateTime @db.Timestamptz(6)
+  Check                     String   @default("") @db.VarChar(20)
 }
 
 model AspNetRoleClaims {

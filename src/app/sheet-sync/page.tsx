@@ -19,7 +19,7 @@ export default function SheetSyncPage() {
   const [syncingRows, setSyncingRows] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  const tableKeys = ['todo_list', 'interview', 'ap'];
+  const tableKeys = ['todo_list', 'interview', 'ap_report'];
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -95,10 +95,15 @@ export default function SheetSyncPage() {
     setSyncingRows(prev => new Set(prev).add(tableKey));
     
     try {
-      // Use specialized todo sync endpoint for todo_list
-      const endpoint = tableKey === 'todo_list' 
-        ? '/api/sheets/todo/sync'
-        : `/api/sheets/sync/${tableKey}`;
+      // Use specialized sync endpoints for todo_list and ap_report
+      let endpoint;
+      if (tableKey === 'todo_list') {
+        endpoint = '/api/sheets/todo/sync';
+      } else if (tableKey === 'ap_report') {
+        endpoint = '/api/sheets/ap/sync';
+      } else {
+        endpoint = `/api/sheets/sync/${tableKey}`;
+      }
       
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -112,6 +117,12 @@ export default function SheetSyncPage() {
           setMessage({ 
             type: 'success', 
             text: `Todo List synced (${inserted} inserts, ${updated} updates, ${deleted} deletions)` 
+          });
+        } else if (tableKey === 'ap_report') {
+          const { inserted, updated, deleted } = data;
+          setMessage({ 
+            type: 'success', 
+            text: `AP Report synced (${inserted} inserts, ${updated} updates, ${deleted} deletions)` 
           });
         } else {
           setMessage({ type: 'success', text: data.message });
@@ -197,8 +208,9 @@ export default function SheetSyncPage() {
                 return (
                   <tr key={tableKey}>
                     <td className="text-capitalize">
-                      {tableKey === 'todo_list' ? 'Todo List' : tableKey}
-                      {tableKey === 'todo_list' && (
+                      {tableKey === 'todo_list' ? 'Todo List' : 
+                       tableKey === 'ap_report' ? 'AP Report' : tableKey}
+                      {(tableKey === 'todo_list' || tableKey === 'ap_report') && (
                         <span className="badge bg-info ms-2" title="Advanced sync with INSERT/UPDATE/DELETE">
                           <i className="bi bi-gear-fill"></i> Advanced
                         </span>

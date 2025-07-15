@@ -56,8 +56,8 @@ async function syncCsvToDatabase(tableKey: string, csvData: string): Promise<voi
     case 'interview':
       await syncInterviewData(rows);
       break;
-    case 'ap':
-      await syncApData(rows);
+    case 'ap_report':
+      throw new Error('AP Report sync should use the specialized /api/sheets/ap/sync endpoint');
       break;
     default:
       throw new Error(`Unknown table key: ${tableKey}`);
@@ -184,49 +184,8 @@ async function syncTodoData(rows: CsvRow[]): Promise<void> {
   }
 }
 
-async function syncApData(rows: CsvRow[]): Promise<void> {
-  for (const row of rows) {
-    if (!row.consultantname?.trim()) continue;
-    
-    const apData = {
-      consultantname: row.consultantname,
-      startenddate: row.startenddate ? new Date(row.startenddate) : null,
-      agency: row.agency || '',
-      taskordernumber: row.taskordernumber || '',
-      region: row.region ? parseInt(row.region) : null,
-      jobtitle: row.jobtitle || '',
-      skilllevel: row.skilllevel ? parseInt(row.skilllevel) : null,
-      totalhours: row.totalhours ? parseFloat(row.totalhours) : null,
-      timesheetapprovaldate: row.timesheetapprovaldate ? new Date(row.timesheetapprovaldate) : null,
-      hourlywagerate: row.hourlywagerate ? parseFloat(row.hourlywagerate) : null,
-      vendorname: row.vendorname || '',
-      invoicenumber: row.invoicenumber || '',
-      invoicedate: row.invoicedate ? new Date(row.invoicedate) : null,
-      paymentmode: row.paymentmode || '',
-      paymentduedate: row.paymentduedate ? new Date(row.paymentduedate) : null,
-      monthyear: row.monthyear || '',
-    };
-
-    // Check if record exists
-    const existing = await prisma.ap_report.findFirst({
-      where: { 
-        consultantname: row.consultantname,
-        invoicenumber: row.invoicenumber
-      }
-    });
-
-    if (existing) {
-      await prisma.ap_report.update({
-        where: { ap_id: existing.ap_id },
-        data: apData,
-      });
-    } else {
-      await prisma.ap_report.create({
-        data: apData,
-      });
-    }
-  }
-}
+// AP Report sync is now handled by the specialized endpoint /api/sheets/ap/sync
+// This function has been removed in favor of the advanced sync with Google Sheets API
 
 async function syncInterviewData(rows: CsvRow[]): Promise<void> {
   for (const row of rows) {

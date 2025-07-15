@@ -44,65 +44,65 @@ export default function AccountsPayablePage() {
   const columns = [
     { 
       name: 'ID', 
-      selector: (row: any) => row.ap_id, 
+      selector: (row: any) => row.AP_ID, 
       sortable: true,
       width: '80px'
     },
     { 
       name: 'Agency', 
-      selector: (row: any) => row.agency, 
+      selector: (row: any) => row.AgencyAuthorizedUser, 
       sortable: true,
       wrap: true
     },
     { 
       name: 'Candidate', 
-      selector: (row: any) => row.consultantname, 
+      selector: (row: any) => row.CandidateName, 
       sortable: true,
       wrap: true
     },
     { 
       name: 'Job Title', 
-      selector: (row: any) => row.jobtitle, 
+      selector: (row: any) => row.JobTitle, 
       sortable: true,
       wrap: true
     },
     { 
       name: 'Total Hours', 
-      selector: (row: any) => row.totalhours, 
+      selector: (row: any) => row.TotalHours, 
       sortable: true,
       width: '120px'
     },
     { 
-      name: 'Hourly Rate', 
-      selector: (row: any) => row.hourlywagerate, 
+      name: 'Hourly Rate (Base)', 
+      selector: (row: any) => row.HourlyWageRateBase, 
       sortable: true,
-      width: '120px',
-      cell: (row: any) => row.hourlywagerate ? `$${row.hourlywagerate}` : ''
+      width: '140px',
+      cell: (row: any) => row.HourlyWageRateBase ? `$${row.HourlyWageRateBase}` : ''
     },
     { 
       name: 'Invoice Date', 
-      selector: (row: any) => row.invoicedate, 
+      selector: (row: any) => row.VendorInvoiceDate, 
       sortable: true,
-      cell: (row: any) => <DateTime value={row.invoicedate} />
+      cell: (row: any) => <DateTime value={row.VendorInvoiceDate} />
     },
     { 
-      name: 'Month/Year', 
-      selector: (row: any) => row.monthyear, 
+      name: 'Vendor', 
+      selector: (row: any) => row.VendorName, 
       sortable: true,
-      width: '100px'
+      wrap: true
     },
     { 
       name: 'Actions', 
       cell: (row: any) => (
         <div className="d-flex gap-2">
           <Link 
-            href={`/accounts-payable/${row.ap_id}`}
+            href={`/accounts-payable/${row.AP_ID}`}
             className="btn btn-sm btn-primary"
           >
             View
           </Link>
           <Link 
-            href={`/accounts-payable/${row.ap_id}/edit`}
+            href={`/accounts-payable/${row.AP_ID}/edit`}
             className="btn btn-sm btn-outline-primary"
           >
             Edit
@@ -110,7 +110,7 @@ export default function AccountsPayablePage() {
           <Button
             size="sm"
             variant="outline-danger"
-            onClick={() => handleDelete(row.ap_id)}
+            onClick={() => handleDelete(row.AP_ID)}
           >
             Delete
           </Button>
