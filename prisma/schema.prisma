@@ -131,15 +131,6 @@ model AspNetUsers {
   @@index([NormalizedEmail], map: "EmailIndex")
 }
 
-model InterviewInformation {
-  Id              Int                     @id(map: "PK_InterviewInformation") @default(autoincrement())
-  HbitNo          String
-  ConsultantLevel String
-  InterviewDate   DateTime                @db.Timestamptz(6)
-  InterviewTime   Unsupported("interval")
-  SourceLink      String
-}
-
 model EFMigrationsHistory {
   MigrationId    String @id(map: "PK___EFMigrationsHistory") @db.VarChar(150)
   ProductVersion String @db.VarChar(32)
@@ -169,25 +160,33 @@ model ap_report {
 
 model interviews {
   interviewid                  Int       @id @default(autoincrement())
-  hbits_no                     String?   @db.VarChar(50)
-  position                     String?   @db.VarChar(255)
+  hbits_no                     String?   @db.Text
+  position                     String?   @db.Text
   level                        Int?
   mailreceiveddate             DateTime? @db.Date
-  consultantname               String?   @db.VarChar(255)
-  clientsuggesteddates         String?
+  consultantname               String?   @db.Text
+  clientsuggesteddates         String?   @db.Text
   maileddatestoconsultant      DateTime? @db.Date
-  interviewtimeoptedfor        String?
+  interviewtimeoptedfor        String?   @db.Text
   interviewscheduledmailedtomr Boolean?
   interviewconfirmedbyclient   DateTime? @db.Date
   timeofinterview              DateTime? @db.Timestamp(6)
-  thrurecruiter                String?   @db.VarChar(255)
-  consultantcontactno          String?   @db.VarChar(50)
-  consultantemail              String?   @db.VarChar(255)
-  vendorpocname                String?   @db.VarChar(255)
-  vendornumber                 String?   @db.VarChar(50)
-  vendoremailid                String?   @db.VarChar(255)
-  candidateselected            String?   @db.VarChar(50)
-  monthyear                    String?   @db.VarChar(7)
+  thrurecruiter                String?   @db.Text
+  consultantcontactno          String?   @db.Text
+  consultantemail              String?   @db.Text
+  vendorpocname                String?   @db.Text
+  vendornumber                 String?   @db.Text
+  vendoremailid                String?   @db.Text
+  candidateselected            String?   @db.Text
+  monthyear                    String?   @db.VarChar(20)
+  
+  // ✨ new fields
+  remark                       String?   @db.Text
+  status                       String?   @db.Text
+  clientconfmailreceived       Boolean?
+  mailsenttoconsultant         Boolean?
+  mailreceivedfromconsultant   Boolean?
+  confemailccvendor            Boolean?
 }
 
 model onboarding {

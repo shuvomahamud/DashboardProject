@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
 import { apReportSchema } from '@/lib/validations/apReportSchema';
 import { z } from 'zod';
+import { checkTablePermission } from '@/lib/auth/withTableAuthAppRouter';
 
 // Google service account credentials from environment variables
 function getGoogleCredentials() {
@@ -76,10 +77,9 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Check admin permissions (sync is admin-only)
+    const session = await checkTablePermission('*');
+    console.log(`🔐 Admin user "${session.user.name}" (${session.user.email}) initiated AP sync`);
 
     // Get sheet URL from sheet_config table
     const config = await prisma.$queryRaw`
@@ -862,6 +862,18 @@ Make sure you have columns with headers matching these simplified names (case-in
   } catch (error) {
     console.error('Error syncing AP report sheet:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Handle permission errors specifically
+    if (errorMessage.includes('Unauthenticated')) {
+      return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 });
+    }
+    if (errorMessage.includes('User not approved')) {
+      return NextResponse.json({ error: 'User not approved' }, { status: 403 });
+    }
+    if (errorMessage.includes('Admin access required')) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
+    
     return NextResponse.json({ 
       error: `AP Report sync failed: ${errorMessage}` 
     }, { status: 500 });

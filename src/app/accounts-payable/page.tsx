@@ -97,22 +97,26 @@ export default function AccountsPayablePage() {
         <div className="d-flex gap-2">
           <Link 
             href={`/accounts-payable/${row.AP_ID}`}
-            className="btn btn-sm btn-primary"
+            className="btn btn-sm btn-primary d-flex align-items-center"
+            title="View Details"
           >
-            View
+            <i className="bi bi-eye"></i>
           </Link>
           <Link 
             href={`/accounts-payable/${row.AP_ID}/edit`}
-            className="btn btn-sm btn-outline-primary"
+            className="btn btn-sm btn-outline-secondary d-flex align-items-center"
+            title="Edit AP Report"
           >
-            Edit
+            <i className="bi bi-pencil"></i>
           </Link>
           <Button
             size="sm"
             variant="outline-danger"
             onClick={() => handleDelete(row.AP_ID)}
+            className="d-flex align-items-center"
+            title="Delete AP Report"
           >
-            Delete
+            <i className="bi bi-trash"></i>
           </Button>
         </div>
       ),

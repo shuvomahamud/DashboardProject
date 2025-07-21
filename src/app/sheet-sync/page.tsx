@@ -95,12 +95,14 @@ export default function SheetSyncPage() {
     setSyncingRows(prev => new Set(prev).add(tableKey));
     
     try {
-      // Use specialized sync endpoints for todo_list and ap_report
+      // Use specialized sync endpoints for todo_list, ap_report, and interview
       let endpoint;
       if (tableKey === 'todo_list') {
         endpoint = '/api/sheets/todo/sync';
       } else if (tableKey === 'ap_report') {
         endpoint = '/api/sheets/ap/sync';
+      } else if (tableKey === 'interview') {
+        endpoint = '/api/sheets/interviews/sync';
       } else {
         endpoint = `/api/sheets/sync/${tableKey}`;
       }
@@ -123,6 +125,12 @@ export default function SheetSyncPage() {
           setMessage({ 
             type: 'success', 
             text: `AP Report synced (${inserted} inserts, ${updated} updates, ${deleted} deletions)` 
+          });
+        } else if (tableKey === 'interview') {
+          const { inserted, updated, deleted } = data;
+          setMessage({ 
+            type: 'success', 
+            text: `Interviews synced (${inserted} inserts, ${updated} updates, ${deleted} deletions)` 
           });
         } else {
           setMessage({ type: 'success', text: data.message });
@@ -209,8 +217,9 @@ export default function SheetSyncPage() {
                   <tr key={tableKey}>
                     <td className="text-capitalize">
                       {tableKey === 'todo_list' ? 'Todo List' : 
-                       tableKey === 'ap_report' ? 'AP Report' : tableKey}
-                      {(tableKey === 'todo_list' || tableKey === 'ap_report') && (
+                       tableKey === 'ap_report' ? 'AP Report' :
+                       tableKey === 'interview' ? 'Interviews' : tableKey}
+                      {(tableKey === 'todo_list' || tableKey === 'ap_report' || tableKey === 'interview') && (
                         <span className="badge bg-info ms-2" title="Advanced sync with INSERT/UPDATE/DELETE">
                           <i className="bi bi-gear-fill"></i> Advanced
                         </span>
@@ -234,14 +243,19 @@ export default function SheetSyncPage() {
                             className="me-2"
                             onClick={() => handleSync(tableKey)}
                             disabled={isSyncing || !configs[tableKey]}
-                            title={tableKey === 'todo_list' ? "Advanced Todo Sync (INSERT/UPDATE/DELETE)" : "Sync only this table"}
+                            title={
+                              (tableKey === 'todo_list' || tableKey === 'ap_report' || tableKey === 'interview') 
+                                ? "Advanced sync with INSERT/UPDATE/DELETE" 
+                                : "Sync only this table"
+                            }
                           >
                             {isSyncing ? (
                               <Spinner as="span" animation="border" size="sm" />
                             ) : (
                               <>
                                 <i className="bi bi-cloud-arrow-down"></i>
-                                {tableKey === 'todo_list' && <i className="bi bi-gear-fill ms-1" style={{fontSize: '0.7em'}}></i>}
+                                {(tableKey === 'todo_list' || tableKey === 'ap_report' || tableKey === 'interview') && 
+                                 <i className="bi bi-gear-fill ms-1" style={{fontSize: '0.7em'}}></i>}
                               </>
                             )}
                           </Button>

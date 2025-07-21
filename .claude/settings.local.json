@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npx tsx:*)",
+      "Bash(rm:*)",
+      "Bash(npx prisma:*)",
+      "Bash(find:*)",
+      "Bash(npm install:*)",
+      "Bash(del test-column-fix.ts)",
+      "Bash(del check-field-lengths.ts)"
+    ],
+    "deny": []
+  }
+}

@@ -2,16 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
+import { checkTablePermission } from '@/lib/auth/withTableAuthAppRouter';
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    console.log('GET /api/onboarding - Session:', session ? 'Found' : 'Not found');
-    
-    if (!session) {
-      console.log('GET /api/onboarding - No session found');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Check onboarding table permission
+    await checkTablePermission('onboarding');
 
     const onboarding = await prisma.onboarding.findMany({
       orderBy: { onboardingid: 'desc' }
@@ -20,19 +16,27 @@ export async function GET() {
     return NextResponse.json(onboarding);
   } catch (error) {
     console.error("Error fetching onboarding:", error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Handle permission errors
+    if (errorMessage.includes('Unauthenticated')) {
+      return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 });
+    }
+    if (errorMessage.includes('User not approved')) {
+      return NextResponse.json({ error: 'User not approved' }, { status: 403 });
+    }
+    if (errorMessage.includes('Access denied')) {
+      return NextResponse.json({ error: 'Access denied for onboarding' }, { status: 403 });
+    }
+    
     return NextResponse.json({ error: "Failed to fetch onboarding" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    console.log('POST /api/onboarding - Session:', session ? 'Found' : 'Not found');
-    
-    if (!session) {
-      console.log('POST /api/onboarding - No session found');
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Check onboarding table permission
+    await checkTablePermission('onboarding');
 
     const data = await req.json();
     console.log('POST /api/onboarding - Data received:', Object.keys(data));
@@ -91,9 +95,22 @@ export async function POST(req: NextRequest) {
       }
     }
     
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Handle permission errors
+    if (errorMessage.includes('Unauthenticated')) {
+      return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 });
+    }
+    if (errorMessage.includes('User not approved')) {
+      return NextResponse.json({ error: 'User not approved' }, { status: 403 });
+    }
+    if (errorMessage.includes('Access denied')) {
+      return NextResponse.json({ error: 'Access denied for onboarding' }, { status: 403 });
+    }
+    
     return NextResponse.json({ 
       error: "Failed to create onboarding", 
-      details: error instanceof Error ? error.message : 'Unknown error' 
+      details: errorMessage 
     }, { status: 500 });
   }
 } 

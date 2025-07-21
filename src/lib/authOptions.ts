@@ -42,7 +42,7 @@ export const authOptions: NextAuthOptions = {
           const passwordMatch = await bcrypt.compare(credentials.password, user.PasswordHash);
 
           if (passwordMatch) {
-            // Check for admin role
+            // Get user roles
             const userRoles = await prisma.aspNetUserRoles.findMany({
               where: { UserId: user.Id },
               include: {
@@ -51,13 +51,31 @@ export const authOptions: NextAuthOptions = {
             });
 
             const roles = userRoles.map((ur: any) => ur.AspNetRoles?.Name).filter(Boolean);
+            const isAdmin = roles.includes("Admin");
+            
+            // Collect table permissions
+            let tables: string[] = [];
+            if (isAdmin) {
+              tables = ['*'];
+            } else {
+              // Get table claims for all user roles
+              const roleIds = userRoles.map((ur: any) => ur.AspNetRoles?.Id).filter(Boolean);
+              const claims = await prisma.aspNetRoleClaims.findMany({
+                where: { 
+                  RoleId: { in: roleIds },
+                  ClaimType: 'table'
+                }
+              });
+              tables = claims.map((c: any) => c.ClaimValue).filter(Boolean);
+            }
             
             return {
               id: user.Id,
               name: user.Name,
               email: user.Email,
-              role: roles.includes("Admin") ? "admin" : "user",
-              isApproved: user.IsApproved
+              role: isAdmin ? "admin" : "user",
+              isApproved: user.IsApproved,
+              tables: tables
             };
           }
 
@@ -75,6 +93,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = user.role;
         token.isApproved = user.isApproved;
+        token.tables = user.tables;
       }
       return token;
     },
@@ -83,6 +102,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).id = token.sub;
         (session.user as any).role = token.role;
         (session.user as any).isApproved = token.isApproved;
+        (session.user as any).tables = token.tables || [];
       }
       return session;
     }

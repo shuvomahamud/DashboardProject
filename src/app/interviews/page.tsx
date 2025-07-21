@@ -90,22 +90,26 @@ export default function InterviewsPage() {
         <div className="d-flex gap-2">
           <Link 
             href={`/interviews/${row.interviewid}`}
-            className="btn btn-sm btn-primary"
+            className="btn btn-sm btn-primary d-flex align-items-center"
+            title="View Details"
           >
-            View
+            <i className="bi bi-eye"></i>
           </Link>
           <Link 
             href={`/interviews/${row.interviewid}/edit`}
-            className="btn btn-sm btn-outline-primary"
+            className="btn btn-sm btn-outline-secondary d-flex align-items-center"
+            title="Edit Interview"
           >
-            Edit
+            <i className="bi bi-pencil"></i>
           </Link>
           <Button
             size="sm"
             variant="outline-danger"
             onClick={() => handleDelete(row.interviewid)}
+            className="d-flex align-items-center"
+            title="Delete Interview"
           >
-            Delete
+            <i className="bi bi-trash"></i>
           </Button>
         </div>
       ),

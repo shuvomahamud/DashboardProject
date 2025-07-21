@@ -1,20 +1,40 @@
 import prisma from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { checkTablePermission } from '@/lib/auth/withTableAuthAppRouter';
 
 export async function GET() {
   try {
+    // Check interviews table permission
+    await checkTablePermission('interviews');
+    
     const interviews = await prisma.interviews.findMany({
       orderBy: { interviewid: 'desc' }
     });
     return NextResponse.json(interviews);
   } catch (error) {
     console.error("Error fetching interviews:", error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Handle permission errors
+    if (errorMessage.includes('Unauthenticated')) {
+      return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 });
+    }
+    if (errorMessage.includes('User not approved')) {
+      return NextResponse.json({ error: 'User not approved' }, { status: 403 });
+    }
+    if (errorMessage.includes('Access denied')) {
+      return NextResponse.json({ error: 'Access denied for interviews' }, { status: 403 });
+    }
+    
     return NextResponse.json({ error: "Failed to fetch interviews" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    // Check interviews table permission
+    await checkTablePermission('interviews');
+    
     const data = await req.json();
     const created = await prisma.interviews.create({ 
       data: {
@@ -42,6 +62,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     console.error("Error creating interview:", error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Handle permission errors
+    if (errorMessage.includes('Unauthenticated')) {
+      return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 });
+    }
+    if (errorMessage.includes('User not approved')) {
+      return NextResponse.json({ error: 'User not approved' }, { status: 403 });
+    }
+    if (errorMessage.includes('Access denied')) {
+      return NextResponse.json({ error: 'Access denied for interviews' }, { status: 403 });
+    }
+    
     return NextResponse.json({ error: "Failed to create interview" }, { status: 500 });
   }
 } 

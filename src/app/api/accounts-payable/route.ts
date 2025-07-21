@@ -1,20 +1,40 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { checkTablePermission } from '@/lib/auth/withTableAuthAppRouter';
 
 export async function GET() {
   try {
+    // Check ap_report table permission
+    await checkTablePermission('ap_report');
+    
     const apReports = await prisma.aP_Report.findMany({
       orderBy: { AP_ID: 'desc' }
     });
     return NextResponse.json(apReports);
   } catch (error) {
     console.error("Error fetching AP reports:", error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Handle permission errors
+    if (errorMessage.includes('Unauthenticated')) {
+      return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 });
+    }
+    if (errorMessage.includes('User not approved')) {
+      return NextResponse.json({ error: 'User not approved' }, { status: 403 });
+    }
+    if (errorMessage.includes('Access denied')) {
+      return NextResponse.json({ error: 'Access denied for AP reports' }, { status: 403 });
+    }
+    
     return NextResponse.json({ error: "Failed to fetch AP reports" }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    // Check ap_report table permission
+    await checkTablePermission('ap_report');
+    
     const data = await req.json();
     const created = await prisma.aP_Report.create({ 
       data: {
@@ -50,6 +70,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     console.error("Error creating AP report:", error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Handle permission errors
+    if (errorMessage.includes('Unauthenticated')) {
+      return NextResponse.json({ error: 'Unauthenticated' }, { status: 401 });
+    }
+    if (errorMessage.includes('User not approved')) {
+      return NextResponse.json({ error: 'User not approved' }, { status: 403 });
+    }
+    if (errorMessage.includes('Access denied')) {
+      return NextResponse.json({ error: 'Access denied for AP reports' }, { status: 403 });
+    }
+    
     return NextResponse.json({ error: "Failed to create AP report" }, { status: 500 });
   }
 } 

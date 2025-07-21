@@ -54,7 +54,7 @@ async function syncCsvToDatabase(tableKey: string, csvData: string): Promise<voi
       await syncTodoData(rows);
       break;
     case 'interview':
-      await syncInterviewData(rows);
+      throw new Error('Interview sync should use the specialized /api/sheets/interviews/sync endpoint');
       break;
     case 'ap_report':
       throw new Error('AP Report sync should use the specialized /api/sheets/ap/sync endpoint');
@@ -184,52 +184,7 @@ async function syncTodoData(rows: CsvRow[]): Promise<void> {
   }
 }
 
-// AP Report sync is now handled by the specialized endpoint /api/sheets/ap/sync
-// This function has been removed in favor of the advanced sync with Google Sheets API
-
-async function syncInterviewData(rows: CsvRow[]): Promise<void> {
-  for (const row of rows) {
-    if (!row.consultantname?.trim()) continue;
-    
-    const interviewData = {
-      hbits_no: row.hbits_no || '',
-      position: row.position || '',
-      level: row.level ? parseInt(row.level) : null,
-      mailreceiveddate: row.mailreceiveddate ? new Date(row.mailreceiveddate) : null,
-      consultantname: row.consultantname,
-      clientsuggesteddates: row.clientsuggesteddates || '',
-      maileddatestoconsultant: row.maileddatestoconsultant ? new Date(row.maileddatestoconsultant) : null,
-      interviewtimeoptedfor: row.interviewtimeoptedfor || '',
-      interviewscheduledmailedtomr: row.interviewscheduledmailedtomr === 'true',
-      interviewconfirmedbyclient: row.interviewconfirmedbyclient ? new Date(row.interviewconfirmedbyclient) : null,
-      timeofinterview: row.timeofinterview ? new Date(row.timeofinterview) : null,
-      thrurecruiter: row.thrurecruiter || '',
-      consultantcontactno: row.consultantcontactno || '',
-      consultantemail: row.consultantemail || '',
-      vendorpocname: row.vendorpocname || '',
-      vendornumber: row.vendornumber || '',
-      vendoremailid: row.vendoremailid || '',
-      candidateselected: row.candidateselected || '',
-      monthyear: row.monthyear || '',
-    };
-
-    // Check if record exists
-    const existing = await prisma.interviews.findFirst({
-      where: { 
-        consultantname: row.consultantname,
-        timeofinterview: interviewData.timeofinterview
-      }
-    });
-
-    if (existing) {
-      await prisma.interviews.update({
-        where: { interviewid: existing.interviewid },
-        data: interviewData,
-      });
-    } else {
-      await prisma.interviews.create({
-        data: interviewData,
-      });
-    }
-  }
-} 
+// AP Report and Interview sync are now handled by specialized endpoints
+// - AP Report: /api/sheets/ap/sync
+// - Interview: /api/sheets/interviews/sync
+// These functions have been removed in favor of the advanced sync with Google Sheets API 
