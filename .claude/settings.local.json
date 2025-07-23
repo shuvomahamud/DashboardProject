@@ -8,7 +8,12 @@
       "Bash(find:*)",
       "Bash(npm install:*)",
       "Bash(del test-column-fix.ts)",
-      "Bash(del check-field-lengths.ts)"
+      "Bash(del check-field-lengths.ts)",
+      "Bash(npm run build)",
+      "Bash(npm run lint)",
+      "Bash(pkill -f \"npm run dev\")",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(true)"
     ],
     "deny": []
   }

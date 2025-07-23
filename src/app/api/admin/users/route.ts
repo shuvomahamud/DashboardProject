@@ -226,4 +226,215 @@ export const POST = withTableAuthAppRouter('*', async (request: NextRequest) => 
     console.error('Error creating user:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
+});
+
+// PUT /api/admin/users - Update user details (excluding password)
+export const PUT = withTableAuthAppRouter('*', async (request: NextRequest) => {
+  try {
+    const { id, email, userType, tables, isApproved } = await request.json();
+
+    if (!id) {
+      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+    }
+
+    // Check if user exists
+    const existingUser = await prisma.aspNetUsers.findUnique({
+      where: { Id: id },
+      include: {
+        AspNetUserRoles: {
+          include: {
+            AspNetRoles: true
+          }
+        }
+      }
+    });
+
+    if (!existingUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Update user basic info
+    const updateData: any = {};
+    if (email && email !== existingUser.Email) {
+      updateData.Email = email;
+      updateData.NormalizedEmail = email.toUpperCase();
+      updateData.UserName = email;
+      updateData.NormalizedUserName = email.toUpperCase();
+      updateData.Name = email.split('@')[0];
+    }
+    if (typeof isApproved === 'boolean') {
+      updateData.IsApproved = isApproved;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await prisma.aspNetUsers.update({
+        where: { Id: id },
+        data: updateData
+      });
+    }
+
+    // Update roles if userType or tables changed
+    if (userType) {
+      // Remove existing roles
+      await prisma.aspNetUserRoles.deleteMany({
+        where: { UserId: id }
+      });
+
+      if (userType === 'admin') {
+        // Find or create Admin role
+        let adminRole = await prisma.aspNetRoles.findFirst({
+          where: { Name: 'Admin' }
+        });
+
+        if (!adminRole) {
+          adminRole = await prisma.aspNetRoles.create({
+            data: {
+              Id: crypto.randomUUID(),
+              Name: 'Admin',
+              NormalizedName: 'ADMIN'
+            }
+          });
+
+          await prisma.aspNetRoleClaims.create({
+            data: {
+              RoleId: adminRole.Id,
+              ClaimType: 'table',
+              ClaimValue: '*'
+            }
+          });
+        }
+
+        await prisma.aspNetUserRoles.create({
+          data: {
+            UserId: id,
+            RoleId: adminRole.Id
+          }
+        });
+
+      } else if (userType === 'user' && tables && tables.length > 0) {
+        const roleIds: string[] = [];
+
+        for (const table of tables) {
+          const roleNameMap: { [key: string]: string } = {
+            'ap_report': 'AP_Report_RW',
+            'interviews': 'Interviews_RW',
+            'onboarding': 'Onboarding_RW',
+            'todo_list': 'Todo_RW'
+          };
+          const roleName = roleNameMap[table] || `${table}_RW`;
+          
+          let tableRole = await prisma.aspNetRoles.findFirst({
+            where: { Name: roleName }
+          });
+
+          if (!tableRole) {
+            tableRole = await prisma.aspNetRoles.create({
+              data: {
+                Id: crypto.randomUUID(),
+                Name: roleName,
+                NormalizedName: roleName.toUpperCase()
+              }
+            });
+
+            await prisma.aspNetRoleClaims.create({
+              data: {
+                RoleId: tableRole.Id,
+                ClaimType: 'table',
+                ClaimValue: table
+              }
+            });
+          }
+
+          roleIds.push(tableRole.Id);
+        }
+
+        await prisma.aspNetUserRoles.createMany({
+          data: roleIds.map((roleId: string) => ({
+            UserId: id,
+            RoleId: roleId
+          }))
+        });
+      }
+    }
+
+    // Fetch updated user with roles
+    const updatedUser = await prisma.aspNetUsers.findUnique({
+      where: { Id: id },
+      include: {
+        AspNetUserRoles: {
+          include: {
+            AspNetRoles: {
+              include: {
+                AspNetRoleClaims: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!updatedUser) {
+      return NextResponse.json({ error: 'User updated but could not fetch details' }, { status: 500 });
+    }
+
+    const userTables = new Set<string>();
+    updatedUser.AspNetUserRoles.forEach((userRole: any) => {
+      userRole.AspNetRoles.AspNetRoleClaims.forEach((claim: any) => {
+        if (claim.ClaimType === 'table') {
+          userTables.add(claim.ClaimValue);
+        }
+      });
+    });
+
+    const userResponse = {
+      id: updatedUser.Id,
+      email: updatedUser.Email,
+      emailConfirmed: updatedUser.EmailConfirmed,
+      isApproved: updatedUser.IsApproved,
+      roles: updatedUser.AspNetUserRoles.map((ur: any) => ur.AspNetRoles.Name),
+      tables: Array.from(userTables),
+      updatedAt: new Date()
+    };
+
+    return NextResponse.json(userResponse);
+  } catch (error) {
+    console.error('Error updating user:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+});
+
+// DELETE /api/admin/users - Delete a user
+export const DELETE = withTableAuthAppRouter('*', async (request: NextRequest) => {
+  try {
+    const url = new URL(request.url);
+    const id = url.searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+    }
+
+    // Check if user exists
+    const existingUser = await prisma.aspNetUsers.findUnique({
+      where: { Id: id }
+    });
+
+    if (!existingUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Delete user roles first (due to foreign key constraints)
+    await prisma.aspNetUserRoles.deleteMany({
+      where: { UserId: id }
+    });
+
+    // Delete the user
+    await prisma.aspNetUsers.delete({
+      where: { Id: id }
+    });
+
+    return NextResponse.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }); 
