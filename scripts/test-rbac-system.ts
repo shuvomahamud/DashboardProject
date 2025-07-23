@@ -4,7 +4,7 @@
  */
 
 import { prisma } from '../src/lib/prisma';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 interface TestUser {
   email: string;
