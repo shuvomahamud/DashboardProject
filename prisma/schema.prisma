@@ -279,3 +279,99 @@ model todo_list {
   nextduedate     DateTime? @db.Date
   note            String?   @db.Text
 }
+
+model Company {
+  id          Int      @id @default(autoincrement())
+  name        String
+  website     String?
+  description String?  @db.Text
+  industry    String?
+  size        String?
+  location    String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  jobs        Job[]
+}
+
+model Job {
+  id              Int       @id @default(autoincrement())
+  title           String
+  description     String    @db.Text
+  requirements    String?   @db.Text
+  salaryMin       Decimal?  @db.Decimal(5,2)
+  salaryMax       Decimal?  @db.Decimal(5,2)
+  location        String?
+  isRemote        Boolean   @default(false)
+  employmentType  String?   // full-time, part-time, contract, etc.
+  status          String    @default("active") // active, paused, closed
+  postedDate      DateTime  @default(now()) @db.Timestamptz(6)
+  expiryDate      DateTime? @db.Timestamptz(6)
+  companyId       Int
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+  aiExtractJson   String?   @db.Text
+  aiSummary       String?   @db.Text
+
+  company         Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  applications    JobApplication[]
+}
+
+model Resume {
+  id              Int       @id @default(autoincrement())
+  fileName        String
+  originalName    String
+  fileSize        Int
+  mimeType        String
+  storagePath     String    // path in Supabase storage
+  uploadedBy      String?   // user ID
+  parsedText      String?   @db.Text
+  skills          String?   @db.Text
+  experience      String?   @db.Text
+  education       String?   @db.Text
+  contactInfo     String?   @db.Text
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+  aiExtractJson   String?   @db.Text
+  aiSummary       String?   @db.Text
+
+  applications    JobApplication[]
+}
+
+model JobApplication {
+  id              Int       @id @default(autoincrement())
+  jobId           Int
+  resumeId        Int
+  status          String    @default("submitted") // submitted, reviewed, interviewed, rejected, hired
+  appliedDate     DateTime  @default(now()) @db.Timestamptz(6)
+  notes           String?   @db.Text
+  score           Decimal?  @db.Decimal(5,2)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+  aiExtractJson   String?   @db.Text
+  aiSummary       String?   @db.Text
+
+  job             Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resume          Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, resumeId])
+}
+
+model EmailIngestLog {
+  id              Int       @id @default(autoincrement())
+  emailId         String    @unique // unique identifier from email provider
+  subject         String
+  sender          String
+  recipient       String
+  receivedDate    DateTime  @db.Timestamptz(6)
+  bodyText        String?   @db.Text
+  bodyHtml        String?   @db.Text
+  attachments     String?   @db.Text // JSON array of attachment info
+  processed       Boolean   @default(false)
+  processedDate   DateTime? @db.Timestamptz(6)
+  errorMessage    String?   @db.Text
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
+  aiExtractJson   String?   @db.Text
+  aiSummary       String?   @db.Text
+}
