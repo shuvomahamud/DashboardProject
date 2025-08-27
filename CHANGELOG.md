@@ -89,3 +89,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dual storage approach**: PostgreSQL for structured data, Supabase Storage for files
 - **Bucket created**: `resumes` bucket configured in Supabase Cloud
 - **Missing**: Service role key needs to be added to `SUPABASE_SERVICE_ROLE`
+
+### Updated - Database Migration Deployed - 2025-01-21
+
+#### Migration Execution
+- **Phase 1 Models Deployed**: Successfully applied `20250821163234_phase1_foundations`
+  - Created `Company`, `Job`, `Resume`, `JobApplication`, `EmailIngestLog` tables
+  - All foreign key relationships and constraints applied
+  - Decimal precision fields configured correctly
+- **pgvector Extension Deployed**: Successfully applied `20250821163317_add_pgvector_embeddings`
+  - Enabled pgvector extension in Supabase PostgreSQL
+  - Created `resume_embeddings` and `job_embeddings` tables with vector(1536) columns
+  - Applied IVFFLAT indexes for vector similarity search
+  - Added unique constraints and performance indexes
+
+#### Database Status
+- **Schema Sync**: Database schema now matches Prisma models
+- **Migration History**: 4 migrations total in production database
+- **Vector Support**: Ready for AI/ML embeddings and similarity search
+- **Foreign Keys**: All cascading delete relationships functional
