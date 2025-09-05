@@ -3,9 +3,12 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 import { createSignedUrl, getPublicUrl } from '@/lib/supabase-server';
 
-async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+async function GET(req: NextRequest) {
   try {
-    const resumeId = parseInt(params.id);
+    // Extract id from URL pathname
+    const pathname = req.nextUrl.pathname;
+    const id = pathname.split('/')[3]; // /api/resumes/[id]/file
+    const resumeId = parseInt(id);
     
     if (isNaN(resumeId)) {
       return NextResponse.json({ error: 'Invalid resume ID' }, { status: 400 });
@@ -19,8 +22,10 @@ async function GET(req: NextRequest, { params }: { params: { id: string } }) {
         fileName: true,
         originalName: true,
         storagePath: true,
+        fileStorageUrl: true,
         mimeType: true,
-        fileSize: true
+        fileSize: true,
+        fileSizeBytes: true
       }
     });
 
@@ -28,7 +33,14 @@ async function GET(req: NextRequest, { params }: { params: { id: string } }) {
       return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
     }
 
-    const bucketName = process.env.SUPABASE_RESUME_BUCKET || 'resumes';
+    // Use fileStorageUrl if available (Phase 2), otherwise fall back to storagePath (Phase 1)
+    const pathToUse = resume.fileStorageUrl || resume.storagePath;
+    
+    if (!pathToUse) {
+      return NextResponse.json({ error: 'Resume file not available' }, { status: 404 });
+    }
+
+    const bucketName = process.env.SUPABASE_RESUME_BUCKET || process.env.SUPABASE_RESUMES_BUCKET || 'resumes';
     const isPrivateBucket = process.env.SUPABASE_PUBLIC_URL_BASE ? false : true;
 
     let fileUrl: string;
@@ -36,21 +48,21 @@ async function GET(req: NextRequest, { params }: { params: { id: string } }) {
     if (isPrivateBucket) {
       // Create signed URL for private bucket (60 seconds TTL)
       try {
-        fileUrl = await createSignedUrl(bucketName, resume.storagePath, 60);
+        fileUrl = await createSignedUrl(bucketName, pathToUse, 60);
       } catch (error) {
         console.error('Error creating signed URL:', error);
         return NextResponse.json({ error: 'Failed to generate file access URL' }, { status: 500 });
       }
     } else {
       // Get public URL for public bucket
-      fileUrl = getPublicUrl(bucketName, resume.storagePath);
+      fileUrl = getPublicUrl(bucketName, pathToUse);
     }
 
     return NextResponse.json({
       url: fileUrl,
       fileName: resume.originalName,
       mimeType: resume.mimeType,
-      fileSize: resume.fileSize,
+      fileSize: resume.fileSizeBytes || resume.fileSize,
       expiresIn: isPrivateBucket ? 60 : null
     });
 
@@ -61,4 +73,5 @@ async function GET(req: NextRequest, { params }: { params: { id: string } }) {
 }
 
 // Apply table-based authentication for 'resumes' table
-export { withTableAuthAppRouter('resumes', GET) as GET };
+const protectedGET = withTableAuthAppRouter('resumes', GET);
+export { protectedGET as GET };

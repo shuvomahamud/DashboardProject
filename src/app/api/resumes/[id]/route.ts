@@ -98,6 +98,8 @@ async function DELETE(req: NextRequest, { params }: { params: { id: string } }) 
 }
 
 // Apply table-based authentication for 'resumes' table
-export { withTableAuthAppRouter('resumes', GET) as GET };
-export { withTableAuthAppRouter('resumes', PUT) as PUT };
-export { withTableAuthAppRouter('resumes', DELETE) as DELETE };
+export const GET_AUTHENTICATED = withTableAuthAppRouter('resumes', GET);
+export const PUT_AUTHENTICATED = withTableAuthAppRouter('resumes', PUT);
+export const DELETE_AUTHENTICATED = withTableAuthAppRouter('resumes', DELETE);
+
+export { GET_AUTHENTICATED as GET, PUT_AUTHENTICATED as PUT, DELETE_AUTHENTICATED as DELETE };

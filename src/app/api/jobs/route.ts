@@ -92,6 +92,17 @@ async function POST(req: NextRequest) {
       }
     });
 
+    // Trigger job embedding generation (fire-and-forget, non-blocking)
+    if (process.env.OPENAI_API_KEY) {
+      import('@/lib/ai/embedJob').then(({ upsertJobEmbedding }) => {
+        upsertJobEmbedding(job.id).catch(embedError => {
+          console.warn(`Non-blocking job embedding failed for job ${job.id}:`, embedError);
+        });
+      }).catch(importError => {
+        console.warn(`Failed to import job embedding module:`, importError);
+      });
+    }
+
     return NextResponse.json(job, { status: 201 });
 
   } catch (error) {

@@ -17,6 +17,9 @@
     "seed": "npx tsx prisma/seed.ts",
     "test:rbac": "npx tsx scripts/test-rbac-system.ts",
     "test:interviews": "npx tsx scripts/test-interviews-sync.ts",
+    "test:msgraph": "npx tsx scripts/test-msgraph.ts",
+    "test:ai": "npx tsx scripts/test-ai-parsing.ts",
+    "setup:storage": "npx tsx scripts/setup-supabase-storage.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio"
@@ -24,22 +27,26 @@
   "dependencies": {
     "@auth/prisma-adapter": "^2.10.0",
     "@prisma/client": "^6.11.1",
-    "@supabase/supabase-js": "^2.55.0",
+    "@supabase/supabase-js": "^2.56.0",
     "@types/bcryptjs": "^2.4.6",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react-bootstrap": "^1.0.1",
     "bcryptjs": "^3.0.2",
     "bootstrap": "^5.3.7",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.0",
     "googleapis": "^152.0.0",
+    "mammoth": "^1.10.0",
     "next": "^14.2.18",
     "next-auth": "^4.24.11",
+    "openai": "^5.16.0",
+    "pdf-parse": "^1.1.1",
     "prisma": "^6.11.1",
     "react": "^18.3.1",
     "react-bootstrap": "^2.10.5",
     "react-data-table-component": "^7.7.0",
     "react-dom": "^18.3.1",
-    "zod": "^4.0.5"
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

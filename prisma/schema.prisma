@@ -8,41 +8,36 @@ datasource db {
 }
 
 model AP_Report {
-  AP_ID                     Int      @id @default(autoincrement())
-
-  /** ✨ NEW – replaces StartEndDate */
-  StartDate                 DateTime? @db.Timestamptz(6)
-  EndDate                   DateTime? @db.Timestamptz(6)
-
-  AgencyAuthorizedUser      String
-  TaskOrderNumber           String
-  CandidateName             String
-  Region                    Int
-  JobTitle                  String
-  SkillLevel                Int
-
-  TotalHours                Decimal  @db.Decimal
-  TimesheetApprovalDate     DateTime? @db.Timestamptz(6)
-  HourlyWageRateBase        Decimal  @db.Decimal
-  MarkUpPercent             Decimal  @db.Decimal
-  HourlyWageRateWithMarkup  Decimal  @db.Decimal
-  TotalBilledOGSClient      Decimal  @db.Decimal
-  PaidToVendor              Decimal  @db.Decimal
-  VendorName                String
-
-  /** ✨ NEW columns */
-  VendorHours               Decimal? @db.Decimal
-  HoursMatchInvoice         Boolean
-  VendorInvoiceRemarks      String?
-
-  InvoiceNumber             String
-  VendorInvoiceDate         DateTime? @db.Timestamptz(6)
-  TimesheetsApproved        Boolean
-  Remark                    String
-  PaymentTermNet            Int
-  PaymentMode               String
-  PaymentDueDate            DateTime? @db.Timestamptz(6)
-  Check                     String   @default("") @db.VarChar(20)
+  AP_ID                    Int       @id @default(autoincrement())
+  /// * ✨ NEW – replaces StartEndDate
+  StartDate                DateTime? @db.Timestamptz(6)
+  EndDate                  DateTime? @db.Timestamptz(6)
+  AgencyAuthorizedUser     String
+  TaskOrderNumber          String
+  CandidateName            String
+  Region                   Int
+  JobTitle                 String
+  SkillLevel               Int
+  TotalHours               Decimal   @db.Decimal
+  TimesheetApprovalDate    DateTime? @db.Timestamptz(6)
+  HourlyWageRateBase       Decimal   @db.Decimal
+  MarkUpPercent            Decimal   @db.Decimal
+  HourlyWageRateWithMarkup Decimal   @db.Decimal
+  TotalBilledOGSClient     Decimal   @db.Decimal
+  PaidToVendor             Decimal   @db.Decimal
+  VendorName               String
+  /// * ✨ NEW columns
+  VendorHours              Decimal?  @db.Decimal
+  HoursMatchInvoice        Boolean
+  VendorInvoiceRemarks     String?
+  InvoiceNumber            String
+  VendorInvoiceDate        DateTime? @db.Timestamptz(6)
+  TimesheetsApproved       Boolean
+  Remark                   String
+  PaymentTermNet           Int
+  PaymentMode              String
+  PaymentDueDate           DateTime? @db.Timestamptz(6)
+  Check                    String    @default("") @db.VarChar(20)
 }
 
 model AspNetRoleClaims {
@@ -160,100 +155,98 @@ model ap_report {
 
 model interviews {
   interviewid                  Int       @id @default(autoincrement())
-  hbits_no                     String?   @db.Text
-  position                     String?   @db.Text
+  hbits_no                     String?
+  position                     String?
   level                        Int?
   mailreceiveddate             DateTime? @db.Date
-  consultantname               String?   @db.Text
-  clientsuggesteddates         String?   @db.Text
+  consultantname               String?
+  clientsuggesteddates         String?
   maileddatestoconsultant      DateTime? @db.Date
-  interviewtimeoptedfor        String?   @db.Text
+  interviewtimeoptedfor        String?
   interviewscheduledmailedtomr Boolean?
   interviewconfirmedbyclient   DateTime? @db.Date
   timeofinterview              DateTime? @db.Timestamp(6)
-  thrurecruiter                String?   @db.Text
-  consultantcontactno          String?   @db.Text
-  consultantemail              String?   @db.Text
-  vendorpocname                String?   @db.Text
-  vendornumber                 String?   @db.Text
-  vendoremailid                String?   @db.Text
-  candidateselected            String?   @db.Text
+  thrurecruiter                String?
+  consultantcontactno          String?
+  consultantemail              String?
+  vendorpocname                String?
+  vendornumber                 String?
+  vendoremailid                String?
+  candidateselected            String?
   monthyear                    String?   @db.VarChar(20)
-  
-  // ✨ new fields
-  remark                       String?   @db.Text
-  status                       String?   @db.Text
   clientconfmailreceived       Boolean?
-  mailsenttoconsultant         Boolean?
-  mailreceivedfromconsultant   Boolean?
   confemailccvendor            Boolean?
+  mailreceivedfromconsultant   Boolean?
+  mailsenttoconsultant         Boolean?
+  remark                       String?
+  status                       String?
 }
 
 model onboarding {
-  onboardingid                  Int       @id @default(autoincrement())
-  taskOrder                     String?   @db.Text
-  clientAgencyName              String?   @db.Text
-  form2FormB                    String?   @db.Text
-  resumeAndForm1FormB           String?   @db.Text
-  agencyNameFromForm1           String?   @db.Text
-  employerNameMatchMsa          String?   @db.Text
-  dateOfConfirmation            DateTime? @db.Timestamptz(6)
-  recruiterName                 String?   @db.Text
-  expectedOnboardingDate        DateTime? @db.Timestamptz(6)
-  actualStartDate               DateTime? @db.Timestamptz(6)
-  endDate                       DateTime? @db.Timestamptz(6)
-  engagementLengthMonths        String?   @db.Text
-  consultantName                String?   @db.Text
-  dob                           DateTime? @db.Timestamptz(6)
-  currentLocation               String?   @db.Text
-  consultantPhone               String?   @db.Text
-  consultantEmail               String?   @db.Text
-  hiringTerm                    String?   @db.Text
-  consultantMailingAddress      String?   @db.Text
-  onboardingLetterReceived      String?   @db.Text
-  billRateFromClient            String?   @db.Text
-  fingerPrintingRequired        String?   @db.Text
-  backgroundCheckRequired       String?   @db.Text
-  trackSubmission               String?   @db.Text
-  remoteLoginCredentials        String?   @db.Text
-  nonCompeteAgreement           String?   @db.Text
-  idDocsRequired                String?   @db.Text
-  onboardingEmailToCandidate    String?   @db.Text
-  coreForm                      String?   @db.Text
-  telecommuting                 String?   @db.Text
-  softcopyBeforeMail            String?   @db.Text
-  employerNameConsistency       String?   @db.Text
-  vendorName                    String?   @db.Text
-  vendorPocPhone                String?   @db.Text
-  vendorPocEmail                String?   @db.Text
-  payRateToVendor               String?   @db.Text
-  vendorFedId                   String?   @db.Text
-  vendorAddress                 String?   @db.Text
-  msaEmploymentLetter           String?   @db.Text
-  workOrder                     String?   @db.Text
-  w9                            String?   @db.Text
-  coi                           String?   @db.Text
-  billingTerms                  String?   @db.Text
-  onboardingEmailToVendor       String?   @db.Text
-  postOnboardingVendorBGC       String?   @db.Text
-  firstDayInstructions          String?   @db.Text
-  completeI9                    String?   @db.Text
-  createAccountAdp              String?   @db.Text
-  simpleIraInclusion            String?   @db.Text
-  offerLetter                   String?   @db.Text
-  uploadPayrollInfoCeipal       String?   @db.Text
-  timesheets                    String?   @db.Text
-  trackingArrivalDetails        String?   @db.Text
-  allVerificationsDone          String?   @db.Text
-  allFilesUploaded              String?   @db.Text
-  actualEndDate                 DateTime? @db.Timestamptz(6)
-  noticePeriod                  String?   @db.Text
-  returnOfAssets                String?   @db.Text
-  refundDeposit                 String?   @db.Text
-  closeSimpleIra                String?   @db.Text
-  terminateEmploymentAdp        String?   @db.Text
-  exitInterview                 String?   @db.Text
-  createddate                   DateTime? @default(dbgenerated("CURRENT_DATE")) @db.Date
+  onboardingid               Int       @id @default(autoincrement())
+  taskOrder                  String?
+  clientAgencyName           String?
+  form2FormB                 String?
+  resumeAndForm1FormB        String?
+  agencyNameFromForm1        String?
+  employerNameMatchMsa       String?
+  dateOfConfirmation         DateTime? @db.Timestamptz(6)
+  recruiterName              String?
+  expectedOnboardingDate     DateTime? @db.Timestamptz(6)
+  actualStartDate            DateTime? @db.Timestamptz(6)
+  endDate                    DateTime? @db.Timestamptz(6)
+  engagementLengthMonths     String?
+  consultantName             String?
+  dob                        DateTime? @db.Timestamptz(6)
+  currentLocation            String?
+  consultantPhone            String?
+  consultantEmail            String?
+  hiringTerm                 String?
+  consultantMailingAddress   String?
+  onboardingLetterReceived   String?
+  billRateFromClient         String?
+  fingerPrintingRequired     String?
+  backgroundCheckRequired    String?
+  trackSubmission            String?
+  remoteLoginCredentials     String?
+  nonCompeteAgreement        String?
+  idDocsRequired             String?
+  onboardingEmailToCandidate String?
+  coreForm                   String?
+  telecommuting              String?
+  softcopyBeforeMail         String?
+  employerNameConsistency    String?
+  vendorName                 String?
+  vendorPocPhone             String?
+  vendorPocEmail             String?
+  payRateToVendor            String?
+  vendorFedId                String?
+  vendorAddress              String?
+  msaEmploymentLetter        String?
+  workOrder                  String?
+  w9                         String?
+  coi                        String?
+  billingTerms               String?
+  onboardingEmailToVendor    String?
+  postOnboardingVendorBGC    String?
+  firstDayInstructions       String?
+  completeI9                 String?
+  createAccountAdp           String?
+  simpleIraInclusion         String?
+  offerLetter                String?
+  uploadPayrollInfoCeipal    String?
+  timesheets                 String?
+  trackingArrivalDetails     String?
+  allVerificationsDone       String?
+  allFilesUploaded           String?
+  actualEndDate              DateTime? @db.Timestamptz(6)
+  noticePeriod               String?
+  returnOfAssets             String?
+  refundDeposit              String?
+  closeSimpleIra             String?
+  terminateEmploymentAdp     String?
+  exitInterview              String?
+  createddate                DateTime? @default(dbgenerated("CURRENT_DATE")) @db.Date
 }
 
 model sheet_config {
@@ -277,101 +270,157 @@ model todo_list {
   followupneeded  Boolean?
   recurring       Boolean?
   nextduedate     DateTime? @db.Date
-  note            String?   @db.Text
+  note            String?
 }
 
 model Company {
   id          Int      @id @default(autoincrement())
   name        String
   website     String?
-  description String?  @db.Text
+  description String?
   industry    String?
   size        String?
   location    String?
   createdAt   DateTime @default(now()) @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @db.Timestamptz(6)
-
   jobs        Job[]
 }
 
 model Job {
-  id              Int       @id @default(autoincrement())
-  title           String
-  description     String    @db.Text
-  requirements    String?   @db.Text
-  salaryMin       Decimal?  @db.Decimal(5,2)
-  salaryMax       Decimal?  @db.Decimal(5,2)
-  location        String?
-  isRemote        Boolean   @default(false)
-  employmentType  String?   // full-time, part-time, contract, etc.
-  status          String    @default("active") // active, paused, closed
-  postedDate      DateTime  @default(now()) @db.Timestamptz(6)
-  expiryDate      DateTime? @db.Timestamptz(6)
-  companyId       Int
-  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
-  aiExtractJson   String?   @db.Text
-  aiSummary       String?   @db.Text
-
-  company         Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  applications    JobApplication[]
+  id             Int              @id @default(autoincrement())
+  title          String
+  description    String
+  requirements   String?
+  salaryMin      Decimal?         @db.Decimal(5, 2)
+  salaryMax      Decimal?         @db.Decimal(5, 2)
+  location       String?
+  isRemote       Boolean          @default(false)
+  employmentType String?
+  status         String           @default("active")
+  postedDate     DateTime         @default(now()) @db.Timestamptz(6)
+  expiryDate     DateTime?        @db.Timestamptz(6)
+  companyId      Int
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
+  aiExtractJson    String?
+  aiSummary        String?
+  
+  // Phase 2 field
+  applicationQuery String?          @db.Text // AQS query for email ingestion
+  
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  applications   JobApplication[]
+  job_embeddings job_embeddings[]
 }
 
 model Resume {
-  id              Int       @id @default(autoincrement())
-  fileName        String
-  originalName    String
-  fileSize        Int
-  mimeType        String
-  storagePath     String    // path in Supabase storage
-  uploadedBy      String?   // user ID
-  parsedText      String?   @db.Text
-  skills          String?   @db.Text
-  experience      String?   @db.Text
-  education       String?   @db.Text
-  contactInfo     String?   @db.Text
-  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
-  aiExtractJson   String?   @db.Text
-  aiSummary       String?   @db.Text
+  id                Int                 @id @default(autoincrement())
+  fileName          String
+  originalName      String
+  fileSize          Int
+  mimeType          String
+  storagePath       String
+  uploadedBy        String?
+  parsedText        String?
+  skills            String?
+  experience        String?
+  education         String?
+  contactInfo       String?
+  createdAt         DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(6)
+  aiExtractJson     String?
+  aiSummary         String?
+  
+  // Phase 2 fields
+  sourceType        String    @default("upload") // upload, email, cloud_import
+  sourceMessageId   String?   // Outlook message ID
+  sourceSubject     String?   // Email subject
+  sourceFrom        String?   // Email sender
+  sourcePath        String?   // OneDrive path or other source path
+  fileHash          String?   // SHA256 hash for deduplication
+  fileSizeBytes     Int?      // File size in bytes
+  fileStorageUrl    String?   // Storage URL or path
+  rawText           String?   @db.Text // Extracted text content
+  
+  // Phase 3 AI parsing fields
+  companies         String?   @db.Text // Comma-separated company names
+  employmentHistoryJson String? @db.Text // JSON array of employment history
+  totalExperienceY  Decimal?  @db.Decimal(5,2) // Total years of experience
+  parsedAt          DateTime? @db.Timestamptz(6) // When AI parsing was completed
 
-  applications    JobApplication[]
+  applications      JobApplication[]
+  resume_embeddings resume_embeddings[]
+  
+  @@index([fileHash])
+  @@index([sourceMessageId])
+  @@index([parsedAt])
 }
 
 model JobApplication {
-  id              Int       @id @default(autoincrement())
-  jobId           Int
-  resumeId        Int
-  status          String    @default("submitted") // submitted, reviewed, interviewed, rejected, hired
-  appliedDate     DateTime  @default(now()) @db.Timestamptz(6)
-  notes           String?   @db.Text
-  score           Decimal?  @db.Decimal(5,2)
-  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
-  aiExtractJson   String?   @db.Text
-  aiSummary       String?   @db.Text
-
-  job             Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  resume          Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  id            Int      @id @default(autoincrement())
+  jobId         Int
+  resumeId      Int
+  status        String   @default("submitted")
+  appliedDate   DateTime @default(now()) @db.Timestamptz(6)
+  notes         String?
+  score         Decimal? @db.Decimal(5, 2)
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+  aiExtractJson String?
+  aiSummary     String?
+  job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resume        Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, resumeId])
 }
 
 model EmailIngestLog {
-  id              Int       @id @default(autoincrement())
-  emailId         String    @unique // unique identifier from email provider
-  subject         String
-  sender          String
-  recipient       String
-  receivedDate    DateTime  @db.Timestamptz(6)
-  bodyText        String?   @db.Text
-  bodyHtml        String?   @db.Text
-  attachments     String?   @db.Text // JSON array of attachment info
-  processed       Boolean   @default(false)
-  processedDate   DateTime? @db.Timestamptz(6)
-  errorMessage    String?   @db.Text
-  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime  @updatedAt @db.Timestamptz(6)
-  aiExtractJson   String?   @db.Text
-  aiSummary       String?   @db.Text
+  id            Int       @id @default(autoincrement())
+  emailId       String    @unique
+  subject       String
+  sender        String
+  recipient     String
+  receivedDate  DateTime  @db.Timestamptz(6)
+  bodyText      String?
+  bodyHtml      String?
+  attachments   String?
+  processed     Boolean   @default(false)
+  processedDate DateTime? @db.Timestamptz(6)
+  errorMessage  String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(6)
+  aiExtractJson String?
+  aiSummary     String?
+}
+
+model job_embeddings {
+  id           Int                   @id @default(autoincrement())
+  job_id       Int
+  content_hash String
+  embedding    Unsupported("vector")
+  chunk_text   String?
+  metadata     Json?
+  created_at   DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime              @default(now()) @db.Timestamptz(6)
+  Job          Job                   @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_job_embeddings_job_id")
+
+  @@unique([job_id, content_hash], map: "idx_job_embeddings_unique")
+  @@index([job_id], map: "idx_job_embeddings_job_id")
+  @@index([embedding], map: "idx_job_embeddings_vector")
+}
+
+model resume_embeddings {
+  id           Int                   @id @default(autoincrement())
+  resume_id    Int
+  content_hash String
+  embedding    Unsupported("vector")
+  chunk_text   String?
+  metadata     Json?
+  created_at   DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime              @default(now()) @db.Timestamptz(6)
+  Resume       Resume                @relation(fields: [resume_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_resume_embeddings_resume_id")
+
+  @@unique([resume_id, content_hash], map: "idx_resume_embeddings_unique")
+  @@index([resume_id], map: "idx_resume_embeddings_resume_id")
+  @@index([embedding], map: "idx_resume_embeddings_vector")
 }
