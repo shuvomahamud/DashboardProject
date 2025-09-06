@@ -3,7 +3,7 @@ import { embedText } from '../src/lib/ai/embeddings';
 
 interface SemanticSearchResult {
   resumeId: number;
-  candidateName: string | null;
+  originalName: string | null;
   fileName: string;
   score: number;
 }
@@ -47,7 +47,7 @@ async function demonstrateSemanticSearch() {
         const results = await prisma.$queryRaw<SemanticSearchResult[]>`
           SELECT 
             r.id as "resumeId",
-            r."candidateName",
+            r."originalName",
             r."fileName",
             (1 - (re.embedding <=> ${embeddingString}::vector)) as score
           FROM resume_embeddings re
@@ -63,7 +63,7 @@ async function demonstrateSemanticSearch() {
         
         results.forEach((result, index) => {
           const score = (result.score * 100).toFixed(1);
-          const name = result.candidateName || 'Unknown';
+          const name = result.originalName || 'Unknown';
           console.log(`   ${index + 1}. ${name} (${result.fileName}) - ${score}% match`);
         });
         console.log();
@@ -79,7 +79,7 @@ async function demonstrateSemanticSearch() {
     
     // Find a resume with embeddings to test duplicates
     const sampleResume = await prisma.$queryRaw`
-      SELECT r.id, r."candidateName", r."fileName"
+      SELECT r.id, r."originalName", r."fileName"
       FROM "Resume" r
       JOIN resume_embeddings re ON r.id = re.resume_id
       LIMIT 1
@@ -87,7 +87,7 @@ async function demonstrateSemanticSearch() {
     
     if (sampleResume.length > 0) {
       const resume = sampleResume[0];
-      console.log(`🔍 Finding duplicates for: ${resume.candidateName || 'Unknown'} (${resume.fileName})`);
+      console.log(`🔍 Finding duplicates for: ${resume.originalName || 'Unknown'} (${resume.fileName})`);
       
       // Get the resume's embedding
       const embeddingResult = await prisma.$queryRaw`
@@ -101,7 +101,7 @@ async function demonstrateSemanticSearch() {
         const duplicates = await prisma.$queryRaw<SemanticSearchResult[]>`
           SELECT 
             r.id as "resumeId",
-            r."candidateName",
+            r."originalName",
             r."fileName",
             (1 - (re.embedding <=> ${embedding}::vector)) as score
           FROM resume_embeddings re
@@ -117,7 +117,7 @@ async function demonstrateSemanticSearch() {
         } else {
           duplicates.forEach((dup, index) => {
             const score = (dup.score * 100).toFixed(1);
-            const name = dup.candidateName || 'Unknown';
+            const name = dup.originalName || 'Unknown';
             console.log(`   ${index + 1}. ${name} (${dup.fileName}) - ${score}% similar`);
           });
         }

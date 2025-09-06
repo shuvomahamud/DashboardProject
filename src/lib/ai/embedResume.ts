@@ -23,7 +23,7 @@ export interface ResumeEmbeddingRow {
 export interface DuplicateMatch {
   resumeId: number;
   score: number;
-  candidateName?: string;
+  originalName?: string;
   fileName?: string;
 }
 
@@ -41,7 +41,7 @@ export async function upsertResumeEmbedding(resumeId: number): Promise<EmbedResu
         id: true,
         rawText: true,
         parsedText: true,
-        candidateName: true,
+        originalName: true,
         fileName: true
       }
     });
@@ -83,7 +83,7 @@ export async function upsertResumeEmbedding(resumeId: number): Promise<EmbedResu
     const metadata = {
       model: process.env.AI_MODEL_EMBED || 'text-embedding-3-large',
       textLength: textToEmbed.length,
-      candidateName: resume.candidateName,
+      originalName: resume.originalName,
       fileName: resume.fileName,
       embeddedAt: new Date().toISOString()
     };
@@ -149,13 +149,13 @@ export async function findNearDuplicateResumes(
     const results = await prisma.$queryRaw<{
       resume_id: number;
       score: number;
-      candidateName: string | null;
+      originalName: string;
       fileName: string;
     }[]>`
       SELECT 
         r.id as resume_id,
         (1 - (re.embedding <=> ${JSON.stringify(embedding)}::vector)) as score,
-        r."candidateName",
+        r."originalName",
         r."fileName"
       FROM resume_embeddings re
       JOIN "Resume" r ON r.id = re.resume_id
@@ -170,7 +170,7 @@ export async function findNearDuplicateResumes(
       .map(row => ({
         resumeId: row.resume_id,
         score: Number(row.score),
-        candidateName: row.candidateName || undefined,
+        originalName: row.originalName || undefined,
         fileName: row.fileName
       }));
 

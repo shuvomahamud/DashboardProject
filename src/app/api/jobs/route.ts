@@ -35,9 +35,6 @@ async function GET(req: NextRequest) {
       prisma.job.findMany({
         where,
         include: {
-          company: {
-            select: { id: true, name: true }
-          },
           _count: {
             select: { applications: true }
           }
@@ -69,26 +66,45 @@ async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     
+    // Validate salary values to fit database constraints (max 999.99 for Decimal(5,2))
+    let salaryMin = null;
+    let salaryMax = null;
+    
+    if (body.salaryMin) {
+      const minVal = parseFloat(body.salaryMin);
+      if (minVal > 999.99) {
+        return NextResponse.json({ 
+          error: 'Minimum salary cannot exceed 999.99. Please adjust the salary range or contact admin to update database constraints.' 
+        }, { status: 400 });
+      }
+      salaryMin = minVal;
+    }
+    
+    if (body.salaryMax) {
+      const maxVal = parseFloat(body.salaryMax);
+      if (maxVal > 999.99) {
+        return NextResponse.json({ 
+          error: 'Maximum salary cannot exceed 999.99. Please adjust the salary range or contact admin to update database constraints.' 
+        }, { status: 400 });
+      }
+      salaryMax = maxVal;
+    }
+
     const job = await prisma.job.create({
       data: {
         title: body.title,
         description: body.description,
         requirements: body.requirements,
-        salaryMin: body.salaryMin ? parseFloat(body.salaryMin) : null,
-        salaryMax: body.salaryMax ? parseFloat(body.salaryMax) : null,
+        salaryMin,
+        salaryMax,
         location: body.location,
         isRemote: body.isRemote || false,
         employmentType: body.employmentType,
         status: body.status || 'active',
         expiryDate: body.expiryDate ? new Date(body.expiryDate) : null,
-        companyId: parseInt(body.companyId),
+        companyName: body.companyName,
         aiExtractJson: body.aiExtractJson,
         aiSummary: body.aiSummary
-      },
-      include: {
-        company: {
-          select: { id: true, name: true }
-        }
       }
     });
 
@@ -112,5 +128,6 @@ async function POST(req: NextRequest) {
 }
 
 // Apply table-based authentication for 'jobs' table
-export { withTableAuthAppRouter('jobs', GET) as GET };
-export { withTableAuthAppRouter('jobs', POST) as POST };
+const protectedGET = withTableAuthAppRouter('jobs', GET);
+const protectedPOST = withTableAuthAppRouter('jobs', POST);
+export { protectedGET as GET, protectedPOST as POST };

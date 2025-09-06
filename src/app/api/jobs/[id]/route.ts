@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 
-async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+async function GET(req: NextRequest) {
   try {
-    const jobId = parseInt(params.id);
+    // Extract params from URL path
+    const url = new URL(req.url);
+    const pathSegments = url.pathname.split('/');
+    const jobId = parseInt(pathSegments[pathSegments.length - 1]);
     
     if (isNaN(jobId)) {
       return NextResponse.json({ error: 'Invalid job ID' }, { status: 400 });
@@ -13,7 +16,6 @@ async function GET(req: NextRequest, { params }: { params: { id: string } }) {
     const job = await prisma.job.findUnique({
       where: { id: jobId },
       include: {
-        company: true,
         applications: {
           include: {
             resume: {
@@ -41,9 +43,12 @@ async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   }
 }
 
-async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+async function PUT(req: NextRequest) {
   try {
-    const jobId = parseInt(params.id);
+    // Extract params from URL path
+    const url = new URL(req.url);
+    const pathSegments = url.pathname.split('/');
+    const jobId = parseInt(pathSegments[pathSegments.length - 1]);
     
     if (isNaN(jobId)) {
       return NextResponse.json({ error: 'Invalid job ID' }, { status: 400 });
@@ -51,26 +56,46 @@ async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
 
     const body = await req.json();
     
+    // Validate salary values to fit database constraints (max 999.99 for Decimal(5,2))
+    let salaryMin = null;
+    let salaryMax = null;
+    
+    if (body.salaryMin) {
+      const minVal = parseFloat(body.salaryMin);
+      if (minVal > 999.99) {
+        return NextResponse.json({ 
+          error: 'Minimum salary cannot exceed 999.99. Please adjust the salary range or contact admin to update database constraints.' 
+        }, { status: 400 });
+      }
+      salaryMin = minVal;
+    }
+    
+    if (body.salaryMax) {
+      const maxVal = parseFloat(body.salaryMax);
+      if (maxVal > 999.99) {
+        return NextResponse.json({ 
+          error: 'Maximum salary cannot exceed 999.99. Please adjust the salary range or contact admin to update database constraints.' 
+        }, { status: 400 });
+      }
+      salaryMax = maxVal;
+    }
+    
     const job = await prisma.job.update({
       where: { id: jobId },
       data: {
         title: body.title,
         description: body.description,
         requirements: body.requirements,
-        salaryMin: body.salaryMin ? parseFloat(body.salaryMin) : null,
-        salaryMax: body.salaryMax ? parseFloat(body.salaryMax) : null,
+        salaryMin,
+        salaryMax,
         location: body.location,
         isRemote: body.isRemote,
         employmentType: body.employmentType,
         status: body.status,
         expiryDate: body.expiryDate ? new Date(body.expiryDate) : null,
+        companyName: body.companyName,
         aiExtractJson: body.aiExtractJson,
         aiSummary: body.aiSummary
-      },
-      include: {
-        company: {
-          select: { id: true, name: true }
-        }
       }
     });
 
@@ -93,9 +118,12 @@ async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   }
 }
 
-async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+async function DELETE(req: NextRequest) {
   try {
-    const jobId = parseInt(params.id);
+    // Extract params from URL path
+    const url = new URL(req.url);
+    const pathSegments = url.pathname.split('/');
+    const jobId = parseInt(pathSegments[pathSegments.length - 1]);
     
     if (isNaN(jobId)) {
       return NextResponse.json({ error: 'Invalid job ID' }, { status: 400 });
@@ -114,6 +142,7 @@ async function DELETE(req: NextRequest, { params }: { params: { id: string } }) 
 }
 
 // Apply table-based authentication for 'jobs' table
-export { withTableAuthAppRouter('jobs', GET) as GET };
-export { withTableAuthAppRouter('jobs', PUT) as PUT };
-export { withTableAuthAppRouter('jobs', DELETE) as DELETE };
+const protectedGET = withTableAuthAppRouter('jobs', GET);
+const protectedPUT = withTableAuthAppRouter('jobs', PUT);
+const protectedDELETE = withTableAuthAppRouter('jobs', DELETE);
+export { protectedGET as GET, protectedPUT as PUT, protectedDELETE as DELETE };

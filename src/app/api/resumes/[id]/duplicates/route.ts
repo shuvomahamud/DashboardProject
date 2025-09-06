@@ -9,7 +9,7 @@ interface DuplicatesResponse {
   limit: number;
   results: DuplicateMatch[];
   resume?: {
-    candidateName?: string;
+    originalName: string;
     fileName: string;
   };
 }
@@ -51,7 +51,7 @@ async function GET(req: NextRequest) {
       where: { id: resumeId },
       select: {
         id: true,
-        candidateName: true,
+        originalName: true,
         fileName: true
       }
     });
@@ -69,7 +69,7 @@ async function GET(req: NextRequest) {
       limit,
       results: duplicates,
       resume: {
-        candidateName: resume.candidateName || undefined,
+        originalName: resume.originalName,
         fileName: resume.fileName
       }
     };

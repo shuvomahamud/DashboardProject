@@ -299,7 +299,8 @@ model Job {
   status         String           @default("active")
   postedDate     DateTime         @default(now()) @db.Timestamptz(6)
   expiryDate     DateTime?        @db.Timestamptz(6)
-  companyId      Int
+  companyId      Int?             // Made optional for backwards compatibility
+  companyName    String?          // New field for company name
   createdAt      DateTime         @default(now()) @db.Timestamptz(6)
   updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
   aiExtractJson    String?
@@ -308,7 +309,7 @@ model Job {
   // Phase 2 field
   applicationQuery String?          @db.Text // AQS query for email ingestion
   
-  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company        Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull)
   applications   JobApplication[]
   job_embeddings job_embeddings[]
 }

@@ -6,8 +6,7 @@ import { upsertJobEmbedding, getJobEmbedding } from '@/lib/ai/embedJob';
 interface CandidateMatch {
   resumeId: number;
   score: number;
-  candidateName?: string;
-  email?: string;
+  originalName?: string;
   fileName?: string;
   createdAt?: Date;
 }
@@ -86,16 +85,14 @@ async function GET(req: NextRequest) {
     const results = await prisma.$queryRaw<{
       resume_id: number;
       score: number;
-      candidateName: string | null;
-      email: string | null;
+      originalName: string;
       fileName: string;
       createdAt: Date;
     }[]>`
       SELECT 
         r.id as resume_id,
         (1 - (re.embedding <=> ${JSON.stringify(jobEmbedding)}::vector)) as score,
-        r."candidateName",
-        r."email",
+        r."originalName",
         r."fileName",
         r."createdAt"
       FROM resume_embeddings re
@@ -109,8 +106,7 @@ async function GET(req: NextRequest) {
     const candidates: CandidateMatch[] = results.map(row => ({
       resumeId: row.resume_id,
       score: Number(row.score),
-      candidateName: row.candidateName || undefined,
-      email: row.email || undefined,
+      originalName: row.originalName || undefined,
       fileName: row.fileName,
       createdAt: row.createdAt
     }));

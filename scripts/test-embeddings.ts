@@ -32,7 +32,7 @@ async function testEmbeddings() {
           { OR: [{ rawText: { not: '' } }, { parsedText: { not: '' } }] }
         ]
       },
-      select: { id: true, candidateName: true, fileName: true }
+      select: { id: true, originalName: true, fileName: true }
     });
     
     if (resumeWithText) {
