@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
 import { SessionWithTables } from '@/types/next-auth';
 
-export type AppRouterHandler = (req: NextRequest) => Promise<NextResponse>;
+export type AppRouterHandler = (req: NextRequest, ctx?: { params: any }) => Promise<NextResponse>;
 
 /**
  * App Router middleware that protects API routes based on table permissions
@@ -12,7 +12,7 @@ export type AppRouterHandler = (req: NextRequest) => Promise<NextResponse>;
  * @returns Protected API route handler
  */
 export const withTableAuthAppRouter = (tableKey: string, handler: AppRouterHandler): AppRouterHandler => {
-  return async (req: NextRequest) => {
+  return async (req: NextRequest, ctx?: { params: any }) => {
     try {
       // Get the session - we need to pass a mock response object for App Router
       const session = await getServerSession(authOptions) as SessionWithTables;
@@ -48,7 +48,7 @@ export const withTableAuthAppRouter = (tableKey: string, handler: AppRouterHandl
       }
 
       // User has permission, proceed to handler
-      return handler(req);
+      return handler(req, ctx);
     } catch (error) {
       console.error('Auth middleware error:', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
