@@ -11,8 +11,13 @@ function parsePaging(url: string) {
 }
 
 // GET /api/jobs/[id]/applications?q=&page=&pageSize=
-async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const jobId = Number(params.id);
+async function _GET(req: NextRequest) {
+  // Extract jobId from URL path
+  const url = new URL(req.url);
+  const pathSegments = url.pathname.split('/');
+  const jobIdIndex = pathSegments.findIndex(segment => segment === 'jobs') + 1;
+  const jobId = parseInt(pathSegments[jobIdIndex]);
+  
   if (!Number.isFinite(jobId)) {
     return Response.json({ error: "Invalid job id" }, { status: 400 });
   }
@@ -123,8 +128,13 @@ async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
 }
 
 // PATCH /api/jobs/[id]/applications  { resumeId, status?, notes?, score? }
-async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const jobId = Number(params.id);
+async function _PATCH(req: NextRequest) {
+  // Extract jobId from URL path
+  const url = new URL(req.url);
+  const pathSegments = url.pathname.split('/');
+  const jobIdIndex = pathSegments.findIndex(segment => segment === 'jobs') + 1;
+  const jobId = parseInt(pathSegments[jobIdIndex]);
+  
   if (!Number.isFinite(jobId)) {
     return Response.json({ error: "Invalid job id" }, { status: 400 });
   }
@@ -150,8 +160,13 @@ async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) 
 }
 
 // DELETE /api/jobs/[id]/applications  { resumeId }
-async function _DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const jobId = Number(params.id);
+async function _DELETE(req: NextRequest) {
+  // Extract jobId from URL path
+  const url = new URL(req.url);
+  const pathSegments = url.pathname.split('/');
+  const jobIdIndex = pathSegments.findIndex(segment => segment === 'jobs') + 1;
+  const jobId = parseInt(pathSegments[jobIdIndex]);
+  
   if (!Number.isFinite(jobId)) {
     return Response.json({ error: "Invalid job id" }, { status: 400 });
   }

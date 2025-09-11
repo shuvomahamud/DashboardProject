@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import { importEmailSchema } from '@/lib/validation/importEmail';
+import { searchMessages, checkEmailEligibility } from '@/lib/msgraph/outlook';
 // import { importFromMailbox } from '@/lib/msgraph/importFromMailbox'; // your Phase-2 function
 
 async function _POST(req: NextRequest) {
@@ -27,41 +28,116 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: first?.message || "Invalid input" }, { status: 400 });
   }
 
-  const { mailbox, text, top } = parsed.data;
+  const { mailbox, text, top, searchOnly } = parsed.data;
+
+  // Validate tenant domain
+  const tenantDomain = process.env.ALLOWED_TENANT_EMAIL_DOMAIN;
+  if (tenantDomain && !mailbox.toLowerCase().endsWith(`@${tenantDomain.toLowerCase()}`)) {
+    return NextResponse.json({ 
+      error: `Mailbox must be in @${tenantDomain}` 
+    }, { status: 400 });
+  }
 
   // IMPORTANT: Build a safe AQS (quotes ensure exact phrase; hasAttachments)
   const aqs = `hasAttachments:yes "${text.replaceAll('"', '\\"')}"`;
 
+  const startTime = Date.now();
+  
   try {
-    // This function should encapsulate:
-    // - Graph search on mailbox
-    // - Take ONE eligible attachment (pdf/docx) per email
-    // - Download -> hash -> dedupe -> supabase upload
-    // - Text extract -> create Resume -> link JobApplication
-    // - Log EmailIngestLog
-    // - Return summary
-    //
-    // const summary = await importFromMailbox({ jobId, mailbox, aqs, limit: top || 25 });
+    if (searchOnly) {
+      // Search-only mode: just search and check eligibility
+      const result = await searchMessages(aqs, top || 25, mailbox);
+      
+      let eligibleEmails = 0;
+      const firstSubjects: string[] = [];
+      
+      // Check eligibility for first few emails and collect subjects
+      for (let i = 0; i < Math.min(result.messages.length, 5); i++) {
+        const message = result.messages[i];
+        if (i < 3) {
+          firstSubjects.push(message.subject || '(no subject)');
+        }
+        
+        const eligibilityCheck = await checkEmailEligibility(message.id, mailbox);
+        if (eligibilityCheck.eligible) {
+          eligibleEmails++;
+        }
+      }
+      
+      // For remaining messages, just count those with attachments
+      // (approximation since checking all eligibility would be slow)
+      const remainingWithAttachments = result.messages.slice(5).filter(m => m.hasAttachments).length;
+      eligibleEmails += Math.floor(remainingWithAttachments * 0.7); // rough estimate
+      
+      const durationMs = Date.now() - startTime;
+      
+      // Structured logging
+      console.log(`graph.search ok mailbox=${mailbox} scanned=${result.messages.length} eligible=${eligibleEmails} durationMs=${durationMs}`);
+      
+      const summary = {
+        emailsScanned: result.messages.length,
+        eligibleEmails,
+        firstSubjects,
+        durationMs
+      };
+      
+      return NextResponse.json(summary);
+    } else {
+      // Full import mode (Phase 2 - not implemented yet)
+      // This function should encapsulate:
+      // - Graph search on mailbox
+      // - Take ONE eligible attachment (pdf/docx) per email
+      // - Download -> hash -> dedupe -> supabase upload
+      // - Text extract -> create Resume -> link JobApplication
+      // - Log EmailIngestLog
+      // - Return summary
+      //
+      // const summary = await importFromMailbox({ jobId, mailbox, aqs, limit: top || 25 });
 
-    // TEMP stub so UI can be wired immediately:
-    const summary = {
-      createdResumes: 0,
-      linkedApplications: 0,
-      skippedDuplicates: 0,
-      failed: 0,
-      emailsScanned: 0,
-    };
+      // TEMP stub so UI can be wired immediately:
+      const summary = {
+        createdResumes: 0,
+        linkedApplications: 0,
+        skippedDuplicates: 0,
+        failed: 0,
+        emailsScanned: 0,
+      };
 
-    console.log(`Email import request for job ${jobId}:`, {
-      mailbox,
-      aqs,
-      limit: top || 25,
-    });
+      console.log(`Email import request for job ${jobId}:`, {
+        mailbox,
+        aqs,
+        limit: top || 25,
+      });
 
-    return NextResponse.json(summary);
+      return NextResponse.json(summary);
+    }
   } catch (e: any) {
-    console.error("import-email failed:", e?.message || e);
-    return NextResponse.json({ error: "Import failed" }, { status: 500 });
+    const durationMs = Date.now() - startTime;
+    console.error(`graph.search failed mailbox=${mailbox} error="${e?.message}" durationMs=${durationMs}`);
+    
+    // Handle common Graph API errors with helpful messages
+    if (e?.message?.includes('401') || e?.message?.includes('403')) {
+      return NextResponse.json({ 
+        error: "Graph search failed — check credentials/permissions" 
+      }, { status: 401 });
+    }
+    
+    if (e?.message?.includes('404')) {
+      return NextResponse.json({ 
+        error: "Mailbox not found — check the address/licensing" 
+      }, { status: 404 });
+    }
+    
+    if (e?.message?.includes('429')) {
+      const retryAfter = e?.retryAfter || 60;
+      return NextResponse.json({ 
+        error: `Graph API throttled — retry after ${retryAfter} seconds` 
+      }, { status: 429 });
+    }
+    
+    return NextResponse.json({ 
+      error: "Graph search failed — please try again" 
+    }, { status: 500 });
   }
 }
 

@@ -4,6 +4,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import "./globals.css";
 import AuthSessionProvider from "@/components/SessionProvider";
 import Navigation from "@/components/Navigation";
+import { ToastProvider } from "@/contexts/ToastContext";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -37,10 +38,12 @@ export default function RootLayout({
         className={`${inter.variable} ${robotoMono.variable} antialiased`}
       >
         <AuthSessionProvider>
-          <Navigation />
-          <div className="container-fluid">
-            {children}
-          </div>
+          <ToastProvider>
+            <Navigation />
+            <div className="container-fluid">
+              {children}
+            </div>
+          </ToastProvider>
         </AuthSessionProvider>
       </body>
     </html>

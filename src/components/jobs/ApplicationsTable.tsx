@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Form, Spinner, Alert } from "react-bootstrap";
+import { useCallback, useEffect, useState, useMemo } from "react";
+import { Badge, Button, Form, Spinner, Alert, InputGroup } from "react-bootstrap";
 import DataTable from '@/components/DataTable';
-import { useRouter } from 'next/navigation';
 
 type ApplicationRow = {
   id: number;
@@ -33,7 +32,6 @@ interface ApplicationsTableProps {
 }
 
 export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
-  const router = useRouter();
   const [rows, setRows] = useState<ApplicationRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +39,18 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [updating, setUpdating] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1); // Reset to first page when searching
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,6 +60,10 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
         page: String(page),
         pageSize: String(pageSize),
       });
+      
+      if (debouncedSearch.trim()) {
+        params.set('q', debouncedSearch.trim());
+      }
       
       const res = await fetch(`/api/jobs/${jobId}/applications?${params.toString()}`);
       if (!res.ok) {
@@ -64,7 +78,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     } finally {
       setLoading(false);
     }
-  }, [jobId, page, pageSize]);
+  }, [jobId, page, pageSize, debouncedSearch]);
 
   useEffect(() => {
     load();
@@ -225,30 +239,20 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     {
       name: 'Actions',
       cell: (row: ApplicationRow) => (
-        <div className="d-flex gap-2">
-          <Button
-            variant="outline-primary"
-            size="sm"
-            onClick={() => router.push(`/resumes/${row.resumeId}`)}
-            title="View Resume"
-          >
-            <i className="bi bi-eye"></i>
-          </Button>
-          <Button
-            variant="outline-danger"
-            size="sm"
-            onClick={() => unlink(row.resumeId)}
-            disabled={updating === row.resumeId}
-            title="Unlink Application"
-          >
-            <i className="bi bi-trash"></i>
-          </Button>
-        </div>
+        <Button
+          variant="outline-danger"
+          size="sm"
+          onClick={() => unlink(row.resumeId)}
+          disabled={updating === row.resumeId}
+          title="Unlink Application"
+        >
+          <i className="bi bi-trash"></i>
+        </Button>
       ),
       ignoreRowClick: true,
       allowOverflow: true,
       button: true,
-      width: '100px'
+      width: '80px'
     }
   ];
 
@@ -269,12 +273,49 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     );
   }
 
+  const clearSearch = () => {
+    setSearchQuery("");
+  };
+
   return (
-    <div>
+    <div className="space-y-3">
+      {/* Search Bar */}
+      <div className="mb-3">
+        <InputGroup style={{ maxWidth: '400px' }}>
+          <InputGroup.Text>
+            <i className="bi bi-search"></i>
+          </InputGroup.Text>
+          <Form.Control
+            type="text"
+            placeholder="Search candidates, email, phone..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <InputGroup.Text 
+              role="button" 
+              onClick={clearSearch}
+              style={{ cursor: 'pointer' }}
+              title="Clear search"
+            >
+              <i className="bi bi-x-circle"></i>
+            </InputGroup.Text>
+          )}
+        </InputGroup>
+        {debouncedSearch && (
+          <small className="text-muted">
+            {loading ? 'Searching...' : `Found ${total} result${total !== 1 ? 's' : ''} for "${debouncedSearch}"`}
+          </small>
+        )}
+      </div>
+
+      {/* Table or Empty state */}
       {rows.length === 0 ? (
         <div className="text-center py-4">
           <i className="bi bi-inbox display-4 text-muted"></i>
-          <p className="mt-2 text-muted">No applications yet</p>
+          <p className="mt-2 text-muted">
+            {debouncedSearch ? `No applications found for "${debouncedSearch}"` : 'No applications yet'}
+          </p>
         </div>
       ) : (
         <DataTable

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { Modal, Button, Form, Alert } from "react-bootstrap";
 import { importEmailSchema, type ImportEmailInput } from "@/lib/validation/importEmail";
+import { useToast } from "@/contexts/ToastContext";
 
 type Props = {
   jobId: number;
@@ -18,33 +19,120 @@ type Props = {
   }) => void;
 };
 
-// super-tiny toast fallback (you can replace with your real toaster)
-function toast(msg: string, type: 'success' | 'error' = 'success') {
-  if (typeof window !== "undefined") {
-    // Simple alert for now - can be replaced with proper toast notifications
-    window.alert(msg);
-  }
-}
-
 export default function ImportApplicationsModal({ jobId, open, onClose, onImported }: Props) {
+  const { showToast } = useToast();
   const [mailbox, setMailbox] = useState("");
   const [text, setText] = useState("");
   const [top, setTop] = useState(25);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<{ mailbox?: string; text?: string; top?: string }>({});
+  const [realTimeErrors, setRealTimeErrors] = useState<{ mailbox?: string }>({});
+  const [testing, setTesting] = useState(false);
 
   // reset form when opened
   useEffect(() => {
     if (open) {
-      setMailbox("");
+      const defaultMailbox = process.env.NEXT_PUBLIC_MS_DEFAULT_MAILBOX || "";
+      setMailbox(defaultMailbox);
       setText("");
       setTop(25);
       setErrors({});
+      setRealTimeErrors({});
       setSubmitting(false);
+      setTesting(false);
     }
   }, [open]);
 
+  // Real-time validation for mailbox domain
+  useEffect(() => {
+    const tenantDomain = process.env.NEXT_PUBLIC_ALLOWED_TENANT_EMAIL_DOMAIN;
+    if (!mailbox.trim() || !tenantDomain) {
+      setRealTimeErrors(prev => ({ ...prev, mailbox: undefined }));
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(mailbox)) {
+      setRealTimeErrors(prev => ({ ...prev, mailbox: "Enter a valid email address" }));
+      return;
+    }
+
+    // Domain validation
+    if (!mailbox.toLowerCase().endsWith(`@${tenantDomain.toLowerCase()}`)) {
+      setRealTimeErrors(prev => ({ ...prev, mailbox: `Mailbox must be in @${tenantDomain}` }));
+      return;
+    }
+
+    // Clear error if validation passes
+    setRealTimeErrors(prev => ({ ...prev, mailbox: undefined }));
+  }, [mailbox]);
+
+  async function onTestSearch() {
+    // Check for real-time validation errors first
+    if (realTimeErrors.mailbox) {
+      setErrors({ mailbox: realTimeErrors.mailbox });
+      return;
+    }
+
+    // validate required fields for search
+    if (!mailbox.trim()) {
+      setErrors({ mailbox: "Mailbox is required" });
+      return;
+    }
+    if (!text.trim()) {
+      setErrors({ text: "Search text is required" });
+      return;
+    }
+
+    setTesting(true);
+    setErrors({});
+    
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/import-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mailbox: mailbox.trim(),
+          text: text.trim(),
+          top: Number.isFinite(top) ? top : 25,
+          searchOnly: true
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || "Search failed");
+      }
+
+      const data = await res.json();
+      console.log('Graph search result:', data);
+      
+      // Show success toast with details
+      const subjects = data.firstSubjects?.length > 0 
+        ? `; examples: '${data.firstSubjects.join("', '")}'`
+        : '';
+      
+      showToast(
+        `Graph OK — scanned ${data.emailsScanned}; eligible ${data.eligibleEmails}${subjects}`,
+        'success',
+        10000
+      );
+    } catch (e: any) {
+      console.error('Graph search failed:', e);
+      showToast(e?.message || "Search failed", 'error');
+    } finally {
+      setTesting(false);
+    }
+  }
+
   async function onDownload() {
+    // Check for real-time validation errors first
+    if (realTimeErrors.mailbox) {
+      setErrors({ mailbox: realTimeErrors.mailbox });
+      return;
+    }
+
     // validate
     const parse = importEmailSchema.safeParse({
       mailbox,
@@ -78,13 +166,15 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
       const data = await res.json();
       // expected shape:
       // { createdResumes, linkedApplications, skippedDuplicates, failed, emailsScanned }
-      toast(
-        `Imported: ${data.createdResumes} | Linked: ${data.linkedApplications} | Duplicates: ${data.skippedDuplicates} | Failed: ${data.failed}`
+      showToast(
+        `Import Complete! Created: ${data.createdResumes} resumes, Linked: ${data.linkedApplications} applications, Duplicates skipped: ${data.skippedDuplicates}, Failed: ${data.failed}, Emails scanned: ${data.emailsScanned}`,
+        'success',
+        8000  // Show for 8 seconds since it's more detailed
       );
       onImported?.(data);
       onClose();
     } catch (e: any) {
-      toast(e?.message || "Import failed");
+      showToast(e?.message || "Import failed", 'error');
     } finally {
       setSubmitting(false);
     }
@@ -104,12 +194,12 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
               type="email"
               value={mailbox}
               onChange={(e) => setMailbox(e.target.value)}
-              placeholder="recruiting@yourdomain.com"
-              isInvalid={!!errors.mailbox}
+              placeholder="recruiting@bnbtech-inc.com"
+              isInvalid={!!(errors.mailbox || realTimeErrors.mailbox)}
             />
-            {errors.mailbox && (
+            {(errors.mailbox || realTimeErrors.mailbox) && (
               <Form.Control.Feedback type="invalid">
-                {errors.mailbox}
+                {errors.mailbox || realTimeErrors.mailbox}
               </Form.Control.Feedback>
             )}
           </Form.Group>
@@ -157,13 +247,31 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
       </Modal.Body>
       
       <Modal.Footer>
-        <Button variant="secondary" onClick={onClose} disabled={submitting}>
+        <Button variant="secondary" onClick={onClose} disabled={submitting || testing}>
           Cancel
+        </Button>
+        <Button 
+          variant="outline-info" 
+          onClick={onTestSearch} 
+          disabled={submitting || testing}
+          className="me-2"
+        >
+          {testing ? (
+            <>
+              <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+              Testing...
+            </>
+          ) : (
+            <>
+              <i className="bi bi-search me-1"></i>
+              Test Search
+            </>
+          )}
         </Button>
         <Button 
           variant="primary" 
           onClick={onDownload} 
-          disabled={submitting}
+          disabled={submitting || testing}
         >
           {submitting ? (
             <>

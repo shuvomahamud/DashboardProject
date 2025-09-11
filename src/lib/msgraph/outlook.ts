@@ -34,11 +34,12 @@ export interface AttachmentsResponse {
 export async function searchMessages(
   aqs: string,
   top: number = 25,
+  mailboxUserId?: string,
   next?: string
 ): Promise<MessagesResponse> {
-  const mailboxUserId = process.env.MS_MAILBOX_USER_ID;
-  if (!mailboxUserId) {
-    throw new Error('MS_MAILBOX_USER_ID not configured');
+  const mailbox = mailboxUserId || process.env.MS_MAILBOX_USER_ID;
+  if (!mailbox) {
+    throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
   }
 
   let url: string;
@@ -46,7 +47,7 @@ export async function searchMessages(
     // Use the full next link provided by Microsoft Graph
     url = next;
   } else {
-    url = `/v1.0/users/${mailboxUserId}/messages?$search="${encodeURIComponent(aqs)}"&$top=${top}`;
+    url = `/v1.0/users/${mailbox}/messages?$search=${encodeURIComponent(aqs)}&$top=${top}&$orderby=receivedDateTime desc`;
   }
 
   const response = await graphFetch(url, { needsConsistencyLevel: true });
@@ -123,4 +124,64 @@ export async function getFileAttachmentBytes(
   }
 
   return bytes;
+}
+
+// Attachment eligibility check policy
+export function isAttachmentEligible(attachment: Attachment): boolean {
+  const allowedExtensions = (process.env.IMPORT_ALLOWED_EXTS || 'pdf,docx').toLowerCase().split(',');
+  const maxSizeMB = 10; // 10MB max
+  
+  // Check file extension
+  const fileName = attachment.name.toLowerCase();
+  const hasAllowedExtension = allowedExtensions.some(ext => fileName.endsWith(`.${ext.trim()}`));
+  
+  if (!hasAllowedExtension) {
+    return false;
+  }
+  
+  // Check file size (10MB limit)
+  if (attachment.size > maxSizeMB * 1024 * 1024) {
+    return false;
+  }
+  
+  // Must be a file attachment (not calendar item, etc)
+  if (attachment['@odata.type'] !== '#microsoft.graph.fileAttachment') {
+    return false;
+  }
+  
+  return true;
+}
+
+export async function checkEmailEligibility(
+  messageId: string,
+  mailboxUserId?: string
+): Promise<{ eligible: boolean; eligibleAttachments: Attachment[]; totalAttachments: number }> {
+  const mailbox = mailboxUserId || process.env.MS_MAILBOX_USER_ID;
+  if (!mailbox) {
+    throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
+  }
+
+  try {
+    const url = `/v1.0/users/${mailbox}/messages/${messageId}/attachments?$top=50`;
+    const response = await graphFetch(url);
+
+    if (!response.ok) {
+      // If we can't get attachments, assume not eligible
+      return { eligible: false, eligibleAttachments: [], totalAttachments: 0 };
+    }
+
+    const data = await response.json();
+    const attachments: Attachment[] = data.value || [];
+    
+    const eligibleAttachments = attachments.filter(isAttachmentEligible);
+    
+    return {
+      eligible: eligibleAttachments.length > 0,
+      eligibleAttachments,
+      totalAttachments: attachments.length
+    };
+  } catch (error) {
+    console.warn(`Failed to check eligibility for message ${messageId}:`, error);
+    return { eligible: false, eligibleAttachments: [], totalAttachments: 0 };
+  }
 }

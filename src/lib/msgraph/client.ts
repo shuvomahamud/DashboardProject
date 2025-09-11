@@ -19,9 +19,9 @@ export async function getAppToken(): Promise<string> {
     return cachedToken.token;
   }
 
-  const tenantId = process.env.AZURE_TENANT_ID;
-  const clientId = process.env.AZURE_CLIENT_ID;
-  const clientSecret = process.env.AZURE_CLIENT_SECRET;
+  const tenantId = process.env.MS_TENANT_ID;
+  const clientId = process.env.MS_CLIENT_ID;
+  const clientSecret = process.env.MS_CLIENT_SECRET;
 
   if (!tenantId || !clientId || !clientSecret) {
     throw new Error('Missing Azure AD configuration');

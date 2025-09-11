@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Optional: set your tenant domain via env, else allow any domain
-const tenantDomain = process.env.NEXT_PUBLIC_TENANT_EMAIL_DOMAIN;
+const tenantDomain = process.env.NEXT_PUBLIC_ALLOWED_TENANT_EMAIL_DOMAIN;
 
 export const importEmailSchema = z.object({
   mailbox: z
@@ -23,6 +23,7 @@ export const importEmailSchema = z.object({
     .max(200)
     .optional()
     .default(25),
+  searchOnly: z.boolean().optional().default(false),
 });
 
 export type ImportEmailInput = z.infer<typeof importEmailSchema>;
