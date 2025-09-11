@@ -4,24 +4,8 @@ import { importEmailSchema } from '@/lib/validation/importEmail';
 import { importFromMailbox } from '@/lib/msgraph/importFromMailbox';
 
 async function _POST(req: NextRequest, ctx?: { params: { id: string } }) {
-  // Debug logs to identify the issue
-  const url = new URL(req.url);
-  console.log('debug.path', url.pathname, url.search);
-  console.log('debug.env.ALLOWED_TENANT_EMAIL_DOMAIN', process.env.ALLOWED_TENANT_EMAIL_DOMAIN);
-  console.log('debug.ctx', ctx);
-  
-  // Extract job ID - prefer params if available, fallback to URL parsing
-  let jobId: number;
-  if (ctx?.params?.id) {
-    jobId = Number(ctx.params.id);
-  } else {
-    // Fallback to manual URL parsing
-    const pathSegments = url.pathname.split('/');
-    const jobIdIndex = pathSegments.findIndex(segment => segment === 'jobs') + 1;
-    jobId = parseInt(pathSegments[jobIdIndex]);
-  }
-  
-  console.log('debug.jobId', jobId);
+  // Extract job ID from params
+  const jobId = Number(ctx?.params?.id);
   
   if (!Number.isFinite(jobId)) {
     return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
@@ -35,7 +19,6 @@ async function _POST(req: NextRequest, ctx?: { params: { id: string } }) {
   }
 
   const parsed = importEmailSchema.safeParse(body);
-  console.log('debug.body', parsed.success ? parsed.data : body);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     return NextResponse.json({ error: first?.message || "Invalid input" }, { status: 400 });

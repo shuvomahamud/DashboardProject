@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { searchMessages, listAttachments, getFileAttachmentBytes, isAttachmentEligible } from './outlook';
 import { Message, Attachment } from './outlook';
 import { extractText } from '@/lib/parse/text';
+import { uploadResumeBytes } from '@/lib/supabase-server';
 
 export interface ImportSummary {
   createdResumes: number;
@@ -21,10 +22,12 @@ export interface ImportOptions {
 
 // Create or find existing Resume with deduplication
 async function createOrFindResume(
+  jobId: number,
   message: Message,
   attachment: Attachment,
   fileBytes: Uint8Array,
-  fileHash: string
+  fileHash: string,
+  uploadResult?: { path: string; bucket: string }
 ): Promise<{ resume: any; isNew: boolean }> {
   
   // Check for existing resume by fileHash + sourceMessageId
@@ -39,17 +42,25 @@ async function createOrFindResume(
     return { resume: existing, isNew: false };
   }
 
-  // Create new resume
+  // Create safe filename
+  const safeName = attachment.name
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]/g, '-')
+    .replace(/-+/g, '-')
+    .substring(0, 120);
+
+  // Create new resume with proper storage paths
   const resume = await prisma.resume.create({
     data: {
       // File metadata
-      fileName: attachment.name,
+      fileName: safeName,
       originalName: attachment.name,
       fileSize: attachment.size,
       fileSizeBytes: attachment.size,
       mimeType: attachment.contentType,
-      storagePath: `email-imports/${fileHash}/${attachment.name}`,
-      fileStorageUrl: `email-imports/${fileHash}/${attachment.name}`,
+      storageBucket: uploadResult?.bucket || 'resumes',
+      storagePath: uploadResult?.path || null,
+      fileStorageUrl: uploadResult?.path || null, // Legacy field
       fileHash,
       
       // Email source metadata
@@ -143,6 +154,56 @@ function hashFileContent(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+// Upload file to Supabase Storage
+async function uploadToSupabase(
+  fileBytes: Uint8Array,
+  fileHash: string,
+  fileName: string,
+  jobId: number,
+  mimeType?: string
+): Promise<{ path: string; bucket: string }> {
+  
+  // Create safe filename
+  const safeName = fileName
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]/g, '-')
+    .replace(/-+/g, '-')
+    .substring(0, 120);
+
+  // Create storage path: jobs/{jobId}/{hash}-{filename}
+  const storagePath = `jobs/${jobId}/${fileHash}-${safeName}`;
+  const bucketName = process.env.SUPABASE_RESUMES_BUCKET || 'resumes';
+  
+  // Log upload attempt
+  console.log(`Uploading to bucket=${bucketName}, path=${storagePath} (size=${fileBytes.length} bytes, type=${mimeType})`);
+  
+  try {
+    // Check file size (enforce 10MB limit)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (fileBytes.length > maxSize) {
+      throw new Error(`File too large: ${fileBytes.length} bytes (max ${maxSize})`);
+    }
+
+    // Perform upload
+    const uploadResult = await uploadResumeBytes(storagePath, fileBytes, {
+      contentType: mimeType,
+      cacheControl: '3600',
+      upsert: false // Don't overwrite existing files
+    });
+
+    console.log(`Upload successful: ${uploadResult.path}`);
+    
+    return {
+      path: uploadResult.path,
+      bucket: bucketName
+    };
+    
+  } catch (error: any) {
+    console.error(`Upload failed for ${storagePath}:`, error.message);
+    throw error;
+  }
+}
+
 // Main import function
 export async function importFromMailbox(options: ImportOptions): Promise<ImportSummary> {
   const { jobId, mailbox, searchText, limit = 5000 } = options;
@@ -209,26 +270,61 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
               return;
             }
 
-            // TODO: Upload to Supabase (for now, skip this step)
-            // const uploadResult = await uploadToSupabase(fileBytes, fileHash, attachment.name);
+            // Upload to Supabase Storage (attempt but don't fail the entire process if it fails)
+            let uploadResult: { path: string; bucket: string } | undefined;
+            let uploadFailed = false;
+            try {
+              uploadResult = await uploadToSupabase(
+                fileBytes, 
+                fileHash, 
+                attachment.name, 
+                jobId,
+                attachment.contentType
+              );
+              console.log(`✓ Upload successful for ${attachment.name}`);
+            } catch (uploadError: any) {
+              console.error(`✗ Upload failed for ${attachment.name}:`, uploadError.message);
+              uploadFailed = true;
+              // Continue with database operations even if upload fails
+            }
 
-            // Create Resume record
-            const { resume, isNew } = await createOrFindResume(message, attachment, fileBytes, fileHash);
+            // Create Resume record (with or without upload result)
+            const { resume, isNew } = await createOrFindResume(
+              jobId,
+              message, 
+              attachment, 
+              fileBytes, 
+              fileHash, 
+              uploadResult
+            );
             if (isNew) {
               summary.createdResumes++;
+              console.log(`✓ Created Resume record for ${attachment.name} (ID: ${resume.id})`);
+            } else {
+              console.log(`✓ Found existing Resume record for ${attachment.name} (ID: ${resume.id})`);
             }
 
             // Link to Job
             const linkResult = await linkJobApplication(jobId, resume.id);
             if (linkResult.isNew) {
               summary.linkedApplications++;
+              console.log(`✓ Created JobApplication link for Resume ${resume.id} -> Job ${jobId}`);
+            } else {
+              console.log(`✓ Found existing JobApplication link for Resume ${resume.id} -> Job ${jobId}`);
             }
 
             // Extract text
             const textResult = await extractTextFromResume(resume, fileBytes);
-            if (!textResult.success) {
-              console.warn(`Text extraction failed for ${attachment.name}: ${textResult.error}`);
+            if (textResult.success) {
+              console.log(`✓ Text extraction successful for ${attachment.name}`);
+            } else {
+              console.warn(`✗ Text extraction failed for ${attachment.name}: ${textResult.error}`);
               // Don't increment failed count for text extraction failures, as Resume is still created
+            }
+
+            // Count failures appropriately
+            if (uploadFailed) {
+              summary.failed++;
             }
 
           } catch (error: any) {
@@ -238,6 +334,15 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
         })
       );
     }
+
+    // Final summary log
+    console.log(`Import completed for job ${jobId}:`, {
+      emailsScanned: summary.emailsScanned,
+      createdResumes: summary.createdResumes,
+      linkedApplications: summary.linkedApplications,
+      skippedDuplicates: summary.skippedDuplicates,
+      failed: summary.failed
+    });
 
     return summary;
   } catch (error: any) {
