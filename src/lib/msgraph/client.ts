@@ -78,6 +78,14 @@ export async function graphFetch(
     headers['ConsistencyLevel'] = 'eventual';
   }
 
+  // Debug log for search requests (remove token for security)
+  if (url.includes('$search')) {
+    const debugHeaders = { ...headers };
+    delete debugHeaders.Authorization; // Remove token from logs
+    console.log(`Graph API request: ${url}`);
+    console.log(`Graph API headers:`, debugHeaders);
+  }
+
   const response = await fetch(url, {
     ...init,
     headers,

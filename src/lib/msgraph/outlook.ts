@@ -47,7 +47,7 @@ export async function searchMessages(
     // Use the full next link provided by Microsoft Graph
     url = next;
   } else {
-    url = `/v1.0/users/${mailbox}/messages?$search=${encodeURIComponent(aqs)}&$top=${top}&$orderby=receivedDateTime desc`;
+    url = `/v1.0/users/${mailbox}/messages?$search=${encodeURIComponent(aqs)}&$top=${top}`;
   }
 
   const response = await graphFetch(url, { needsConsistencyLevel: true });
@@ -59,8 +59,15 @@ export async function searchMessages(
 
   const data = await response.json();
   
+  // Sort messages by receivedDateTime desc since we can't use $orderby with $search
+  const messages = (data.value || []).sort((a: Message, b: Message) => {
+    const dateA = new Date(a.receivedDateTime);
+    const dateB = new Date(b.receivedDateTime);
+    return dateB.getTime() - dateA.getTime(); // desc order (newest first)
+  });
+  
   return {
-    messages: data.value || [],
+    messages,
     next: data['@odata.nextLink']
   };
 }

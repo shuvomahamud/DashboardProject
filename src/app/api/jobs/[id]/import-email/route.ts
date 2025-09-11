@@ -38,10 +38,17 @@ async function _POST(req: NextRequest) {
     }, { status: 400 });
   }
 
-  // IMPORTANT: Build a safe AQS (quotes ensure exact phrase; hasAttachments)
-  const aqs = `hasAttachments:yes "${text.replaceAll('"', '\\"')}"`;
+  // IMPORTANT: Build a safe AQS (quotes ensure exact phrase; hasAttachment singular)
+  // Clean and limit the search text, collapse whitespace, escape inner quotes
+  const cleanText = text.replace(/"/g, '').replace(/\s+/g, ' ').trim().substring(0, 150);
+  const aqs = `"hasAttachment:true AND \\"${cleanText}\\""`;
 
   const startTime = Date.now();
+  
+  // Debug log the request (only in search-only mode for safety)
+  if (searchOnly) {
+    console.log(`Graph search debug: mailbox=${mailbox}, aqs=${aqs}`);
+  }
   
   try {
     if (searchOnly) {
