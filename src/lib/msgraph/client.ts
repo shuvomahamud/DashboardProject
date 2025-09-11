@@ -70,8 +70,12 @@ export async function graphFetch(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
-    ...init?.headers,
   };
+
+  // Merge additional headers if provided
+  if (init?.headers) {
+    Object.assign(headers, init.headers);
+  }
 
   // Add ConsistencyLevel header when needed (for search operations)
   if (init?.needsConsistencyLevel) {

@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import prisma from '@/lib/prisma';
 import { withTableAuthAppRouter } from "@/lib/auth/withTableAuthAppRouter";
 
@@ -19,7 +19,7 @@ async function _GET(req: NextRequest) {
   const jobId = parseInt(pathSegments[jobIdIndex]);
   
   if (!Number.isFinite(jobId)) {
-    return Response.json({ error: "Invalid job id" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
   }
   const { page, pageSize, q } = parsePaging(req.url);
 
@@ -120,7 +120,7 @@ async function _GET(req: NextRequest) {
     };
   });
 
-  return Response.json({
+  return NextResponse.json({
     applications: rows,
     pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) },
     query: q,
@@ -136,12 +136,12 @@ async function _PATCH(req: NextRequest) {
   const jobId = parseInt(pathSegments[jobIdIndex]);
   
   if (!Number.isFinite(jobId)) {
-    return Response.json({ error: "Invalid job id" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
   }
   const body = await req.json().catch(() => ({}));
   const { resumeId, status, notes, score } = body || {};
   if (!Number.isFinite(resumeId)) {
-    return Response.json({ error: "resumeId required" }, { status: 400 });
+    return NextResponse.json({ error: "resumeId required" }, { status: 400 });
   }
 
   const data: any = {};
@@ -156,7 +156,7 @@ async function _PATCH(req: NextRequest) {
     select: { id: true, jobId: true, resumeId: true, status: true, notes: true, score: true, updatedAt: true },
   });
 
-  return Response.json({ application: updated });
+  return NextResponse.json({ application: updated });
 }
 
 // DELETE /api/jobs/[id]/applications  { resumeId }
@@ -168,19 +168,19 @@ async function _DELETE(req: NextRequest) {
   const jobId = parseInt(pathSegments[jobIdIndex]);
   
   if (!Number.isFinite(jobId)) {
-    return Response.json({ error: "Invalid job id" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
   }
   const body = await req.json().catch(() => ({}));
   const { resumeId } = body || {};
   if (!Number.isFinite(resumeId)) {
-    return Response.json({ error: "resumeId required" }, { status: 400 });
+    return NextResponse.json({ error: "resumeId required" }, { status: 400 });
   }
 
   await prisma.jobApplication.delete({
     where: { jobId_resumeId: { jobId, resumeId: Number(resumeId) } },
   });
 
-  return Response.json({ ok: true });
+  return NextResponse.json({ ok: true });
 }
 
 const protectedGET = withTableAuthAppRouter("jobs", _GET);
