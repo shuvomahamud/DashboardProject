@@ -23,11 +23,10 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
   const { showToast } = useToast();
   const [mailbox, setMailbox] = useState("");
   const [text, setText] = useState("");
-  const [top, setTop] = useState(25);
+  const [top, setTop] = useState(5000);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<{ mailbox?: string; text?: string; top?: string }>({});
   const [realTimeErrors, setRealTimeErrors] = useState<{ mailbox?: string }>({});
-  const [testing, setTesting] = useState(false);
 
   // reset form when opened
   useEffect(() => {
@@ -35,11 +34,10 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
       const defaultMailbox = process.env.NEXT_PUBLIC_MS_DEFAULT_MAILBOX || "";
       setMailbox(defaultMailbox);
       setText("");
-      setTop(25);
+      setTop(5000);
       setErrors({});
       setRealTimeErrors({});
       setSubmitting(false);
-      setTesting(false);
     }
   }, [open]);
 
@@ -68,63 +66,6 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
     setRealTimeErrors(prev => ({ ...prev, mailbox: undefined }));
   }, [mailbox]);
 
-  async function onTestSearch() {
-    // Check for real-time validation errors first
-    if (realTimeErrors.mailbox) {
-      setErrors({ mailbox: realTimeErrors.mailbox });
-      return;
-    }
-
-    // validate required fields for search
-    if (!mailbox.trim()) {
-      setErrors({ mailbox: "Mailbox is required" });
-      return;
-    }
-    if (!text.trim()) {
-      setErrors({ text: "Search text is required" });
-      return;
-    }
-
-    setTesting(true);
-    setErrors({});
-    
-    try {
-      const res = await fetch(`/api/jobs/${jobId}/import-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mailbox: mailbox.trim(),
-          text: text.trim(),
-          top: Number.isFinite(top) ? top : 25,
-          searchOnly: true
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || "Search failed");
-      }
-
-      const data = await res.json();
-      console.log('Graph search result:', data);
-      
-      // Show success toast with details
-      const subjects = data.firstSubjects?.length > 0 
-        ? `; examples: '${data.firstSubjects.join("', '")}'`
-        : '';
-      
-      showToast(
-        `Graph OK — scanned ${data.emailsScanned}; eligible ${data.eligibleEmails}${subjects}`,
-        'success',
-        10000
-      );
-    } catch (e: any) {
-      console.error('Graph search failed:', e);
-      showToast(e?.message || "Search failed", 'error');
-    } finally {
-      setTesting(false);
-    }
-  }
 
   async function onDownload() {
     // Check for real-time validation errors first
@@ -240,46 +181,28 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
               </Form.Control.Feedback>
             )}
             <Form.Text className="text-muted">
-              Default is 25 emails
+              Default is 5,000 emails
             </Form.Text>
           </Form.Group>
         </Form>
       </Modal.Body>
       
       <Modal.Footer>
-        <Button variant="secondary" onClick={onClose} disabled={submitting || testing}>
+        <Button variant="secondary" onClick={onClose} disabled={submitting}>
           Cancel
-        </Button>
-        <Button 
-          variant="outline-info" 
-          onClick={onTestSearch} 
-          disabled={submitting || testing}
-          className="me-2"
-        >
-          {testing ? (
-            <>
-              <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-              Testing...
-            </>
-          ) : (
-            <>
-              <i className="bi bi-search me-1"></i>
-              Test Search
-            </>
-          )}
         </Button>
         <Button 
           variant="primary" 
           onClick={onDownload} 
-          disabled={submitting || testing}
+          disabled={submitting}
         >
           {submitting ? (
             <>
               <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-              Downloading...
+              Importing...
             </>
           ) : (
-            "Download"
+            "Import Applications"
           )}
         </Button>
       </Modal.Footer>

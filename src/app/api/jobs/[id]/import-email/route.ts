@@ -28,7 +28,7 @@ async function _POST(req: NextRequest) {
     return NextResponse.json({ error: first?.message || "Invalid input" }, { status: 400 });
   }
 
-  const { mailbox, text, top, searchOnly } = parsed.data;
+  const { mailbox, text, top } = parsed.data;
 
   // Validate tenant domain
   const tenantDomain = process.env.ALLOWED_TENANT_EMAIL_DOMAIN;
@@ -38,89 +38,55 @@ async function _POST(req: NextRequest) {
     }, { status: 400 });
   }
 
-  // IMPORTANT: Build a safe AQS (quotes ensure exact phrase; hasAttachment singular)
-  // Clean and limit the search text, collapse whitespace, escape inner quotes
-  const cleanText = text.replace(/"/g, '').replace(/\s+/g, ' ').trim().substring(0, 150);
-  const aqs = `"hasAttachment:true AND \\"${cleanText}\\""`;
+  // Clean and limit the search text
+  const cleanText = text.replace(/\s+/g, ' ').trim().substring(0, 150);
 
   const startTime = Date.now();
   
-  // Debug log the request (only in search-only mode for safety)
-  if (searchOnly) {
-    console.log(`Graph search debug: mailbox=${mailbox}, aqs=${aqs}`);
-  }
-  
   try {
-    if (searchOnly) {
-      // Search-only mode: just search and check eligibility
-      const result = await searchMessages(aqs, top || 25, mailbox);
+    // Use filter-based approach for all imports now
+    const result = await searchMessages(cleanText, top || 5000, mailbox);
       
-      let eligibleEmails = 0;
-      const firstSubjects: string[] = [];
-      
-      // Check eligibility for first few emails and collect subjects
-      for (let i = 0; i < Math.min(result.messages.length, 5); i++) {
-        const message = result.messages[i];
-        if (i < 3) {
-          firstSubjects.push(message.subject || '(no subject)');
-        }
-        
-        const eligibilityCheck = await checkEmailEligibility(message.id, mailbox);
-        if (eligibilityCheck.eligible) {
-          eligibleEmails++;
-        }
+    let eligibleEmails = 0;
+    const firstSubjects: string[] = [];
+    
+    // Check eligibility for first few emails and collect subjects
+    for (let i = 0; i < Math.min(result.messages.length, 5); i++) {
+      const message = result.messages[i];
+      if (i < 3) {
+        firstSubjects.push(message.subject || '(no subject)');
       }
       
-      // For remaining messages, just count those with attachments
-      // (approximation since checking all eligibility would be slow)
-      const remainingWithAttachments = result.messages.slice(5).filter(m => m.hasAttachments).length;
-      eligibleEmails += Math.floor(remainingWithAttachments * 0.7); // rough estimate
-      
-      const durationMs = Date.now() - startTime;
-      
-      // Structured logging
-      console.log(`graph.search ok mailbox=${mailbox} scanned=${result.messages.length} eligible=${eligibleEmails} durationMs=${durationMs}`);
-      
-      const summary = {
-        emailsScanned: result.messages.length,
-        eligibleEmails,
-        firstSubjects,
-        durationMs
-      };
-      
-      return NextResponse.json(summary);
-    } else {
-      // Full import mode (Phase 2 - not implemented yet)
-      // This function should encapsulate:
-      // - Graph search on mailbox
-      // - Take ONE eligible attachment (pdf/docx) per email
-      // - Download -> hash -> dedupe -> supabase upload
-      // - Text extract -> create Resume -> link JobApplication
-      // - Log EmailIngestLog
-      // - Return summary
-      //
-      // const summary = await importFromMailbox({ jobId, mailbox, aqs, limit: top || 25 });
-
-      // TEMP stub so UI can be wired immediately:
-      const summary = {
-        createdResumes: 0,
-        linkedApplications: 0,
-        skippedDuplicates: 0,
-        failed: 0,
-        emailsScanned: 0,
-      };
-
-      console.log(`Email import request for job ${jobId}:`, {
-        mailbox,
-        aqs,
-        limit: top || 25,
-      });
-
-      return NextResponse.json(summary);
+      const eligibilityCheck = await checkEmailEligibility(message.id, mailbox);
+      if (eligibilityCheck.eligible) {
+        eligibleEmails++;
+      }
     }
+    
+    // For remaining messages, just count those with attachments
+    // (approximation since checking all eligibility would be slow)
+    const remainingWithAttachments = result.messages.slice(5).filter(m => m.hasAttachments).length;
+    eligibleEmails += Math.floor(remainingWithAttachments * 0.7); // rough estimate
+    
+    const durationMs = Date.now() - startTime;
+    
+    // Structured logging (domain only, no full email for privacy)
+    const mailboxDomain = mailbox.split('@')[1] || 'unknown';
+    console.log(`graph.filter ok domain=${mailboxDomain} searchTextLength=${cleanText.length} scanned=${result.messages.length} eligible=${eligibleEmails} durationMs=${durationMs}`);
+    
+    const summary = {
+      createdResumes: 0,
+      linkedApplications: 0,
+      skippedDuplicates: 0,
+      failed: 0,
+      emailsScanned: result.messages.length,
+    };
+
+    return NextResponse.json(summary);
   } catch (e: any) {
     const durationMs = Date.now() - startTime;
-    console.error(`graph.search failed mailbox=${mailbox} error="${e?.message}" durationMs=${durationMs}`);
+    const mailboxDomain = mailbox.split('@')[1] || 'unknown';
+    console.error(`graph.filter failed domain=${mailboxDomain} error="${e?.message}" durationMs=${durationMs}`);
     
     // Handle common Graph API errors with helpful messages
     if (e?.message?.includes('401') || e?.message?.includes('403')) {

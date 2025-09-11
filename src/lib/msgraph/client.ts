@@ -78,11 +78,13 @@ export async function graphFetch(
     headers['ConsistencyLevel'] = 'eventual';
   }
 
-  // Debug log for search requests (remove token for security)
-  if (url.includes('$search')) {
+  // Debug log for requests (remove token and sensitive info for security)
+  if (url.includes('$filter') || url.includes('$search')) {
     const debugHeaders = { ...headers };
     delete debugHeaders.Authorization; // Remove token from logs
-    console.log(`Graph API request: ${url}`);
+    // Log only the endpoint type, not the full URL with potentially sensitive IDs
+    const endpoint = url.includes('messages') ? 'messages' : 'unknown';
+    console.log(`Graph API request: ${endpoint} endpoint`);
     console.log(`Graph API headers:`, debugHeaders);
   }
 

@@ -32,43 +32,62 @@ export interface AttachmentsResponse {
 }
 
 export async function searchMessages(
-  aqs: string,
-  top: number = 25,
-  mailboxUserId?: string,
-  next?: string
+  searchText: string,
+  limit: number = 5000,
+  mailboxUserId?: string
 ): Promise<MessagesResponse> {
   const mailbox = mailboxUserId || process.env.MS_MAILBOX_USER_ID;
   if (!mailbox) {
     throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
   }
 
-  let url: string;
-  if (next) {
-    // Use the full next link provided by Microsoft Graph
-    url = next;
-  } else {
-    url = `/v1.0/users/${mailbox}/messages?$search=${encodeURIComponent(aqs)}&$top=${top}`;
+  const allMessages: Message[] = [];
+  const pageSize = 1000; // Use 1000 per page as recommended
+  let nextUrl: string | undefined;
+  let currentUrl = `/v1.0/users/${mailbox}/messages?$filter=hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
+
+  // Keep fetching pages until we have enough messages or no more pages
+  while (allMessages.length < limit) {
+    const response = await graphFetch(nextUrl || currentUrl);
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to search messages: ${response.status} ${error}`);
+    }
+
+    const data = await response.json();
+    const pageMessages = data.value || [];
+    
+    // Filter messages locally by search text if provided
+    if (searchText) {
+      const cleanText = searchText.toLowerCase().trim();
+      const filteredMessages = pageMessages.filter((message: Message) => {
+        const subject = (message.subject || '').toLowerCase();
+        const fromName = message.from?.emailAddress?.name?.toLowerCase() || '';
+        const fromAddress = message.from?.emailAddress?.address?.toLowerCase() || '';
+        
+        return subject.includes(cleanText) || 
+               fromName.includes(cleanText) || 
+               fromAddress.includes(cleanText);
+      });
+      allMessages.push(...filteredMessages);
+    } else {
+      allMessages.push(...pageMessages);
+    }
+
+    // Check if there's a next page
+    nextUrl = data['@odata.nextLink'];
+    if (!nextUrl || pageMessages.length === 0) {
+      break; // No more pages or empty page
+    }
   }
-
-  const response = await graphFetch(url, { needsConsistencyLevel: true });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to search messages: ${response.status} ${error}`);
-  }
-
-  const data = await response.json();
   
-  // Sort messages by receivedDateTime desc since we can't use $orderby with $search
-  const messages = (data.value || []).sort((a: Message, b: Message) => {
-    const dateA = new Date(a.receivedDateTime);
-    const dateB = new Date(b.receivedDateTime);
-    return dateB.getTime() - dateA.getTime(); // desc order (newest first)
-  });
+  // Trim to the requested limit
+  const messages = allMessages.slice(0, limit);
   
   return {
     messages,
-    next: data['@odata.nextLink']
+    next: undefined // We've already handled pagination internally
   };
 }
 

@@ -20,10 +20,9 @@ export const importEmailSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(200)
+    .max(5000)
     .optional()
-    .default(25),
-  searchOnly: z.boolean().optional().default(false),
+    .default(5000),
 });
 
 export type ImportEmailInput = z.infer<typeof importEmailSchema>;
