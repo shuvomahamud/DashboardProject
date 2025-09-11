@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card, Row, Col, Badge, Button, Alert, Spinner } from 'react-bootstrap';
 import DataTable from '@/components/DataTable';
+import ImportApplicationsModal from '@/components/jobs/ImportApplicationsModal';
+import ApplicationsTable from '@/components/jobs/ApplicationsTable';
 
 interface Job {
   id: number;
@@ -23,18 +25,6 @@ interface Job {
   createdAt: string;
   updatedAt: string;
   companyName: string;
-  applications: Array<{
-    id: number;
-    status: string;
-    appliedDate: string;
-    score: number;
-    resume: {
-      id: number;
-      fileName: string;
-      originalName: string;
-      createdAt: string;
-    };
-  }>;
 }
 
 export default function JobDetailPage() {
@@ -45,6 +35,7 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => {
     if (jobId) {
@@ -70,6 +61,11 @@ export default function JobDetailPage() {
     }
   };
 
+  const handleImported = useCallback(() => {
+    // Refresh the job data to show new applications
+    fetchJob();
+  }, []);
+
   const formatSalary = (min: number, max: number) => {
     if (!min && !max) return 'Not specified';
     // Values are stored in thousands, so multiply by 1000 for display
@@ -82,69 +78,6 @@ export default function JobDetailPage() {
     return 'Not specified';
   };
 
-  const applicationColumns = [
-    {
-      name: 'Resume',
-      selector: (row: any) => row.resume.originalName,
-      sortable: true,
-      cell: (row: any) => (
-        <div>
-          <strong>{row.resume.originalName}</strong>
-          <br />
-          <small className="text-muted">{row.resume.fileName}</small>
-        </div>
-      ),
-      width: '250px'
-    },
-    {
-      name: 'Status',
-      selector: (row: any) => row.status,
-      sortable: true,
-      cell: (row: any) => (
-        <Badge bg={
-          row.status === 'new' ? 'primary' :
-          row.status === 'reviewed' ? 'info' :
-          row.status === 'shortlisted' ? 'success' :
-          row.status === 'rejected' ? 'danger' : 'secondary'
-        }>
-          {row.status}
-        </Badge>
-      ),
-      width: '120px'
-    },
-    {
-      name: 'Score',
-      selector: (row: any) => row.score || 0,
-      sortable: true,
-      cell: (row: any) => row.score ? `${row.score}/100` : '-',
-      width: '80px'
-    },
-    {
-      name: 'Applied Date',
-      selector: (row: any) => new Date(row.appliedDate).toLocaleDateString(),
-      sortable: true,
-      width: '120px'
-    },
-    {
-      name: 'Actions',
-      cell: (row: any) => (
-        <div className="d-flex gap-2">
-          <Button
-            variant="outline-primary"
-            size="sm"
-            onClick={() => router.push(`/resumes/${row.resume.id}`)}
-            title="View Resume"
-          >
-            <i className="bi bi-eye"></i>
-          </Button>
-        </div>
-      ),
-      ignoreRowClick: true,
-      allowOverflow: true,
-      button: true,
-      width: '80px'
-    }
-  ];
 
   if (loading) {
     return (
@@ -247,24 +180,10 @@ export default function JobDetailPage() {
           {/* Applications Section */}
           <Card>
             <Card.Header>
-              <h5 className="mb-0">
-                Applications ({job.applications?.length || 0})
-              </h5>
+              <h5 className="mb-0">Applications</h5>
             </Card.Header>
             <Card.Body>
-              {job.applications && job.applications.length > 0 ? (
-                <DataTable
-                  columns={applicationColumns}
-                  data={job.applications}
-                  pagination={true}
-                  paginationPerPage={10}
-                />
-              ) : (
-                <div className="text-center py-4">
-                  <i className="bi bi-inbox display-4 text-muted"></i>
-                  <p className="mt-2 text-muted">No applications yet</p>
-                </div>
-              )}
+              <ApplicationsTable jobId={job.id} />
             </Card.Body>
           </Card>
         </Col>
@@ -318,13 +237,21 @@ export default function JobDetailPage() {
             </Button>
             <Button 
               variant="outline-success"
-              onClick={() => router.push(`/jobs/${job.id}/ingest`)}
+              onClick={() => setShowImportModal(true)}
             >
               <i className="bi bi-envelope"></i> Import Applications
             </Button>
           </div>
         </Col>
       </Row>
+
+      {/* Import Applications Modal */}
+      <ImportApplicationsModal
+        jobId={parseInt(jobId)}
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImported={handleImported}
+      />
     </div>
   );
 }

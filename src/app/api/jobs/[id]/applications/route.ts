@@ -1,0 +1,175 @@
+import { NextRequest } from "next/server";
+import prisma from '@/lib/prisma';
+import { withTableAuthAppRouter } from "@/lib/auth/withTableAuthAppRouter";
+
+function parsePaging(url: string) {
+  const sp = new URL(url).searchParams;
+  const page = Math.max(1, Number(sp.get("page") || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(sp.get("pageSize") || 10)));
+  const q = (sp.get("q") || "").trim();
+  return { page, pageSize, q };
+}
+
+// GET /api/jobs/[id]/applications?q=&page=&pageSize=
+async function _GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const jobId = Number(params.id);
+  if (!Number.isFinite(jobId)) {
+    return Response.json({ error: "Invalid job id" }, { status: 400 });
+  }
+  const { page, pageSize, q } = parsePaging(req.url);
+
+  let whereClause: any = { jobId };
+  
+  // If search query exists, search in resume fields and contactInfo JSON
+  if (q) {
+    whereClause.resume = {
+      OR: [
+        { originalName: { contains: q, mode: "insensitive" } },
+        { contactInfo: { contains: q, mode: "insensitive" } },
+        { skills: { contains: q, mode: "insensitive" } },
+        { experience: { contains: q, mode: "insensitive" } },
+        { sourceFrom: { contains: q, mode: "insensitive" } }
+      ]
+    };
+  }
+
+  const [total, apps] = await Promise.all([
+    prisma.jobApplication.count({ where: whereClause }),
+    prisma.jobApplication.findMany({
+      where: whereClause,
+      orderBy: { updatedAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        jobId: true,
+        resumeId: true,
+        status: true,
+        score: true,
+        notes: true,
+        updatedAt: true,
+        appliedDate: true,
+        resume: {
+          select: {
+            id: true,
+            originalName: true,
+            contactInfo: true,
+            sourceFrom: true,
+            skills: true,
+            experience: true,
+            createdAt: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  // Parse contact info and extract candidate details
+  const rows = apps.map((a) => {
+    let candidateName = null;
+    let email = null;
+    let phone = null;
+    
+    // Try to parse contactInfo JSON
+    if (a.resume?.contactInfo) {
+      try {
+        const contactData = JSON.parse(a.resume.contactInfo);
+        candidateName = contactData.name || contactData.candidateName || null;
+        email = contactData.email || null;
+        phone = contactData.phone || contactData.phoneNumber || null;
+      } catch (e) {
+        // If JSON parsing fails, try to extract email from string
+        const emailMatch = a.resume.contactInfo.match(/[\w.-]+@[\w.-]+\.\w+/);
+        const phoneMatch = a.resume.contactInfo.match(/[\+]?[\d\s\-\(\)]{10,}/);
+        if (emailMatch) email = emailMatch[0];
+        if (phoneMatch) phone = phoneMatch[0];
+      }
+    }
+
+    // Fallback to sourceFrom (email sender) if no email found
+    if (!email && a.resume?.sourceFrom) {
+      email = a.resume.sourceFrom;
+    }
+
+    // Fallback to originalName for candidate name
+    if (!candidateName && a.resume?.originalName) {
+      candidateName = a.resume.originalName.replace(/\.(pdf|docx?|txt)$/i, '');
+    }
+
+    return {
+      id: a.id,
+      jobId: a.jobId,
+      resumeId: a.resumeId,
+      status: a.status,
+      score: a.score,
+      notes: a.notes,
+      updatedAt: a.updatedAt,
+      appliedDate: a.appliedDate,
+      candidateName,
+      email,
+      phone,
+      // AI scores would go here if implemented
+      aiMatch: null,
+      aiCompany: null,
+      aiFake: null,
+    };
+  });
+
+  return Response.json({
+    applications: rows,
+    pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) },
+    query: q,
+  });
+}
+
+// PATCH /api/jobs/[id]/applications  { resumeId, status?, notes?, score? }
+async function _PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const jobId = Number(params.id);
+  if (!Number.isFinite(jobId)) {
+    return Response.json({ error: "Invalid job id" }, { status: 400 });
+  }
+  const body = await req.json().catch(() => ({}));
+  const { resumeId, status, notes, score } = body || {};
+  if (!Number.isFinite(resumeId)) {
+    return Response.json({ error: "resumeId required" }, { status: 400 });
+  }
+
+  const data: any = {};
+  if (typeof status === "string") data.status = status;
+  if (typeof notes === "string") data.notes = notes;
+  if (score === null) data.score = null;
+  else if (!isNaN(Number(score))) data.score = Number(score);
+
+  const updated = await prisma.jobApplication.update({
+    where: { jobId_resumeId: { jobId, resumeId: Number(resumeId) } },
+    data,
+    select: { id: true, jobId: true, resumeId: true, status: true, notes: true, score: true, updatedAt: true },
+  });
+
+  return Response.json({ application: updated });
+}
+
+// DELETE /api/jobs/[id]/applications  { resumeId }
+async function _DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const jobId = Number(params.id);
+  if (!Number.isFinite(jobId)) {
+    return Response.json({ error: "Invalid job id" }, { status: 400 });
+  }
+  const body = await req.json().catch(() => ({}));
+  const { resumeId } = body || {};
+  if (!Number.isFinite(resumeId)) {
+    return Response.json({ error: "resumeId required" }, { status: 400 });
+  }
+
+  await prisma.jobApplication.delete({
+    where: { jobId_resumeId: { jobId, resumeId: Number(resumeId) } },
+  });
+
+  return Response.json({ ok: true });
+}
+
+const protectedGET = withTableAuthAppRouter("jobs", _GET);
+const protectedPATCH = withTableAuthAppRouter("jobs", _PATCH);
+const protectedDELETE = withTableAuthAppRouter("jobs", _DELETE);
+
+export { protectedGET as GET, protectedPATCH as PATCH, protectedDELETE as DELETE };
