@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import { importEmailSchema } from '@/lib/validation/importEmail';
-import { searchMessages, checkEmailEligibility } from '@/lib/msgraph/outlook';
-// import { importFromMailbox } from '@/lib/msgraph/importFromMailbox'; // your Phase-2 function
+import { importFromMailbox } from '@/lib/msgraph/importFromMailbox';
 
 async function _POST(req: NextRequest) {
   // Extract job ID from URL path
@@ -30,9 +29,15 @@ async function _POST(req: NextRequest) {
 
   const { mailbox, text, top } = parsed.data;
 
-  // Validate tenant domain
+  // Domain guard: Reject any mailbox not ending with tenant domain
   const tenantDomain = process.env.ALLOWED_TENANT_EMAIL_DOMAIN;
-  if (tenantDomain && !mailbox.toLowerCase().endsWith(`@${tenantDomain.toLowerCase()}`)) {
+  if (!tenantDomain) {
+    return NextResponse.json({ 
+      error: "Tenant domain not configured" 
+    }, { status: 500 });
+  }
+  
+  if (!mailbox.toLowerCase().endsWith(`@${tenantDomain.toLowerCase()}`)) {
     return NextResponse.json({ 
       error: `Mailbox must be in @${tenantDomain}` 
     }, { status: 400 });
@@ -44,44 +49,22 @@ async function _POST(req: NextRequest) {
   const startTime = Date.now();
   
   try {
-    // Use filter-based approach for all imports now
-    const result = await searchMessages(cleanText, top || 5000, mailbox);
-      
-    let eligibleEmails = 0;
-    const firstSubjects: string[] = [];
-    
-    // For now, process all messages to get accurate counts (optimize later for production)
-    for (let i = 0; i < result.messages.length; i++) {
-      const message = result.messages[i];
-      if (i < 3) {
-        firstSubjects.push(message.subject || '(no subject)');
-      }
-      
-      // Quick check: if message doesn't have attachments, skip detailed check
-      if (!message.hasAttachments) {
-        continue;
-      }
-      
-      const eligibilityCheck = await checkEmailEligibility(message.id, mailbox);
-      if (eligibilityCheck.eligible) {
-        eligibleEmails++;
-      }
-    }
+    // Use the complete import orchestrator
+    const summary = await importFromMailbox({
+      jobId,
+      mailbox,
+      searchText: cleanText,
+      limit: top || 5000
+    });
     
     const durationMs = Date.now() - startTime;
     
     // Structured logging (domain only, no full email for privacy)
     const mailboxDomain = mailbox.split('@')[1] || 'unknown';
-    console.log(`graph.filter ok domain=${mailboxDomain} searchTextLength=${cleanText.length} scanned=${result.messages.length} eligible=${eligibleEmails} durationMs=${durationMs}`);
-    console.log(`Debug: searchText="${cleanText}" messagesFound=${result.messages.length} withAttachments=${result.messages.filter(m => m.hasAttachments).length}`);
+    console.log(`import_email ok jobId=${jobId} domain=${mailboxDomain} scanned=${summary.emailsScanned} created=${summary.createdResumes} linked=${summary.linkedApplications} dupes=${summary.skippedDuplicates} failed=${summary.failed} durationMs=${durationMs}`);
     
-    const summary = {
-      createdResumes: 0,
-      linkedApplications: 0,
-      skippedDuplicates: 0,
-      failed: 0,
-      emailsScanned: result.messages.length,
-    };
+    // Console log the summary object as requested
+    console.log(summary);
 
     return NextResponse.json(summary);
   } catch (e: any) {
