@@ -43,7 +43,9 @@ export async function searchMessages(
   }
 
   // Configure lookback window (default 365 days, configurable via env)
-  const lookbackDays = parseInt(process.env.MS_IMPORT_LOOKBACK_DAYS || '365');
+  // If we have a specific search text, use a longer lookback to find older emails
+  const defaultLookback = searchText ? '1095' : '365'; // 3 years if searching, 1 year otherwise
+  const lookbackDays = parseInt(process.env.MS_IMPORT_LOOKBACK_DAYS || defaultLookback);
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - lookbackDays);
   const utcStart = startDate.toISOString();
@@ -61,6 +63,8 @@ export async function searchMessages(
   let currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
 
   let useAttachmentFallback = false;
+
+  console.log(`Debug: Starting search with lookbackDays=${lookbackDays}, utcStart=${utcStart}, searchText="${searchText}"`);
 
   // Keep fetching pages until we have enough messages, hit page limit, or no more pages
   while (allMessages.length < limit && pageCount < maxPages) {
@@ -86,30 +90,43 @@ export async function searchMessages(
       const data = await response.json();
       const pageMessages = data.value || [];
       
+      console.log(`Debug: Page ${pageCount + 1}, got ${pageMessages.length} messages, useAttachmentFallback=${useAttachmentFallback}`);
+      
       // If using fallback, filter for hasAttachments locally
       let filteredMessages = pageMessages;
       if (useAttachmentFallback) {
         filteredMessages = pageMessages.filter((message: Message) => message.hasAttachments);
+        console.log(`Debug: After hasAttachments filter: ${filteredMessages.length} messages`);
       }
       
       // Apply search text filter locally if provided
       if (searchText) {
         const cleanText = searchText.toLowerCase().trim();
+        const beforeFilter = filteredMessages.length;
         filteredMessages = filteredMessages.filter((message: Message) => {
           const subject = (message.subject || '').toLowerCase();
           const fromName = message.from?.emailAddress?.name?.toLowerCase() || '';
           const fromAddress = message.from?.emailAddress?.address?.toLowerCase() || '';
           const bodyPreview = (message.bodyPreview || '').toLowerCase();
           
-          return subject.includes(cleanText) || 
-                 fromName.includes(cleanText) || 
-                 fromAddress.includes(cleanText) ||
-                 bodyPreview.includes(cleanText);
+          const matches = subject.includes(cleanText) || 
+                         fromName.includes(cleanText) || 
+                         fromAddress.includes(cleanText) ||
+                         bodyPreview.includes(cleanText);
+          
+          // Debug: log first few matches/non-matches
+          if (pageCount === 0 || matches) {
+            console.log(`Debug: Message "${message.subject}" - subject:"${subject}" matches: ${matches}`);
+          }
+          
+          return matches;
         });
+        console.log(`Debug: Search text "${cleanText}" - Before: ${beforeFilter}, After: ${filteredMessages.length} messages`);
       }
       
       allMessages.push(...filteredMessages);
       pageCount++;
+      console.log(`Debug: Added ${filteredMessages.length} messages, total so far: ${allMessages.length}`);
 
       // Check if there's a next page
       nextUrl = data['@odata.nextLink'];
@@ -141,6 +158,8 @@ export async function searchMessages(
   
   // Trim to the requested limit
   const messages = allMessages.slice(0, limit);
+  
+  console.log(`Debug: FINAL RESULT - Total found: ${allMessages.length}, returning: ${messages.length}, searchText: "${searchText}"`);
   
   return {
     messages,

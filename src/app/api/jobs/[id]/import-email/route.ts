@@ -50,11 +50,16 @@ async function _POST(req: NextRequest) {
     let eligibleEmails = 0;
     const firstSubjects: string[] = [];
     
-    // Check eligibility for first few emails and collect subjects
-    for (let i = 0; i < Math.min(result.messages.length, 5); i++) {
+    // For now, process all messages to get accurate counts (optimize later for production)
+    for (let i = 0; i < result.messages.length; i++) {
       const message = result.messages[i];
       if (i < 3) {
         firstSubjects.push(message.subject || '(no subject)');
+      }
+      
+      // Quick check: if message doesn't have attachments, skip detailed check
+      if (!message.hasAttachments) {
+        continue;
       }
       
       const eligibilityCheck = await checkEmailEligibility(message.id, mailbox);
@@ -63,16 +68,12 @@ async function _POST(req: NextRequest) {
       }
     }
     
-    // For remaining messages, just count those with attachments
-    // (approximation since checking all eligibility would be slow)
-    const remainingWithAttachments = result.messages.slice(5).filter(m => m.hasAttachments).length;
-    eligibleEmails += Math.floor(remainingWithAttachments * 0.7); // rough estimate
-    
     const durationMs = Date.now() - startTime;
     
     // Structured logging (domain only, no full email for privacy)
     const mailboxDomain = mailbox.split('@')[1] || 'unknown';
     console.log(`graph.filter ok domain=${mailboxDomain} searchTextLength=${cleanText.length} scanned=${result.messages.length} eligible=${eligibleEmails} durationMs=${durationMs}`);
+    console.log(`Debug: searchText="${cleanText}" messagesFound=${result.messages.length} withAttachments=${result.messages.filter(m => m.hasAttachments).length}`);
     
     const summary = {
       createdResumes: 0,
