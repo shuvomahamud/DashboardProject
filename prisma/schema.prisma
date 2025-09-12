@@ -348,6 +348,21 @@ model Resume {
   employmentHistoryJson String? @db.Text // JSON array of employment history
   totalExperienceY  Decimal?  @db.Decimal(5,2) // Total years of experience
   parsedAt          DateTime? @db.Timestamptz(6) // When AI parsing was completed
+  
+  // Phase 4 scoring fields
+  companyScore      Decimal?  @db.Decimal(5,2) // Company reputation score 0-100
+  fakeScore         Decimal?  @db.Decimal(5,2) // Fake resume risk score 0-100
+  
+  // Phase 4 parsing metadata for idempotency
+  textHash          String?   // SHA256 hash of rawText
+  promptVersion     String?   // Version of prompt used for parsing
+  parseModel        String?   // Model used for parsing (e.g., gpt-4o-mini)
+  parseError        String?   // Error message if parsing failed
+  
+  // Convenience fields for quick access
+  candidateName     String?   // Extracted candidate name
+  email             String?   // Primary email address
+  phone             String?   // Primary phone number
 
   applications      JobApplication[]
   resume_embeddings resume_embeddings[]
@@ -369,6 +384,7 @@ model JobApplication {
   updatedAt     DateTime @updatedAt @db.Timestamptz(6)
   aiExtractJson String?
   aiSummary     String?
+  matchScore    Decimal? @db.Decimal(5, 2) // Job-resume match score 0-100
   job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   resume        Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 

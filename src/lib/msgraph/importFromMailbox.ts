@@ -4,6 +4,7 @@ import { searchMessages, listAttachments, getFileAttachmentBytes, isAttachmentEl
 import { Message, Attachment } from './outlook';
 import { extractText } from '@/lib/parse/text';
 import { uploadResumeBytes } from '@/lib/supabase-server';
+import { parseAndScoreResume } from '@/lib/ai/resumeParsingService';
 
 export interface ImportSummary {
   createdResumes: number;
@@ -12,6 +13,8 @@ export interface ImportSummary {
   failed: number;
   emailsScanned: number;
   uploadIssues?: number; // Optional counter for upload problems
+  parsedResumes?: number; // Number of resumes successfully parsed by AI
+  parseFailures?: number; // Number of resumes that failed AI parsing
 }
 
 export interface ImportOptions {
@@ -224,6 +227,8 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
     failed: 0,
     emailsScanned: 0,
     uploadIssues: 0,
+    parsedResumes: 0,
+    parseFailures: 0,
   };
 
   try {
@@ -354,10 +359,12 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
 
             // Extract text
             console.log(`📝 Extracting text from ${attachment.name}`);
+            let textExtractionSuccess = false;
             try {
               const textResult = await extractTextFromResume(resume, fileBytes);
               if (textResult.success) {
                 console.log(`✅ Text extraction successful for ${attachment.name}`);
+                textExtractionSuccess = true;
               } else {
                 console.warn(`⚠️  Text extraction failed for ${attachment.name}: ${textResult.error}`);
                 // Don't increment failed count for text extraction failures, as Resume is still created
@@ -365,6 +372,50 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
             } catch (textError: any) {
               console.warn(`⚠️  Text extraction error for ${attachment.name}:`, textError.message);
               // Don't throw - text extraction failure shouldn't fail the entire process
+            }
+
+            // Parse and score resume with AI (only if text extraction was successful and PARSE_ON_IMPORT is enabled)
+            if (textExtractionSuccess && process.env.PARSE_ON_IMPORT === 'true') {
+              console.log(`🤖 Parsing resume ${resume.id} with AI`);
+              try {
+                // Get job details for context
+                const job = await prisma.job.findUnique({
+                  where: { id: jobId },
+                  select: { title: true, description: true }
+                });
+
+                if (job) {
+                  const jobContext = {
+                    jobTitle: job.title,
+                    jobDescriptionShort: job.description.length > 500 
+                      ? job.description.substring(0, 500) + '...' 
+                      : job.description
+                  };
+
+                  const parseResult = await parseAndScoreResume(resume.id, jobContext);
+                  if (parseResult.success) {
+                    console.log(`✅ AI parsing successful for ${attachment.name} (Resume ID: ${resume.id})`);
+                    summary.parsedResumes = (summary.parsedResumes || 0) + 1;
+                    if (parseResult.summary) {
+                      console.log(`📊 Scores - Match: ${parseResult.summary.matchScore}, Company: ${parseResult.summary.companyScore}, Fake: ${parseResult.summary.fakeScore}`);
+                    }
+                  } else {
+                    console.warn(`⚠️  AI parsing failed for ${attachment.name}: ${parseResult.error}`);
+                    summary.parseFailures = (summary.parseFailures || 0) + 1;
+                  }
+                } else {
+                  console.warn(`⚠️  Job ${jobId} not found for parsing context`);
+                  summary.parseFailures = (summary.parseFailures || 0) + 1;
+                }
+              } catch (parseError: any) {
+                console.warn(`⚠️  AI parsing error for ${attachment.name}:`, parseError.message);
+                summary.parseFailures = (summary.parseFailures || 0) + 1;
+                // Don't throw - parsing failure shouldn't fail the entire process
+              }
+            } else if (!textExtractionSuccess) {
+              console.log(`⏭️  Skipping AI parsing for ${attachment.name}: text extraction failed`);
+            } else {
+              console.log(`⏭️  Skipping AI parsing for ${attachment.name}: PARSE_ON_IMPORT is disabled`);
             }
 
             // Track upload issues separately (but don't count as processing failures)
@@ -391,7 +442,9 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
       linkedApplications: summary.linkedApplications,
       skippedDuplicates: summary.skippedDuplicates,
       failed: summary.failed,
-      uploadIssues: summary.uploadIssues || 0
+      uploadIssues: summary.uploadIssues || 0,
+      parsedResumes: summary.parsedResumes || 0,
+      parseFailures: summary.parseFailures || 0
     });
 
     return summary;
