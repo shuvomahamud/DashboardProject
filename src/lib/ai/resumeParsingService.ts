@@ -19,36 +19,46 @@ function getOpenAIClient(): OpenAI {
   return openai;
 }
 
-// Enhanced schema that includes all three scores
+// Helpers for hardened schema
+const stringOrNull = z.union([z.string(), z.null()]).optional();
+const number0to100 = z.coerce.number().min(0).max(100);
+const number0to80 = z.coerce.number().min(0).max(80);
+
+// Arrays may sometimes come as a single string; accept both & normalize to array
+const stringArray = z.union([z.array(z.string()), z.string()])
+  .transform(v => Array.isArray(v) ? v : (v ? [v] : []))
+  .default([]);
+
+// Enhanced schema that includes all three scores with hardened validation
 export const EnhancedResumeParseSchema = z.object({
   resume: z.object({
     candidate: z.object({
-      name: z.string().nullable(),
-      emails: z.array(z.string()),
-      phones: z.array(z.string()),
-      linkedinUrl: z.string().nullable(),
-      currentLocation: z.string().nullable(),
-      totalExperienceYears: z.number().min(0).max(80)
+      name: stringOrNull,
+      emails: stringArray,
+      phones: stringArray,
+      linkedinUrl: stringOrNull,        // now optional|nullable
+      currentLocation: stringOrNull,    // now optional|nullable
+      totalExperienceYears: number0to80
     }),
-    skills: z.array(z.string()),
+    skills: stringArray,
     education: z.array(z.object({
       degree: z.string(),
-      institution: z.string().nullable(),
-      year: z.string().nullable()
-    })),
+      institution: stringOrNull,
+      year: stringOrNull
+    })).default([]),
     employment: z.array(z.object({
       company: z.string(),
-      title: z.string().nullable(),
-      startDate: z.string().nullable(), // YYYY or YYYY-MM format
-      endDate: z.string().nullable(), // YYYY or YYYY-MM or "Present"
-      employmentType: z.string().nullable()
-    })),
-    notes: z.string().nullable()
+      title: stringOrNull,
+      startDate: stringOrNull,          // "YYYY", "YYYY-MM", or null
+      endDate: stringOrNull,            // "YYYY", "YYYY-MM", "Present" (we'll normalize), or null
+      employmentType: stringOrNull
+    })).default([]),
+    notes: stringOrNull
   }),
   scores: z.object({
-    matchScore: z.number().min(0).max(100),
-    companyScore: z.number().min(0).max(100),
-    fakeScore: z.number().min(0).max(100)
+    matchScore: number0to100,
+    companyScore: number0to100,
+    fakeScore: number0to100
   }),
   summary: z.string()
 });
@@ -102,46 +112,152 @@ function generateTextHash(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
-// System message for the LLM
-const SYSTEM_MESSAGE = `You are an expert resume parser. **Return only minified JSON** that matches the schema provided.
-• No markdown. No prose. No comments. No extra keys.
-• Dates must be YYYY or YYYY-MM. Use "Present" for ongoing roles.
-• If unknown, omit or use empty arrays.
-• All three scores must be integers 0–100.
-• Use only information in the job text and the resume text. **Do not invent facts.**
-• If employer reputation is unclear, set companyScore to **~50** (±5).
-• If risk indicators are absent, set fakeScore near **10** (low risk).
-• If job fit is weak, set a low matchScore.
+// Pre-sanitizer to fix bad scalar shapes before Zod validation
+function fixScalar<T extends Record<string, any>>(obj: T, key: keyof T) {
+  const v = obj[key];
+  if (v === undefined) return; // let optional stay missing
+  if (v === null) return;
+  if (typeof v === 'string') {
+    obj[key] = v.trim() === '' ? null : v;
+    return;
+  }
+  obj[key] = null; // arrays, objects, booleans, numbers -> null
+}
+
+function coerceSummary(raw: any) {
+  // If model nested it by mistake, lift it
+  if (raw?.summary === undefined && raw?.resume?.summary !== undefined) {
+    raw.summary = raw.resume.summary;
+    delete raw.resume.summary;
+  }
+
+  const s = raw?.summary;
+
+  if (Array.isArray(s)) {
+    raw.summary = s.filter(Boolean).join(' ').trim();
+  } else if (s == null) {
+    raw.summary = '';
+  } else if (typeof s === 'object') {
+    // Handle object cases - try to extract meaningful text
+    raw.summary = s.text || s.description || s.summary || JSON.stringify(s);
+  } else if (typeof s !== 'string') {
+    raw.summary = String(s);
+  }
+
+  // Build a safe fallback if empty after coercion
+  if (!raw.summary || !raw.summary.trim()) {
+    const c = raw?.resume?.candidate ?? {};
+    const title = raw?.resume?.employment?.[0]?.title || 'Professional';
+    const name = c.name || 'Candidate';
+    const years = typeof c.totalExperienceYears === 'number' ? `${c.totalExperienceYears}y` : '';
+    const skills = Array.isArray(raw?.resume?.skills) ? raw.resume.skills.slice(0,3).join('/') : '';
+    raw.summary = [name, '—', title, years ? `(${years})` : '', skills ? `, ${skills}` : '']
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Trim to UX budget
+  raw.summary = raw.summary.slice(0, 140);
+}
+
+function sanitizeModelOutput(raw: any) {
+  try {
+    if (raw?.resume?.candidate) {
+      const c = raw.resume.candidate;
+      ['name', 'linkedinUrl', 'currentLocation'].forEach(k => fixScalar(c as any, k as any));
+    }
+    if (Array.isArray(raw?.resume?.employment)) {
+      raw.resume.employment.forEach((e: any) => {
+        ['title', 'startDate', 'endDate', 'employmentType'].forEach(k => fixScalar(e, k));
+        if (e?.endDate === 'Present') e.endDate = null;
+      });
+    }
+    if (Array.isArray(raw?.resume?.education)) {
+      raw.resume.education.forEach((e: any) => {
+        ['institution', 'year'].forEach(k => fixScalar(e, k));
+      });
+    }
+    // Fix notes field
+    if (raw?.resume) {
+      fixScalar(raw.resume, 'notes');
+    }
+
+    // NEW: normalize summary last
+    coerceSummary(raw);
+
+    // Clamp scores before schema validation
+    if (raw?.scores) {
+      const scores = raw.scores;
+      if (typeof scores.matchScore === 'number') {
+        scores.matchScore = Math.max(0, Math.min(100, scores.matchScore));
+      }
+      if (typeof scores.companyScore === 'number') {
+        scores.companyScore = Math.max(0, Math.min(100, scores.companyScore));
+      }
+      if (typeof scores.fakeScore === 'number') {
+        scores.fakeScore = Math.max(0, Math.min(100, scores.fakeScore));
+      }
+    }
+  } catch {
+    // Silently handle any sanitization errors
+  }
+  return raw;
+}
+
+// Enhanced system message with numbered hard rules
+const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified JSON** that matches the schema below.
+**Hard requirements (follow all):**
+
+1. **Output:** JSON only. No prose, markdown, comments, or extra keys.
+2. **Root object keys**: exactly \`resume\`, \`scores\`, \`summary\`. No others.
+3. **Scalars policy:** For these scalar fields —
+   \`resume.candidate.name\`, \`resume.candidate.linkedinUrl\`, \`resume.candidate.currentLocation\`,
+   \`resume.employment[i].title\`, \`resume.employment[i].startDate\`, \`resume.employment[i].endDate\`, \`resume.employment[i].employmentType\`,
+   — **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
+4. **Dates:** \`YYYY\` or \`YYYY-MM\`. Use \`"Present"\` only inside the model, but **output** \`null\` for ongoing roles.
+5. **Arrays policy:** \`emails\`, \`phones\`, \`skills\`, \`education\`, \`employment\` are arrays; if none, use \`[]\`.
+6. **Scores:** \`matchScore\`, \`companyScore\`, \`fakeScore\` are integers **0–100**.
+7. **Summary:** \`summary\` must be a **single string** at the root, ≤140 chars. Never null/array/object. If unsure, use \`""\`.
+8. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
+9. **Length budget:** Keep values concise; avoid repeating large text.
+
+**WRONG examples (do not do):**
+
+* \`"linkedinUrl": []\` (should be \`null\`)
+* \`"summary": ["Senior .NET dev", "React"]\` (should be \`"Senior .NET dev"\`)
+
 **Return JSON only.**`;
 
-// User message template
+// Enhanced user message template with proper fencing and structure
 function buildUserMessage(jobContext: JobContext, resumeText: string): string {
-  return `Job Context
+  return `JOB CONTEXT
 Title: ${jobContext.jobTitle}
-Description (short):
-"""
-${jobContext.jobDescriptionShort}
-"""
 
-JSON Schema (shape reference; return exactly this object):
+Description:
+<<<JOB_DESCRIPTION
+${jobContext.jobDescriptionShort}
+JOB_DESCRIPTION
+
+SCHEMA (return exactly this object; no extra keys):
 {
   "resume": {
     "candidate": {
-      "name": "string?",
+      "name": "string|null",
       "emails": ["string"],
       "phones": ["string"],
-      "linkedinUrl": "string?",
-      "currentLocation": "string?",
+      "linkedinUrl": "string|null",
+      "currentLocation": "string|null",
       "totalExperienceYears": 0
     },
     "skills": ["string"],
     "education": [
-      {"degree": "string", "institution": "string?", "year": "string?"}
+      {"degree": "string", "institution": "string|null", "year": "string|null"}
     ],
     "employment": [
-      {"company": "string", "title": "string?", "startDate": "YYYY[-MM]?", "endDate": "YYYY[-MM]|Present?", "employmentType": "string?"}
+      {"company": "string", "title": "string|null", "startDate": "YYYY[-MM]|null", "endDate": "YYYY[-MM]|null", "employmentType": "string|null"}
     ],
-    "notes": "string?"
+    "notes": "string|null"
   },
   "scores": {
     "matchScore": 0,
@@ -151,25 +267,15 @@ JSON Schema (shape reference; return exactly this object):
   "summary": "string"
 }
 
-Scoring Rubrics
-- matchScore (0–100): skills (45%), recent roles/titles vs job (25%), experience depth/years (20%), domain/context (10%).
-- companyScore (0–100): evidence-only from resume:
-  • Global/very well-known brand → 85–100
-  • Publicly listed / large headcount / multi-region (if explicitly stated) → 70–85
-  • Mid-market / notable startup → 55–70
-  • Small/unknown/unclear → 35–55
-  • Unverifiable/suspicious employer names → 0–35
-  If unsure, set ~50 and do not invent.
-- fakeScore (0–100, higher = riskier): raise for overlapping dates, impossible timelines/versions,
-  many ultra-short stints, missing employer names, contradictory locations, OCR artifacts/buzzword stuffing.
-  Map none/minor/moderate/severe ≈ 10/35/65/90 (then clamp 0–100).
+SCORING RUBRICS
+- matchScore (0–100): skills(45), role/title fit(25), years(20), domain/context(10).
+- companyScore (0–100): evidence-only in resume; if unclear, ~50.
+- fakeScore (0–100): overlaps/impossibilities/ultra-short stints/contradictions/OCR artifacts → higher risk.
 
-Resume (redacted)
-"""
+RESUME (redacted):
+<<<RESUME_TEXT
 ${resumeText}
-"""
-
-Return only minified JSON.`;
+RESUME_TEXT`;
 }
 
 // Main parsing function - single call to gpt-4o-mini with no fallback
@@ -215,6 +321,15 @@ async function callOpenAIForParsing(jobContext: JobContext, redactedText: string
       };
     }
 
+    // Debug logging for summary field type (dev only)
+    if (process.env.NODE_ENV !== 'production') {
+      const t = typeof parsedData?.summary;
+      console.log('LLM summary typeof:', t, 'isArray:', Array.isArray(parsedData?.summary));
+      if (parsedData?.resume?.summary !== undefined) {
+        console.log('Found nested summary under resume.summary:', typeof parsedData.resume.summary);
+      }
+    }
+
     return {
       success: true,
       data: parsedData,
@@ -233,7 +348,11 @@ async function callOpenAIForParsing(jobContext: JobContext, redactedText: string
 // Validate and process parsed data
 function validateAndProcess(rawData: any): { valid: boolean; data?: EnhancedParsedResume; error?: string } {
   try {
-    const validated = EnhancedResumeParseSchema.parse(rawData);
+    // First sanitize the model output
+    const sanitized = sanitizeModelOutput(rawData);
+
+    // Then validate with hardened schema
+    const validated = EnhancedResumeParseSchema.parse(sanitized);
     
     // Clamp scores to 0-100 range
     validated.scores.matchScore = Math.max(0, Math.min(100, Math.round(validated.scores.matchScore)));
