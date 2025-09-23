@@ -379,16 +379,25 @@ model JobApplication {
   status        String   @default("submitted")
   appliedDate   DateTime @default(now()) @db.Timestamptz(6)
   notes         String?
-  score         Decimal? @db.Decimal(5, 2)
   createdAt     DateTime @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime @updatedAt @db.Timestamptz(6)
-  aiExtractJson String?
+  aiExtractJson Json?    // Stores per-application snapshot with aiMatch, aiCompany, aiFake, experience
   aiSummary     String?
   matchScore    Decimal? @db.Decimal(5, 2) // Job-resume match score 0-100
+
+  // Additional fields for resume source information
+  sourceFrom    String?  // Email sender or source
+  originalName  String?  // Original filename
+  candidateName String?  // Extracted candidate name
+  email         String?  // Primary email address
+  phone         String?  // Primary phone number
+
   job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   resume        Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, resumeId])
+  @@index([resumeId])
+  @@index([jobId])
 }
 
 model EmailIngestLog {

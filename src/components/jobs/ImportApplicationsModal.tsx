@@ -31,8 +31,11 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
   // reset form when opened
   useEffect(() => {
     if (open) {
-      const defaultMailbox = process.env.NEXT_PUBLIC_MS_DEFAULT_MAILBOX || "";
-      setMailbox(defaultMailbox);
+      // Fetch default mailbox from server
+      fetch('/api/config/mailbox')
+        .then(res => res.json())
+        .then(data => setMailbox(data.mailbox || ""))
+        .catch(() => setMailbox(""));
       setText("");
       setTop(5000);
       setErrors({});

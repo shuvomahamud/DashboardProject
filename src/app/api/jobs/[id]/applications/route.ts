@@ -50,10 +50,15 @@ async function _GET(req: NextRequest) {
         jobId: true,
         resumeId: true,
         status: true,
-        score: true,
         notes: true,
         updatedAt: true,
         appliedDate: true,
+        matchScore: true,
+        sourceFrom: true,
+        originalName: true,
+        candidateName: true,
+        email: true,
+        phone: true,
         resume: {
           select: {
             id: true,
@@ -63,42 +68,58 @@ async function _GET(req: NextRequest) {
             skills: true,
             experience: true,
             createdAt: true,
+            totalExperienceY: true,
+            companyScore: true,
+            fakeScore: true,
+            candidateName: true,
+            email: true,
+            phone: true,
           },
         },
       },
     }),
   ]);
 
+  // Helper to safely convert Decimal to number
+  const toNumber = (val: any) => val == null ? null : Number(val);
+
   // Parse contact info and extract candidate details
   const rows = apps.map((a) => {
-    let candidateName = null;
-    let email = null;
-    let phone = null;
-    
-    // Try to parse contactInfo JSON
-    if (a.resume?.contactInfo) {
-      try {
-        const contactData = JSON.parse(a.resume.contactInfo);
-        candidateName = contactData.name || contactData.candidateName || null;
-        email = contactData.email || null;
-        phone = contactData.phone || contactData.phoneNumber || null;
-      } catch (e) {
-        // If JSON parsing fails, try to extract email from string
-        const emailMatch = a.resume.contactInfo.match(/[\w.-]+@[\w.-]+\.\w+/);
-        const phoneMatch = a.resume.contactInfo.match(/[\+]?[\d\s\-\(\)]{10,}/);
-        if (emailMatch) email = emailMatch[0];
-        if (phoneMatch) phone = phoneMatch[0];
+    let candidateName = a.candidateName || a.resume?.candidateName || null;
+    let email = a.email || a.resume?.email || null;
+    let phone = a.phone || a.resume?.phone || null;
+
+    // Try to parse contactInfo JSON as fallback
+    if (!candidateName || !email || !phone) {
+      if (a.resume?.contactInfo) {
+        try {
+          const contactData = JSON.parse(a.resume.contactInfo);
+          candidateName = candidateName || contactData.name || contactData.candidateName || null;
+          email = email || contactData.email || null;
+          phone = phone || contactData.phone || contactData.phoneNumber || null;
+        } catch (e) {
+          // If JSON parsing fails, try to extract email from string
+          if (!email) {
+            const emailMatch = a.resume.contactInfo.match(/[\w.-]+@[\w.-]+\.\w+/);
+            if (emailMatch) email = emailMatch[0];
+          }
+          if (!phone) {
+            const phoneMatch = a.resume.contactInfo.match(/[\+]?[\d\s\-\(\)]{10,}/);
+            if (phoneMatch) phone = phoneMatch[0];
+          }
+        }
       }
     }
 
     // Fallback to sourceFrom (email sender) if no email found
-    if (!email && a.resume?.sourceFrom) {
-      email = a.resume.sourceFrom;
+    if (!email && (a.sourceFrom || a.resume?.sourceFrom)) {
+      email = a.sourceFrom || a.resume?.sourceFrom;
     }
 
     // Fallback to originalName for candidate name
-    if (!candidateName && a.resume?.originalName) {
-      candidateName = a.resume.originalName.replace(/\.(pdf|docx?|txt)$/i, '');
+    if (!candidateName && (a.originalName || a.resume?.originalName)) {
+      const fileName = a.originalName || a.resume?.originalName;
+      candidateName = fileName?.replace(/\.(pdf|docx?|txt)$/i, '') || null;
     }
 
     return {
@@ -106,22 +127,21 @@ async function _GET(req: NextRequest) {
       jobId: a.jobId,
       resumeId: a.resumeId,
       status: a.status,
-      score: a.score,
       notes: a.notes,
       updatedAt: a.updatedAt,
       appliedDate: a.appliedDate,
       candidateName,
       email,
       phone,
-      // AI scores would go here if implemented
-      aiMatch: null,
-      aiCompany: null,
-      aiFake: null,
+      // AI scores from database
+      aiMatch: toNumber(a.matchScore),
+      aiCompany: toNumber(a.resume?.companyScore),
+      aiFake: toNumber(a.resume?.fakeScore),
       // Additional resume fields
-      originalName: a.resume?.originalName,
-      sourceFrom: a.resume?.sourceFrom,
+      originalName: a.originalName || a.resume?.originalName,
+      sourceFrom: a.sourceFrom || a.resume?.sourceFrom,
       skills: a.resume?.skills,
-      experience: a.resume?.experience,
+      experience: toNumber(a.resume?.totalExperienceY),
       createdAt: a.resume?.createdAt,
     };
   });
@@ -145,7 +165,7 @@ async function _PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
   }
   const body = await req.json().catch(() => ({}));
-  const { resumeId, status, notes, score } = body || {};
+  const { resumeId, status, notes } = body || {};
   if (!Number.isFinite(resumeId)) {
     return NextResponse.json({ error: "resumeId required" }, { status: 400 });
   }
@@ -153,13 +173,11 @@ async function _PATCH(req: NextRequest) {
   const data: any = {};
   if (typeof status === "string") data.status = status;
   if (typeof notes === "string") data.notes = notes;
-  if (score === null) data.score = null;
-  else if (!isNaN(Number(score))) data.score = Number(score);
 
   const updated = await prisma.jobApplication.update({
     where: { jobId_resumeId: { jobId, resumeId: Number(resumeId) } },
     data,
-    select: { id: true, jobId: true, resumeId: true, status: true, notes: true, score: true, updatedAt: true },
+    select: { id: true, jobId: true, resumeId: true, status: true, notes: true, updatedAt: true },
   });
 
   return NextResponse.json({ application: updated });

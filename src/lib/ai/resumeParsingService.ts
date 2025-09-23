@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import * as crypto from 'crypto';
 import { z } from 'zod';
@@ -371,6 +371,47 @@ function validateAndProcess(rawData: any): { valid: boolean; data?: EnhancedPars
   }
 }
 
+// Helper function to build application snapshot
+function buildApplicationSnapshot(app: {
+  id: number;
+  jobId: number;
+  resumeId: number;
+  status: string | null;
+  appliedDate: Date | null;
+  updatedAt: Date | null;
+  sourceFrom: string | null;
+  originalName: string | null;
+}, resumeSide: {
+  candidateName: string | null;
+  email: string | null;
+  phone: string | null;
+  skills: string | null; // csv string from Resume table
+  totalExperienceY: number | null; // cast Decimal -> number in caller
+  companyScore: number | null;     // cast Decimal -> number in caller
+  fakeScore: number | null;        // cast Decimal -> number in caller
+}, matchScore: number | null) {
+  return {
+    id: app.id,
+    jobId: app.jobId,
+    resumeId: app.resumeId,
+    status: app.status ?? "submitted",
+    notes: null,                // keep as null, user can edit separately
+    updatedAt: app.updatedAt?.toISOString() ?? null,
+    appliedDate: app.appliedDate?.toISOString() ?? null,
+    candidateName: resumeSide.candidateName,
+    email: resumeSide.email,
+    phone: resumeSide.phone,
+    aiMatch: matchScore,        // <- from jobApplication.matchScore
+    aiCompany: resumeSide.companyScore, // <- from Resume.companyScore
+    aiFake: resumeSide.fakeScore,       // <- from Resume.fakeScore
+    originalName: app.originalName,
+    sourceFrom: app.sourceFrom,
+    skills: resumeSide.skills,  // csv as-is
+    experience: resumeSide.totalExperienceY, // years numeric
+    createdAt: null             // optional; set if you track it on JobApplication
+  };
+}
+
 // Convert processed data to database fields for Resume
 function toResumeDbFields(data: EnhancedParsedResume): Record<string, any> {
   const candidate = data.resume.candidate;
@@ -581,20 +622,64 @@ export async function parseAndScoreResume(
       data: resumeFields
     });
 
-    // Update JobApplication with matchScore (for all applications of this resume)
+    // Update JobApplication with matchScore and aiExtractJson (for all applications of this resume)
     const jobApplications = await prisma.jobApplication.findMany({
       where: { resumeId },
-      select: { id: true }
+      select: {
+        id: true,
+        jobId: true,
+        resumeId: true,
+        status: true,
+        appliedDate: true,
+        updatedAt: true,
+        sourceFrom: true,
+        originalName: true
+      }
     });
 
     if (jobApplications.length > 0) {
+      // Pull resume-side values once
+      const resumeAfter = await prisma.resume.findUnique({
+        where: { id: resumeId },
+        select: {
+          candidateName: true,
+          email: true,
+          phone: true,
+          skills: true,
+          totalExperienceY: true,
+          companyScore: true,
+          fakeScore: true
+        }
+      });
+
+      // Helper to cast Decimals to numbers
+      const toNumber = (x: any) => (x == null ? null : Number(x));
+
+      // Update each application with matchScore and snapshot
       await Promise.all(
-        jobApplications.map(app =>
-          prisma.jobApplication.update({
+        jobApplications.map(async app => {
+          const snapshot = buildApplicationSnapshot(
+            app,
+            {
+              candidateName: resumeAfter?.candidateName ?? null,
+              email: resumeAfter?.email ?? null,
+              phone: resumeAfter?.phone ?? null,
+              skills: resumeAfter?.skills ?? null,
+              totalExperienceY: toNumber(resumeAfter?.totalExperienceY),
+              companyScore: toNumber(resumeAfter?.companyScore),
+              fakeScore: toNumber(resumeAfter?.fakeScore)
+            },
+            validatedData.scores.matchScore
+          );
+
+          await prisma.jobApplication.update({
             where: { id: app.id },
-            data: { matchScore: validatedData.scores.matchScore }
-          })
-        )
+            data: {
+              matchScore: validatedData.scores.matchScore,
+              aiExtractJson: snapshot as unknown as Prisma.InputJsonValue
+            }
+          });
+        })
       );
     }
 
