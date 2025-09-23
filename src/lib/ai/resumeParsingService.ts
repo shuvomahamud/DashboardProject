@@ -666,7 +666,7 @@ export async function parseAndScoreResume(
               phone: resumeAfter?.phone ?? null,
               skills: resumeAfter?.skills ?? null,
               totalExperienceY: toNumber(resumeAfter?.totalExperienceY),
-              companyScore: toNumber(resumeAfter?.companyScore),
+              companyScore: validatedData.scores.companyScore,
               fakeScore: toNumber(resumeAfter?.fakeScore)
             },
             validatedData.scores.matchScore
@@ -676,6 +676,7 @@ export async function parseAndScoreResume(
             where: { id: app.id },
             data: {
               matchScore: validatedData.scores.matchScore,
+              aiCompanyScore: validatedData.scores.companyScore,
               aiExtractJson: snapshot as unknown as Prisma.InputJsonValue
             }
           });

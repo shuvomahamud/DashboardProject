@@ -54,11 +54,7 @@ async function _GET(req: NextRequest) {
         updatedAt: true,
         appliedDate: true,
         matchScore: true,
-        sourceFrom: true,
-        originalName: true,
-        candidateName: true,
-        email: true,
-        phone: true,
+        aiCompanyScore: true,
         resume: {
           select: {
             id: true,
@@ -69,7 +65,6 @@ async function _GET(req: NextRequest) {
             experience: true,
             createdAt: true,
             totalExperienceY: true,
-            companyScore: true,
             fakeScore: true,
             candidateName: true,
             email: true,
@@ -112,13 +107,13 @@ async function _GET(req: NextRequest) {
     }
 
     // Fallback to sourceFrom (email sender) if no email found
-    if (!email && (a.sourceFrom || a.resume?.sourceFrom)) {
-      email = a.sourceFrom || a.resume?.sourceFrom;
+    if (!email && a.resume?.sourceFrom) {
+      email = a.resume?.sourceFrom;
     }
 
     // Fallback to originalName for candidate name
-    if (!candidateName && (a.originalName || a.resume?.originalName)) {
-      const fileName = a.originalName || a.resume?.originalName;
+    if (!candidateName && a.resume?.originalName) {
+      const fileName = a.resume?.originalName;
       candidateName = fileName?.replace(/\.(pdf|docx?|txt)$/i, '') || null;
     }
 
@@ -135,11 +130,11 @@ async function _GET(req: NextRequest) {
       phone,
       // AI scores from database
       aiMatch: toNumber(a.matchScore),
-      aiCompany: toNumber(a.resume?.companyScore),
+      aiCompany: toNumber(a.aiCompanyScore),
       aiFake: toNumber(a.resume?.fakeScore),
       // Additional resume fields
-      originalName: a.originalName || a.resume?.originalName,
-      sourceFrom: a.sourceFrom || a.resume?.sourceFrom,
+      originalName: a.resume?.originalName,
+      sourceFrom: a.resume?.sourceFrom,
       skills: a.resume?.skills,
       experience: toNumber(a.resume?.totalExperienceY),
       createdAt: a.resume?.createdAt,

@@ -95,6 +95,12 @@ async function backfillApplicationSnapshots() {
           updateData.matchScore = matchScore;
         }
 
+        // Backfill aiCompanyScore from resume.companyScore
+        const companyScore = toNumber(app.resume.companyScore);
+        if (companyScore != null) {
+          updateData.aiCompanyScore = companyScore;
+        }
+
         await prisma.jobApplication.update({
           where: { id: app.id },
           data: updateData

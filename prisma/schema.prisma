@@ -373,27 +373,20 @@ model Resume {
 }
 
 model JobApplication {
-  id            Int      @id @default(autoincrement())
-  jobId         Int
-  resumeId      Int
-  status        String   @default("submitted")
-  appliedDate   DateTime @default(now()) @db.Timestamptz(6)
-  notes         String?
-  createdAt     DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
-  aiExtractJson Json?    // Stores per-application snapshot with aiMatch, aiCompany, aiFake, experience
-  aiSummary     String?
-  matchScore    Decimal? @db.Decimal(5, 2) // Job-resume match score 0-100
+  id             Int      @id @default(autoincrement())
+  jobId          Int
+  resumeId       Int
+  status         String   @default("submitted")
+  appliedDate    DateTime @default(now()) @db.Timestamptz(6)
+  notes          String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
+  aiExtractJson  Json?    // Stores per-application snapshot with aiMatch, aiCompany, aiFake, experience
+  matchScore     Decimal? @db.Decimal(5, 2) // Job-resume match score 0-100
+  aiCompanyScore Decimal? @db.Decimal(5, 2) // Company reputation score 0-100
 
-  // Additional fields for resume source information
-  sourceFrom    String?  // Email sender or source
-  originalName  String?  // Original filename
-  candidateName String?  // Extracted candidate name
-  email         String?  // Primary email address
-  phone         String?  // Primary phone number
-
-  job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  resume        Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  job            Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resume         Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, resumeId])
   @@index([resumeId])
