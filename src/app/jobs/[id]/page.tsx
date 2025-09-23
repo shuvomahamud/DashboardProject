@@ -179,8 +179,20 @@ export default function JobDetailPage() {
         </div>
       </div>
 
+      {/* Import Applications Button */}
+      <div className="mb-4">
+        <Button
+          variant="success"
+          size="lg"
+          onClick={() => setShowImportModal(true)}
+          className="fw-medium shadow-sm"
+        >
+          <i className="bi bi-envelope-plus me-2"></i> Import Applications
+        </Button>
+      </div>
+
       <Row className="g-4">
-        <Col lg={8}>
+        <Col lg={12}>
           {/* Job Description Card */}
           <Card className="mb-4 border-0 shadow-sm">
             <Card.Header className="bg-light border-0 py-3">
@@ -243,81 +255,6 @@ export default function JobDetailPage() {
               <ApplicationsTable jobId={job.id} />
             </Card.Body>
           </Card>
-        </Col>
-
-        <Col lg={4}>
-          {/* Job Information Card */}
-          <Card className="mb-4 border-0 shadow-sm h-fit">
-            <Card.Header className="bg-light border-0 py-3">
-              <div className="d-flex align-items-center gap-2">
-                <i className="bi bi-info-circle text-primary"></i>
-                <h6 className="mb-0 fw-semibold">Quick Info</h6>
-              </div>
-            </Card.Header>
-            <Card.Body className="p-4">
-              <div className="mb-3 pb-3 border-bottom">
-                <div className="d-flex align-items-center gap-2 mb-1">
-                  <i className="bi bi-geo-alt-fill text-primary"></i>
-                  <small className="text-muted fw-medium">LOCATION</small>
-                </div>
-                <div className="fw-medium text-dark">{job.isRemote ? 'Remote' : (job.location || 'Not specified')}</div>
-              </div>
-
-              <div className="mb-3 pb-3 border-bottom">
-                <div className="d-flex align-items-center gap-2 mb-1">
-                  <i className="bi bi-briefcase-fill text-primary"></i>
-                  <small className="text-muted fw-medium">EMPLOYMENT TYPE</small>
-                </div>
-                <div className="fw-medium text-dark">{job.employmentType || 'Not specified'}</div>
-              </div>
-
-              <div className="mb-3 pb-3 border-bottom">
-                <div className="d-flex align-items-center gap-2 mb-1">
-                  <i className="bi bi-currency-dollar text-success"></i>
-                  <small className="text-muted fw-medium">SALARY RANGE</small>
-                </div>
-                <div className="fw-bold text-success">{formatSalary(job.salaryMin, job.salaryMax)}</div>
-              </div>
-
-              <div className="mb-3 pb-3 border-bottom">
-                <div className="d-flex align-items-center gap-2 mb-1">
-                  <i className="bi bi-calendar-plus text-primary"></i>
-                  <small className="text-muted fw-medium">POSTED DATE</small>
-                </div>
-                <div className="fw-medium text-dark">{new Date(job.postedDate || job.createdAt).toLocaleDateString()}</div>
-              </div>
-
-              {job.expiryDate && (
-                <div className="mb-3 pb-3 border-bottom">
-                  <div className="d-flex align-items-center gap-2 mb-1">
-                    <i className="bi bi-hourglass-split text-warning"></i>
-                    <small className="text-muted fw-medium">EXPIRY DATE</small>
-                  </div>
-                  <div className="fw-medium text-dark">{new Date(job.expiryDate).toLocaleDateString()}</div>
-                </div>
-              )}
-
-              <div className="mb-0">
-                <div className="d-flex align-items-center gap-2 mb-1">
-                  <i className="bi bi-clock-fill text-primary"></i>
-                  <small className="text-muted fw-medium">LAST UPDATED</small>
-                </div>
-                <div className="fw-medium text-dark">{new Date(job.updatedAt).toLocaleDateString()}</div>
-              </div>
-            </Card.Body>
-          </Card>
-
-          {/* Action Buttons */}
-          <div className="d-grid gap-3">
-            <Button
-              variant="success"
-              size="lg"
-              onClick={() => setShowImportModal(true)}
-              className="fw-medium shadow-sm"
-            >
-              <i className="bi bi-envelope-plus me-2"></i> Import Applications
-            </Button>
-          </div>
         </Col>
       </Row>
 
