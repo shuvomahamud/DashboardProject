@@ -12,7 +12,6 @@ type ApplicationRow = {
   email: string | null;
   phone: string | null;
   status: string;
-  score: number | null;
   notes: string | null;
   aiMatch: number | null;
   aiCompany: number | null;
@@ -144,24 +143,6 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
 
   const columns = [
     {
-      name: 'ID',
-      selector: (row: ApplicationRow) => row.id,
-      sortable: true,
-      width: '70px'
-    },
-    {
-      name: 'Job ID',
-      selector: (row: ApplicationRow) => row.jobId,
-      sortable: true,
-      width: '80px'
-    },
-    {
-      name: 'Resume ID',
-      selector: (row: ApplicationRow) => row.resumeId,
-      sortable: true,
-      width: '100px'
-    },
-    {
       name: 'Candidate',
       selector: (row: ApplicationRow) => row.candidateName || 'Unknown',
       sortable: true,
@@ -232,13 +213,6 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
         </div>
       ),
       width: '180px'
-    },
-    {
-      name: 'Score',
-      selector: (row: ApplicationRow) => row.score || 0,
-      sortable: true,
-      cell: (row: ApplicationRow) => row.score ? `${row.score}/100` : '—',
-      width: '80px'
     },
     {
       name: 'Notes',
