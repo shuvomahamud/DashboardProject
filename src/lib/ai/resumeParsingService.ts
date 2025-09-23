@@ -407,8 +407,6 @@ function buildApplicationSnapshot(app: {
   status: string | null;
   appliedDate: Date | null;
   updatedAt: Date | null;
-  sourceFrom: string | null;
-  originalName: string | null;
 }, resumeSide: {
   candidateName: string | null;
   email: string | null;
@@ -417,6 +415,8 @@ function buildApplicationSnapshot(app: {
   totalExperienceY: number | null; // cast Decimal -> number in caller
   companyScore: number | null;     // cast Decimal -> number in caller
   fakeScore: number | null;        // cast Decimal -> number in caller
+  originalName: string | null;     // from Resume table
+  sourceFrom: string | null;       // from Resume table
 }, matchScore: number | null) {
   return {
     id: app.id,
@@ -432,8 +432,8 @@ function buildApplicationSnapshot(app: {
     aiMatch: matchScore,        // <- from jobApplication.matchScore
     aiCompany: resumeSide.companyScore, // <- from Resume.companyScore
     aiFake: resumeSide.fakeScore,       // <- from Resume.fakeScore
-    originalName: app.originalName,
-    sourceFrom: app.sourceFrom,
+    originalName: resumeSide.originalName, // <- from Resume table
+    sourceFrom: resumeSide.sourceFrom,     // <- from Resume table
     skills: resumeSide.skills,  // csv as-is
     experience: resumeSide.totalExperienceY, // years numeric
     createdAt: null             // optional; set if you track it on JobApplication
@@ -659,9 +659,7 @@ export async function parseAndScoreResume(
         resumeId: true,
         status: true,
         appliedDate: true,
-        updatedAt: true,
-        sourceFrom: true,
-        originalName: true
+        updatedAt: true
       }
     });
 
@@ -676,7 +674,9 @@ export async function parseAndScoreResume(
           skills: true,
           totalExperienceY: true,
           companyScore: true,
-          fakeScore: true
+          fakeScore: true,
+          originalName: true,
+          sourceFrom: true
         }
       });
 
@@ -695,7 +695,9 @@ export async function parseAndScoreResume(
               skills: resumeAfter?.skills ?? null,
               totalExperienceY: toNumber(resumeAfter?.totalExperienceY),
               companyScore: validatedData.scores.companyScore,
-              fakeScore: toNumber(resumeAfter?.fakeScore)
+              fakeScore: toNumber(resumeAfter?.fakeScore),
+              originalName: resumeAfter?.originalName ?? null,
+              sourceFrom: resumeAfter?.sourceFrom ?? null
             },
             validatedData.scores.matchScore
           );
@@ -705,7 +707,7 @@ export async function parseAndScoreResume(
             data: {
               matchScore: validatedData.scores.matchScore,
               aiCompanyScore: validatedData.scores.companyScore,
-              aiExtractJson: snapshot as unknown as Prisma.InputJsonValue
+              aiExtractJson: validatedData as unknown as Prisma.InputJsonValue  // Store the full OpenAI response
             }
           });
         })
