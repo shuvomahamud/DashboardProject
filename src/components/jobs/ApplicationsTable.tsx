@@ -19,8 +19,6 @@ type ApplicationRow = {
   updatedAt: string;
   appliedDate: string;
   // Additional resume fields
-  originalName?: string;
-  sourceFrom?: string;
   skills?: string;
   experience?: string;
   createdAt?: string;
@@ -164,28 +162,6 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
         </div>
       ),
       width: '250px'
-    },
-    {
-      name: 'Original Name',
-      selector: (row: ApplicationRow) => row.originalName || '',
-      sortable: true,
-      cell: (row: ApplicationRow) => (
-        <div style={{ maxWidth: '200px', wordWrap: 'break-word' }}>
-          {row.originalName || '—'}
-        </div>
-      ),
-      width: '200px'
-    },
-    {
-      name: 'Source From',
-      selector: (row: ApplicationRow) => row.sourceFrom || '',
-      sortable: true,
-      cell: (row: ApplicationRow) => (
-        <div style={{ maxWidth: '150px', wordWrap: 'break-word' }}>
-          {row.sourceFrom || '—'}
-        </div>
-      ),
-      width: '150px'
     },
     {
       name: 'Status',
