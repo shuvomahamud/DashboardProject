@@ -19,6 +19,12 @@ type ApplicationRow = {
   aiFake: number | null;
   updatedAt: string;
   appliedDate: string;
+  // Additional resume fields
+  originalName?: string;
+  sourceFrom?: string;
+  skills?: string;
+  experience?: string;
+  createdAt?: string;
 };
 
 type ApiResp = {
@@ -39,18 +45,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [updating, setUpdating] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-      setPage(1); // Reset to first page when searching
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,9 +56,6 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
         pageSize: String(pageSize),
       });
       
-      if (debouncedSearch.trim()) {
-        params.set('q', debouncedSearch.trim());
-      }
       
       const res = await fetch(`/api/jobs/${jobId}/applications?${params.toString()}`);
       if (!res.ok) {
@@ -78,7 +70,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     } finally {
       setLoading(false);
     }
-  }, [jobId, page, pageSize, debouncedSearch]);
+  }, [jobId, page, pageSize]);
 
   useEffect(() => {
     load();
@@ -152,6 +144,24 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
 
   const columns = [
     {
+      name: 'ID',
+      selector: (row: ApplicationRow) => row.id,
+      sortable: true,
+      width: '70px'
+    },
+    {
+      name: 'Job ID',
+      selector: (row: ApplicationRow) => row.jobId,
+      sortable: true,
+      width: '80px'
+    },
+    {
+      name: 'Resume ID',
+      selector: (row: ApplicationRow) => row.resumeId,
+      sortable: true,
+      width: '100px'
+    },
+    {
       name: 'Candidate',
       selector: (row: ApplicationRow) => row.candidateName || 'Unknown',
       sortable: true,
@@ -173,6 +183,28 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
         </div>
       ),
       width: '250px'
+    },
+    {
+      name: 'Original Name',
+      selector: (row: ApplicationRow) => row.originalName || '',
+      sortable: true,
+      cell: (row: ApplicationRow) => (
+        <div style={{ maxWidth: '200px', wordWrap: 'break-word' }}>
+          {row.originalName || '—'}
+        </div>
+      ),
+      width: '200px'
+    },
+    {
+      name: 'Source From',
+      selector: (row: ApplicationRow) => row.sourceFrom || '',
+      sortable: true,
+      cell: (row: ApplicationRow) => (
+        <div style={{ maxWidth: '150px', wordWrap: 'break-word' }}>
+          {row.sourceFrom || '—'}
+        </div>
+      ),
+      width: '150px'
     },
     {
       name: 'Status',
@@ -209,6 +241,17 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       width: '80px'
     },
     {
+      name: 'Notes',
+      selector: (row: ApplicationRow) => row.notes || '',
+      sortable: true,
+      cell: (row: ApplicationRow) => (
+        <div style={{ maxWidth: '200px', wordWrap: 'break-word' }}>
+          {row.notes || '—'}
+        </div>
+      ),
+      width: '200px'
+    },
+    {
       name: 'AI Match',
       selector: (row: ApplicationRow) => row.aiMatch || 0,
       sortable: true,
@@ -230,11 +273,67 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       width: '80px'
     },
     {
-      name: 'Applied',
+      name: 'Skills',
+      selector: (row: ApplicationRow) => row.skills || '',
+      sortable: true,
+      cell: (row: ApplicationRow) => (
+        <div style={{ maxWidth: '300px', wordWrap: 'break-word' }}>
+          {row.skills || '—'}
+        </div>
+      ),
+      width: '300px'
+    },
+    {
+      name: 'Experience',
+      selector: (row: ApplicationRow) => row.experience || '',
+      sortable: true,
+      cell: (row: ApplicationRow) => (
+        <div style={{ maxWidth: '300px', wordWrap: 'break-word' }}>
+          {row.experience || '—'}
+        </div>
+      ),
+      width: '300px'
+    },
+    {
+      name: 'Applied Date',
       selector: (row: ApplicationRow) => new Date(row.appliedDate).toLocaleDateString(),
       sortable: true,
       cell: (row: ApplicationRow) => new Date(row.appliedDate).toLocaleDateString(),
-      width: '100px'
+      width: '120px'
+    },
+    {
+      name: 'Updated At',
+      selector: (row: ApplicationRow) => new Date(row.updatedAt).toLocaleDateString(),
+      sortable: true,
+      cell: (row: ApplicationRow) => (
+        <div>
+          {new Date(row.updatedAt).toLocaleDateString()}
+          <br />
+          <small className="text-muted">
+            {new Date(row.updatedAt).toLocaleTimeString()}
+          </small>
+        </div>
+      ),
+      width: '140px'
+    },
+    {
+      name: 'Created At',
+      selector: (row: ApplicationRow) => row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '',
+      sortable: true,
+      cell: (row: ApplicationRow) => (
+        <div>
+          {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '—'}
+          {row.createdAt && (
+            <>
+              <br />
+              <small className="text-muted">
+                {new Date(row.createdAt).toLocaleTimeString()}
+              </small>
+            </>
+          )}
+        </div>
+      ),
+      width: '140px'
     },
     {
       name: 'Actions',
@@ -273,48 +372,16 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     );
   }
 
-  const clearSearch = () => {
-    setSearchQuery("");
-  };
 
   return (
     <div className="space-y-3">
-      {/* Search Bar */}
-      <div className="mb-3">
-        <InputGroup style={{ maxWidth: '400px' }}>
-          <InputGroup.Text>
-            <i className="bi bi-search"></i>
-          </InputGroup.Text>
-          <Form.Control
-            type="text"
-            placeholder="Search candidates, email, phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <InputGroup.Text 
-              role="button" 
-              onClick={clearSearch}
-              style={{ cursor: 'pointer' }}
-              title="Clear search"
-            >
-              <i className="bi bi-x-circle"></i>
-            </InputGroup.Text>
-          )}
-        </InputGroup>
-        {debouncedSearch && (
-          <small className="text-muted">
-            {loading ? 'Searching...' : `Found ${total} result${total !== 1 ? 's' : ''} for "${debouncedSearch}"`}
-          </small>
-        )}
-      </div>
 
       {/* Table or Empty state */}
       {rows.length === 0 ? (
         <div className="text-center py-4">
           <i className="bi bi-inbox display-4 text-muted"></i>
           <p className="mt-2 text-muted">
-            {debouncedSearch ? `No applications found for "${debouncedSearch}"` : 'No applications yet'}
+            No applications yet
           </p>
         </div>
       ) : (

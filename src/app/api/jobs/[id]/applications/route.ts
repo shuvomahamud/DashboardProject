@@ -117,6 +117,12 @@ async function _GET(req: NextRequest) {
       aiMatch: null,
       aiCompany: null,
       aiFake: null,
+      // Additional resume fields
+      originalName: a.resume?.originalName,
+      sourceFrom: a.resume?.sourceFrom,
+      skills: a.resume?.skills,
+      experience: a.resume?.experience,
+      createdAt: a.resume?.createdAt,
     };
   });
 

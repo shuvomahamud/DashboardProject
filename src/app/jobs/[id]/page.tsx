@@ -229,13 +229,7 @@ export default function JobDetailPage() {
           </Card>
 
           <div className="d-grid gap-2">
-            <Button 
-              variant="primary"
-              onClick={() => router.push(`/jobs/${job.id}/candidates`)}
-            >
-              <i className="bi bi-people"></i> View Candidates
-            </Button>
-            <Button 
+            <Button
               variant="outline-success"
               onClick={() => setShowImportModal(true)}
             >
