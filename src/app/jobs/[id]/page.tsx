@@ -118,11 +118,11 @@ export default function JobDetailPage() {
   return (
     <div className="container-fluid mt-4" style={{ maxWidth: '1400px' }}>
       {/* Modern Header Section */}
-      <div className="mb-4">
+      <div className="mb-4 bg-dark rounded p-4 shadow">
         <div className="d-flex justify-content-between align-items-start mb-3">
           <div className="flex-grow-1">
             <div className="d-flex align-items-center gap-3 mb-2">
-              <h1 className="h2 mb-0 fw-bold text-dark">{job.title}</h1>
+              <h1 className="h2 mb-0 fw-bold text-white">{job.title}</h1>
               <Badge
                 bg={
                   job.status === 'active' ? 'success' :
@@ -136,23 +136,23 @@ export default function JobDetailPage() {
             </div>
             <div className="d-flex align-items-center gap-3 mb-3">
               <div className="d-flex align-items-center gap-2">
-                <i className="bi bi-building text-primary fs-5"></i>
-                <span className="h5 mb-0 text-dark fw-semibold">{job.companyName}</span>
+                <i className="bi bi-building text-white fs-5"></i>
+                <span className="h5 mb-0 text-white fw-semibold">{job.companyName}</span>
               </div>
               <div className="d-flex align-items-center gap-2">
-                <i className="bi bi-geo-alt text-primary"></i>
-                <span className="text-dark">{job.isRemote ? 'Remote' : (job.location || 'Not specified')}</span>
+                <i className="bi bi-geo-alt text-white"></i>
+                <span className="text-white">{job.isRemote ? 'Remote' : (job.location || 'Not specified')}</span>
               </div>
               <div className="d-flex align-items-center gap-2">
-                <i className="bi bi-briefcase text-primary"></i>
-                <span className="text-dark">{job.employmentType || 'Not specified'}</span>
+                <i className="bi bi-briefcase text-white"></i>
+                <span className="text-white">{job.employmentType || 'Not specified'}</span>
               </div>
               <div className="d-flex align-items-center gap-2">
-                <i className="bi bi-currency-dollar text-success"></i>
-                <span className="text-dark fw-medium">{formatSalary(job.salaryMin, job.salaryMax)}</span>
+                <i className="bi bi-currency-dollar text-white"></i>
+                <span className="text-white fw-medium">{formatSalary(job.salaryMin, job.salaryMax)}</span>
               </div>
             </div>
-            <div className="d-flex align-items-center gap-3 text-muted">
+            <div className="d-flex align-items-center gap-3 text-white-50">
               <small><i className="bi bi-calendar3"></i> Posted {new Date(job.postedDate || job.createdAt).toLocaleDateString()}</small>
               <small><i className="bi bi-clock"></i> Updated {new Date(job.updatedAt).toLocaleDateString()}</small>
               {job.expiryDate && (
@@ -162,14 +162,14 @@ export default function JobDetailPage() {
           </div>
           <div className="d-flex gap-2">
             <Button
-              variant="outline-secondary"
+              variant="outline-light"
               onClick={() => router.push('/jobs')}
               className="px-3"
             >
               <i className="bi bi-arrow-left me-1"></i> Back to Jobs
             </Button>
             <Button
-              variant="outline-primary"
+              variant="outline-light"
               onClick={() => router.push(`/jobs/${job.id}/edit`)}
               className="px-3"
             >
