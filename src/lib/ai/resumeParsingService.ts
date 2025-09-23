@@ -284,17 +284,30 @@ async function callOpenAIForParsing(jobContext: JobContext, redactedText: string
     const model = process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini';
     const temperature = Number(process.env.OPENAI_TEMPERATURE || 0.1);
 
+    const systemMessage = SYSTEM_MESSAGE;
+    const userMessage = buildUserMessage(jobContext, redactedText);
+
+    // Log the complete prompt being sent to OpenAI
+    console.log('\n=== OPENAI PROMPT DEBUG ===');
+    console.log('Model:', model);
+    console.log('Temperature:', temperature);
+    console.log('\n--- SYSTEM MESSAGE ---');
+    console.log(systemMessage);
+    console.log('\n--- USER MESSAGE ---');
+    console.log(userMessage);
+    console.log('\n=== END PROMPT DEBUG ===\n');
+
     const openaiClient = getOpenAIClient();
     const completion = await openaiClient.chat.completions.create({
       model,
       messages: [
         {
           role: 'system',
-          content: SYSTEM_MESSAGE
+          content: systemMessage
         },
         {
           role: 'user',
-          content: buildUserMessage(jobContext, redactedText)
+          content: userMessage
         }
       ],
       response_format: { type: 'json_object' },
@@ -303,6 +316,14 @@ async function callOpenAIForParsing(jobContext: JobContext, redactedText: string
     });
 
     const response = completion.choices[0]?.message?.content;
+
+    // Log the OpenAI response
+    console.log('\n=== OPENAI RESPONSE DEBUG ===');
+    console.log('Raw Response:');
+    console.log(response);
+    console.log('Tokens Used:', completion.usage?.total_tokens || 0);
+    console.log('=== END RESPONSE DEBUG ===\n');
+
     if (!response) {
       return {
         success: false,
@@ -314,7 +335,14 @@ async function callOpenAIForParsing(jobContext: JobContext, redactedText: string
     let parsedData;
     try {
       parsedData = JSON.parse(response);
+      console.log('\n=== PARSED DATA DEBUG ===');
+      console.log('Parsed JSON:', JSON.stringify(parsedData, null, 2));
+      console.log('=== END PARSED DATA DEBUG ===\n');
     } catch (parseError) {
+      console.error('\n=== JSON PARSE ERROR ===');
+      console.error('Parse Error:', parseError);
+      console.error('Response that failed to parse:', response);
+      console.error('=== END PARSE ERROR ===\n');
       return {
         success: false,
         error: 'Invalid JSON response from OpenAI'
