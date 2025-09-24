@@ -112,13 +112,6 @@ export default function Login() {
                   {loading ? 'Signing in...' : 'Sign In'}
                 </Button>
               </Form>
-              
-              <div className="mt-3 text-center">
-                <small className="text-muted">
-                  Test with: test@example.com / TestPassword123!<br/>
-                  (After running the test script)
-                </small>
-              </div>
             </Card.Body>
           </Card>
         </Col>

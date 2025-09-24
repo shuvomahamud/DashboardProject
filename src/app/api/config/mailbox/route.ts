@@ -1,11 +1,20 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/authOptions';
 
 export async function GET() {
   try {
-    const mailbox = process.env.MS_MAILBOX_USER_ID || '';
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: 'User not authenticated' },
+        { status: 401 }
+      );
+    }
 
     return NextResponse.json({
-      mailbox
+      mailbox: session.user.email
     });
   } catch (error) {
     console.error('Error getting mailbox config:', error);

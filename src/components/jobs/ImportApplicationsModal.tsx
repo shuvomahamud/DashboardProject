@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Modal, Button, Form, Alert } from "react-bootstrap";
 import { importEmailSchema, type ImportEmailInput } from "@/lib/validation/importEmail";
 import { useToast } from "@/contexts/ToastContext";
+import { useIsAdmin } from "@/lib/auth/useTablePermit";
 
 type Props = {
   jobId: number;
@@ -21,6 +22,7 @@ type Props = {
 
 export default function ImportApplicationsModal({ jobId, open, onClose, onImported }: Props) {
   const { showToast } = useToast();
+  const isAdmin = useIsAdmin();
   const [mailbox, setMailbox] = useState("");
   const [text, setText] = useState("");
   const [top, setTop] = useState(5000);
@@ -140,11 +142,18 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
               onChange={(e) => setMailbox(e.target.value)}
               placeholder="recruiting@bnbtech-inc.com"
               isInvalid={!!(errors.mailbox || realTimeErrors.mailbox)}
+              readOnly={!isAdmin}
+              disabled={!isAdmin}
             />
             {(errors.mailbox || realTimeErrors.mailbox) && (
               <Form.Control.Feedback type="invalid">
                 {errors.mailbox || realTimeErrors.mailbox}
               </Form.Control.Feedback>
+            )}
+            {!isAdmin && (
+              <Form.Text className="text-muted">
+                Using your logged-in email address. Only admins can modify this field.
+              </Form.Text>
             )}
           </Form.Group>
 
