@@ -340,6 +340,13 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
           data={rows}
           pagination={true}
           paginationPerPage={pageSize}
+          paginationServer={true}
+          paginationTotalRows={total}
+          onChangePage={(page: number) => setPage(page)}
+          onChangeRowsPerPage={(currentRowsPerPage: number, currentPage: number) => {
+            setPageSize(currentRowsPerPage);
+            setPage(1); // Reset to first page when changing page size
+          }}
         />
       )}
     </div>

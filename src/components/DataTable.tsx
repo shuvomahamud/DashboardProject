@@ -13,6 +13,11 @@ interface DataTableProps {
   actions?: React.ReactNode;
   selectableRows?: boolean;
   onSelectedRowsChange?: (selected: any) => void;
+  // Server-side pagination props
+  paginationServer?: boolean;
+  paginationTotalRows?: number;
+  onChangeRowsPerPage?: (currentRowsPerPage: number, currentPage: number) => void;
+  onChangePage?: (page: number, totalRows: number) => void;
 }
 
 const customStyles = {
@@ -48,7 +53,12 @@ const AppDataTable: React.FC<DataTableProps> = ({
   title,
   actions,
   selectableRows = false,
-  onSelectedRowsChange
+  onSelectedRowsChange,
+  // Server-side pagination props
+  paginationServer = false,
+  paginationTotalRows,
+  onChangeRowsPerPage,
+  onChangePage
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredData, setFilteredData] = useState(data);
@@ -146,12 +156,16 @@ const AppDataTable: React.FC<DataTableProps> = ({
 
   return (
     <div className="table-responsive">
-      {SearchComponent}
+      {!paginationServer && SearchComponent}
       <DataTable
         columns={columns}
-        data={filteredData}
+        data={paginationServer ? data : filteredData}
         pagination={pagination}
         paginationPerPage={paginationPerPage}
+        paginationServer={paginationServer}
+        paginationTotalRows={paginationTotalRows}
+        onChangeRowsPerPage={onChangeRowsPerPage}
+        onChangePage={onChangePage}
         title={title}
         actions={actions}
         selectableRows={selectableRows}
@@ -162,7 +176,7 @@ const AppDataTable: React.FC<DataTableProps> = ({
         striped
         noDataComponent={
           <div className="text-center py-4">
-            {searchTerm ? (
+            {searchTerm && !paginationServer ? (
               <div>
                 <p>No results found for "{searchTerm}"</p>
                 <small className="text-muted">Try adjusting your search terms</small>
