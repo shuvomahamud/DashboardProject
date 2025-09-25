@@ -1,11 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Server-side Supabase client with service role key
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
+// Validate environment variables
+function reqEnv(name: string) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
 
-if (!supabaseUrl || !supabaseServiceRole) {
-  throw new Error('Missing required Supabase environment variables: SUPABASE_URL and SUPABASE_SERVICE_ROLE');
+// Server-side Supabase client with service role key
+const supabaseUrl = reqEnv('SUPABASE_URL');
+const supabaseServiceRole = reqEnv('SUPABASE_SERVICE_ROLE');
+
+// Log masked URL for debugging (only first time)
+if (!global.__supabaseLogged) {
+  console.log('Supabase URL (masked):', supabaseUrl.slice(0, 25), '...');
+  global.__supabaseLogged = true;
+
+  // Canary health check
+  fetch(`${supabaseUrl}/auth/v1/health`)
+    .then(r => r.text())
+    .then(text => console.log('Supabase health check:', text.slice(0, 50)))
+    .catch(e => console.warn('Supabase health check failed:', e.message));
 }
 
 export const supabaseServer = createClient(supabaseUrl, supabaseServiceRole, {
@@ -17,7 +34,7 @@ export const supabaseServer = createClient(supabaseUrl, supabaseServiceRole, {
 
 // Helper function to upload resume bytes to Supabase storage
 export async function uploadResumeBytes(
-  path: string, 
+  path: string,
   bytes: Buffer | Uint8Array | File,
   options?: {
     contentType?: string;
@@ -26,7 +43,12 @@ export async function uploadResumeBytes(
   }
 ) {
   const bucketName = process.env.SUPABASE_RESUME_BUCKET || process.env.SUPABASE_RESUMES_BUCKET || 'resumes';
-  
+
+  // Validate bucket name
+  if (!bucketName) {
+    throw new Error('Resume bucket name not configured in environment variables');
+  }
+
   try {
     const { data, error } = await supabaseServer.storage
       .from(bucketName)
@@ -37,7 +59,12 @@ export async function uploadResumeBytes(
       });
 
     if (error) {
+      console.error('Supabase storage error:', error);
       throw new Error(`Failed to upload file: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new Error('Upload succeeded but no data returned');
     }
 
     return {
@@ -47,6 +74,18 @@ export async function uploadResumeBytes(
     };
   } catch (error) {
     console.error('Error uploading resume:', error);
+
+    // Enhanced error logging for debugging
+    if (error instanceof Error) {
+      console.error('Upload error details:', {
+        message: error.message,
+        stack: error.stack,
+        bucketName,
+        pathLength: path.length,
+        bytesSize: bytes instanceof Buffer ? bytes.length : bytes.byteLength || 'unknown'
+      });
+    }
+
     throw error;
   }
 }

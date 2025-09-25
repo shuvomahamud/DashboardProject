@@ -1,21 +1,33 @@
 import * as mammoth from 'mammoth';
 import { getFileExtension } from '../files/resumeFiles';
 
-// Safe PDF parser import with fallback
-let pdfParse: any = null;
+// Safe PDF parser with lazy initialization
+let pdfParse: ((buffer: Buffer | Uint8Array) => Promise<{ text: string }>) | null = null;
 let pdfParseError: Error | null = null;
+let initAttempted = false;
 
-try {
-  pdfParse = require('pdf-parse');
-} catch (error) {
-  pdfParseError = error instanceof Error ? error : new Error('Failed to load pdf-parse library');
-  console.error('Failed to load pdf-parse library:', pdfParseError.message);
+async function tryInitPdf() {
+  if (initAttempted) return;
+  initAttempted = true;
+
+  try {
+    const mod = await import('pdf-parse');
+    // @ts-expect-error pdf-parse types
+    pdfParse = (mod.default || mod) as any;
+    console.log('pdf-parse library initialized successfully');
+  } catch (error) {
+    pdfParseError = error instanceof Error ? error : new Error('Failed to load pdf-parse library');
+    console.warn('pdf-parse library unavailable:', pdfParseError.message);
+    pdfParse = null;
+  }
 }
 
 export async function extractTextFromPdf(bytes: Uint8Array): Promise<string> {
-  // Check if pdf-parse library loaded successfully
-  if (!pdfParse || pdfParseError) {
-    console.warn('PDF parsing unavailable due to library loading error:', pdfParseError?.message || 'Unknown error');
+  // Initialize PDF parser on first use
+  await tryInitPdf();
+
+  if (!pdfParse) {
+    console.warn('PDF parsing unavailable:', pdfParseError?.message || 'Library failed to initialize');
     throw new Error('PDF text extraction is currently unavailable');
   }
 
