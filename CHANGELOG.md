@@ -79,8 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Updated - Environment Configuration - 2025-01-21
 
 #### Supabase Environment Setup
-- **Added Client Keys**: `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` for client-side access
-- **Server Configuration**: `SUPABASE_URL` for server-side operations
+- **Server Configuration**: `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE` for server-side operations
 - **Storage Bucket**: Added `SUPABASE_RESUMES_BUCKET=resumes` for resume file storage
 - **Hybrid Architecture**: Confirmed PostgreSQL DATABASE_URL retention for Prisma/existing data
 
