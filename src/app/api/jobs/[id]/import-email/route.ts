@@ -3,6 +3,8 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import { importEmailSchema } from '@/lib/validation/importEmail';
 import { importFromMailbox } from '@/lib/msgraph/importFromMailbox';
 
+export const dynamic = 'force-dynamic';
+
 async function _POST(req: NextRequest, ctx?: { params: { id: string } }) {
   // Extract job ID from params
   const jobId = Number(ctx?.params?.id);

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
-import { 
-  upsertResumeEmbedding, 
-  findResumesWithoutEmbeddings, 
-  findResumesWithStaleEmbeddings 
+import {
+  upsertResumeEmbedding,
+  findResumesWithoutEmbeddings,
+  findResumesWithStaleEmbeddings
 } from '@/lib/ai/embedResume';
+
+export const dynamic = 'force-dynamic';
 
 interface BatchEmbedResult {
   processed: number;

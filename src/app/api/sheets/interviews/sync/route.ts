@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
 import { checkTablePermission } from '@/lib/auth/withTableAuthAppRouter';
 
+export const dynamic = 'force-dynamic';
+
 // Google service account credentials from environment variables
 function getGoogleCredentials() {
   return {

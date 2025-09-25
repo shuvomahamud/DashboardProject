@@ -4,6 +4,8 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import { parseAndPersistResume } from '@/lib/ai/parseResume';
 import { getBudgetStatus } from '@/lib/ai/openaiClient';
 
+export const dynamic = 'force-dynamic';
+
 const RequestSchema = z.object({
   hints: z.object({
     jobTitle: z.string().optional()

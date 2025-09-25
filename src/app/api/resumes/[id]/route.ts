@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const resumeId = parseInt(params.id);

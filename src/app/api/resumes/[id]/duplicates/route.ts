@@ -3,6 +3,8 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 import { findNearDuplicateResumes, DuplicateMatch } from '@/lib/ai/embedResume';
 
+export const dynamic = 'force-dynamic';
+
 interface DuplicatesResponse {
   resumeId: number;
   threshold: number;

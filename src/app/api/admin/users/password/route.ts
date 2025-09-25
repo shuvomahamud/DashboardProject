@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import bcrypt from 'bcryptjs';
 
+export const dynamic = 'force-dynamic';
+
 // PATCH /api/admin/users/password - Reset user password
 export const PATCH = withTableAuthAppRouter('*', async (request: NextRequest) => {
   try {

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
-import { 
-  upsertJobEmbedding, 
-  findJobsWithoutEmbeddings, 
-  findJobsWithStaleEmbeddings 
+import {
+  upsertJobEmbedding,
+  findJobsWithoutEmbeddings,
+  findJobsWithStaleEmbeddings
 } from '@/lib/ai/embedJob';
+
+export const dynamic = 'force-dynamic';
 
 interface BatchEmbedResult {
   processed: number;

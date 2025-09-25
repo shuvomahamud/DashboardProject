@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/authOptions';
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
 
+export const dynamic = 'force-dynamic';
+
 // Google service account credentials from environment variables
 function getGoogleCredentials() {
   return {

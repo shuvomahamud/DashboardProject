@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import bcrypt from 'bcryptjs';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/users - List all users with their roles
 export const GET = withTableAuthAppRouter('*', async (request: NextRequest) => {
   try {

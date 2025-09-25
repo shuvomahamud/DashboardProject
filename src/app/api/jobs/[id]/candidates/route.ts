@@ -3,6 +3,8 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 import { upsertJobEmbedding, getJobEmbedding } from '@/lib/ai/embedJob';
 
+export const dynamic = 'force-dynamic';
+
 interface CandidateMatch {
   resumeId: number;
   score: number;

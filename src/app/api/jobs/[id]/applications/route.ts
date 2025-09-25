@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from '@/lib/prisma';
 import { withTableAuthAppRouter } from "@/lib/auth/withTableAuthAppRouter";
 
+export const dynamic = 'force-dynamic';
+
 function parsePaging(url: string) {
   const sp = new URL(url).searchParams;
   const page = Math.max(1, Number(sp.get("page") || 1));

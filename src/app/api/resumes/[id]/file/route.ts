@@ -3,6 +3,8 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 import { createSignedUrl, getPublicUrl } from '@/lib/supabase-server';
 
+export const dynamic = 'force-dynamic';
+
 async function GET(req: NextRequest) {
   try {
     // Extract id from URL pathname

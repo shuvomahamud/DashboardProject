@@ -4,6 +4,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
 import { checkTablePermission } from '@/lib/auth/withTableAuthAppRouter';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // Check onboarding table permission

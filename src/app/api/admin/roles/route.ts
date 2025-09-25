@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/roles - List all roles with their claims
 export const GET = withTableAuthAppRouter('*', async (request: NextRequest) => {
   try {

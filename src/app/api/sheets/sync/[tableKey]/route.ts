@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/authOptions';
 import { prisma } from '@/lib/prisma';
 import { syncSheetToDatabase } from '@/lib/googleSheetsSyncHelper';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ tableKey: string }> }

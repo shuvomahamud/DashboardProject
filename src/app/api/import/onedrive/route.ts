@@ -7,6 +7,8 @@ import { isSupported, sha256, objectPath, safeFilename } from '@/lib/files/resum
 import { extractText } from '@/lib/parse/text';
 import { uploadResume } from '@/lib/storage/resumeStorage';
 
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 
 const RequestSchema = z.object({

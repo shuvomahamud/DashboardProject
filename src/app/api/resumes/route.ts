@@ -3,6 +3,8 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 import { embedText } from '@/lib/ai/embeddings';
 
+export const dynamic = 'force-dynamic';
+
 async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);

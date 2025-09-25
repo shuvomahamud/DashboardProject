@@ -7,6 +7,8 @@ import { apReportSchema } from '@/lib/validations/apReportSchema';
 import { z } from 'zod';
 import { checkTablePermission } from '@/lib/auth/withTableAuthAppRouter';
 
+export const dynamic = 'force-dynamic';
+
 // Google service account credentials from environment variables
 function getGoogleCredentials() {
   return {

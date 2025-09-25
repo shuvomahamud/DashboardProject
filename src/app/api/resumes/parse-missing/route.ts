@@ -4,6 +4,8 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import { parseAndPersistResume, findUnparsedResumes, getParsingStats } from '@/lib/ai/parseResume';
 import { getBudgetStatus } from '@/lib/ai/openaiClient';
 
+export const dynamic = 'force-dynamic';
+
 const RequestSchema = z.object({
   limit: z.number().int().min(1).max(50).optional().default(10)
 });
