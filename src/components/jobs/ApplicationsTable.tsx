@@ -161,7 +161,9 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
           )}
         </div>
       ),
-      width: '250px'
+      minWidth: '250px',
+      maxWidth: '350px',
+      grow: 1
     },
     {
       name: 'Status',
@@ -202,47 +204,51 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       width: '200px'
     },
     {
-      name: 'AI Match',
+      name: 'Match Score',
       selector: (row: ApplicationRow) => row.aiMatch || 0,
       sortable: true,
       cell: (row: ApplicationRow) => row.aiMatch != null ? Number(row.aiMatch).toFixed(0) : '—',
-      width: '90px'
+      width: '120px'
     },
     {
-      name: 'AI Company',
+      name: 'Company Score',
       selector: (row: ApplicationRow) => row.aiCompany || 0,
       sortable: true,
       cell: (row: ApplicationRow) => row.aiCompany != null ? Number(row.aiCompany).toFixed(0) : '—',
-      width: '100px'
+      width: '130px'
     },
     {
-      name: 'AI Fake',
+      name: 'Fake Score',
       selector: (row: ApplicationRow) => row.aiFake || 0,
       sortable: true,
       cell: (row: ApplicationRow) => row.aiFake != null ? Number(row.aiFake).toFixed(0) : '—',
-      width: '80px'
+      width: '110px'
     },
     {
       name: 'Skills',
       selector: (row: ApplicationRow) => row.skills || '',
       sortable: true,
       cell: (row: ApplicationRow) => (
-        <div style={{ maxWidth: '300px', wordWrap: 'break-word' }}>
+        <div style={{ wordWrap: 'break-word', whiteSpace: 'pre-wrap' }}>
           {row.skills || '—'}
         </div>
       ),
-      width: '300px'
+      minWidth: '200px',
+      maxWidth: '400px',
+      grow: 2
     },
     {
       name: 'Experience',
       selector: (row: ApplicationRow) => row.experience || '',
       sortable: true,
       cell: (row: ApplicationRow) => (
-        <div style={{ maxWidth: '300px', wordWrap: 'break-word' }}>
+        <div style={{ wordWrap: 'break-word', whiteSpace: 'pre-wrap' }}>
           {row.experience || '—'}
         </div>
       ),
-      width: '300px'
+      minWidth: '200px',
+      maxWidth: '400px',
+      grow: 2
     },
     {
       name: 'Applied Date',

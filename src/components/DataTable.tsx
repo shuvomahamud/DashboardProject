@@ -174,6 +174,8 @@ const AppDataTable: React.FC<DataTableProps> = ({
         highlightOnHover
         responsive
         striped
+        fixedHeader
+        fixedHeaderScrollHeight="600px"
         noDataComponent={
           <div className="text-center py-4">
             {searchTerm && !paginationServer ? (
