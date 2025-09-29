@@ -146,7 +146,17 @@ export async function searchMessages(
   
   // Trim to the requested limit
   const messages = allMessages.slice(0, limit);
-  
+
+  // Log email search results for Vercel visibility
+  console.log(`Microsoft Graph email search completed:`, {
+    searchText: searchText || 'none',
+    totalEmailsFound: allMessages.length,
+    emailsReturned: messages.length,
+    pagesProcessed: pageCount,
+    usedFallback: useAttachmentFallback,
+    lookbackDays: lookbackDays
+  });
+
   return {
     messages,
     next: undefined // We've already handled pagination internally

@@ -88,6 +88,13 @@ async function handler(req: NextRequest): Promise<NextResponse> {
         const { messages, next } = await searchMessages(aqs, 25, nextLink);
         nextLink = next;
 
+        console.log(`Job ${jobId} email ingestion batch:`, {
+          jobTitle: job.title,
+          searchQuery: aqs,
+          messagesInBatch: messages.length,
+          totalProcessedSoFar: totalProcessed
+        });
+
         for (const message of messages) {
           totalProcessed++;
           console.log(`Processing message ${totalProcessed}: ${message.subject}`);
@@ -281,6 +288,18 @@ async function handler(req: NextRequest): Promise<NextResponse> {
         break;
       }
     } while (nextLink && totalProcessed < 1000); // Safety limit
+
+    // Final summary log for Vercel visibility
+    console.log(`Job ${jobId} email ingestion completed:`, {
+      jobTitle: job.title,
+      searchQuery: aqs,
+      totalEmailsProcessed: totalProcessed,
+      resumesCreated: summary.createdResumes,
+      applicationsLinked: summary.linkedApplications,
+      duplicatesSkipped: summary.skippedDuplicates,
+      failures: summary.failed,
+      success: true
+    });
 
     return NextResponse.json({
       success: true,
