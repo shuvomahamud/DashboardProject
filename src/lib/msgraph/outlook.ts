@@ -59,31 +59,16 @@ export async function searchMessages(
   // Use Inbox folder endpoint with proper $select for performance
   const selectFields = 'id,subject,hasAttachments,receivedDateTime,from,bodyPreview';
 
-  // If searchText is provided, use Graph API's $search for full body search
-  // Otherwise use $filter for date range and attachments
-  let currentUrl: string;
-  let useGraphSearch = false;
-
-  if (searchText && searchText.trim()) {
-    // Use Microsoft Graph search to find the ID in email subjects
-    // NOTE: $search cannot be combined with $filter, so we filter locally for attachments
-    // Using KQL (Keyword Query Language) syntax for exact subject matching
-    const searchTerm = searchText.trim();
-    const encodedSearch = encodeURIComponent(`subject:${searchTerm}`);
-    currentUrl = `/v1.0/users/${mailbox}/messages?$search=${encodedSearch}&$select=${selectFields}&$orderby=receivedDateTime desc&$top=${pageSize}`;
-    useGraphSearch = true;
-  } else {
-    // Primary approach: date range + hasAttachments filter with orderby
-    currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
-  }
+  // Use standard $filter approach with date range and hasAttachments
+  // We'll do local text filtering on the subject line only
+  const currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
 
   let useAttachmentFallback = false;
-  let needsLocalAttachmentFilter = useGraphSearch; // When using $search, we need to filter attachments locally
 
   // Keep fetching pages until we have enough messages, hit page limit, or no more pages
   while (allMessages.length < limit && pageCount < maxPages) {
     try {
-      const response = await graphFetch(nextUrl || currentUrl, { needsConsistencyLevel: useGraphSearch });
+      const response = await graphFetch(nextUrl || currentUrl);
 
       if (!response.ok) {
         const error = await response.text();
@@ -105,36 +90,23 @@ export async function searchMessages(
       const data = await response.json();
       const pageMessages = data.value || [];
 
-      // Filter messages based on the scenario
+      // Filter messages based on search text
       let filteredMessages = pageMessages;
 
-      // If using Graph search OR fallback, filter for hasAttachments locally
-      // (Graph $search can't use $filter, so we must filter locally)
-      if (useAttachmentFallback || needsLocalAttachmentFilter) {
-        const beforeAttachmentFilter = filteredMessages.length;
+      // If using fallback, filter for hasAttachments locally
+      if (useAttachmentFallback) {
         filteredMessages = pageMessages.filter((message: Message) => message.hasAttachments);
-        if (needsLocalAttachmentFilter) {
-          console.log(`Filtered ${beforeAttachmentFilter} → ${filteredMessages.length} (attachments only)`);
-        }
       }
 
-      // When using Graph API search, results are already filtered by searchText in subject
-      // Only apply local filtering if NOT using Graph search and searchText is provided
-      if (searchText && !useGraphSearch) {
+      // Apply local filtering for search text - ONLY in subject line
+      if (searchText) {
         const cleanText = searchText.toLowerCase().trim();
+        const beforeFilter = filteredMessages.length;
         filteredMessages = filteredMessages.filter((message: Message) => {
           const subject = (message.subject || '').toLowerCase();
-          const fromName = message.from?.emailAddress?.name?.toLowerCase() || '';
-          const fromAddress = message.from?.emailAddress?.address?.toLowerCase() || '';
-          const bodyPreview = (message.bodyPreview || '').toLowerCase();
-
-          const matches = subject.includes(cleanText) ||
-                         fromName.includes(cleanText) ||
-                         fromAddress.includes(cleanText) ||
-                         bodyPreview.includes(cleanText);
-
-          return matches;
+          return subject.includes(cleanText);
         });
+        console.log(`Subject filter: ${beforeFilter} → ${filteredMessages.length} emails (search: "${searchText}")`);
       }
 
       allMessages.push(...filteredMessages);
@@ -176,12 +148,11 @@ export async function searchMessages(
   console.log(`📧 Email Search Results`);
   console.log(`========================================`);
   console.log(`Search Text: ${searchText || 'none'}`);
+  console.log(`Search Location: Subject line only`);
   console.log(`Emails Found (with attachments): ${allMessages.length}`);
   console.log(`Emails Returned: ${messages.length}`);
   console.log(`Pages Processed: ${pageCount}`);
-  console.log(`Used Graph Search: ${useGraphSearch}`);
   console.log(`Used Fallback: ${useAttachmentFallback}`);
-  console.log(`Filtered Locally for Attachments: ${needsLocalAttachmentFilter}`);
   console.log(`Lookback Days: ${lookbackDays}`);
   console.log(`========================================`);
 
