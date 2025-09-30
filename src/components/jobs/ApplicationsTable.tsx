@@ -42,6 +42,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [updating, setUpdating] = useState<number | null>(null);
+  const [deletingAll, setDeletingAll] = useState(false);
 
 
   const load = useCallback(async () => {
@@ -99,7 +100,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
 
   const unlink = async (resumeId: number) => {
     if (!confirm("Unlink this application? This cannot be undone.")) return;
-    
+
     setUpdating(resumeId);
     try {
       const res = await fetch(`/api/jobs/${jobId}/applications`, {
@@ -107,7 +108,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resumeId }),
       });
-      
+
       if (res.ok) {
         setRows((prev) => prev.filter((r) => r.resumeId !== resumeId));
         setTotal((t) => Math.max(0, t - 1));
@@ -118,6 +119,51 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       setError(err instanceof Error ? err.message : 'Failed to unlink application');
     } finally {
       setUpdating(null);
+    }
+  };
+
+  const deleteAllApplications = async () => {
+    if (!confirm(
+      `Are you sure you want to delete ALL ${total} applications and their resumes for this job?\n\nThis action CANNOT be undone!`
+    )) {
+      return;
+    }
+
+    // Second confirmation for safety
+    if (!confirm(
+      "⚠️ FINAL CONFIRMATION ⚠️\n\nThis will permanently delete all applications and resume files. Are you absolutely sure?"
+    )) {
+      return;
+    }
+
+    setDeletingAll(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/applications/delete-all`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to delete all applications');
+      }
+
+      const result = await res.json();
+
+      // Clear the table
+      setRows([]);
+      setTotal(0);
+      setPage(1);
+
+      // Show success message
+      alert(`✅ Successfully deleted ${result.deletedApplications} applications and ${result.deletedResumes} resumes`);
+
+      // Reload the data
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete all applications');
+    } finally {
+      setDeletingAll(false);
     }
   };
 
@@ -331,6 +377,35 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
 
   return (
     <div className="space-y-3">
+      {/* Delete All Button */}
+      {total > 0 && (
+        <div className="p-3 bg-light border-bottom">
+          <div className="d-flex justify-content-between align-items-center">
+            <div>
+              <strong>{total}</strong> application{total !== 1 ? 's' : ''} found
+            </div>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={deleteAllApplications}
+              disabled={deletingAll || loading}
+              className="d-flex align-items-center gap-2"
+            >
+              {deletingAll ? (
+                <>
+                  <Spinner size="sm" animation="border" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-trash3"></i>
+                  <span>Delete All Applications</span>
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Table or Empty state */}
       {rows.length === 0 ? (
