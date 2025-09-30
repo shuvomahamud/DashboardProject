@@ -42,122 +42,144 @@ export async function searchMessages(
     throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
   }
 
-  // Configure lookback window (default 365 days, configurable via env)
-  // If we have a specific search text, use a longer lookback to find older emails
-  const defaultLookback = searchText ? '1095' : '365'; // 3 years if searching, 1 year otherwise
-  const lookbackDays = parseInt(process.env.MS_IMPORT_LOOKBACK_DAYS || defaultLookback);
+  // Determine if we're doing a text search or bulk import
+  const isTextSearch = Boolean(searchText && searchText.trim().length > 0);
+  const allMessages: Message[] = [];
+
+  // Configure lookback window
+  const defaultLookback = isTextSearch ? '1095' : '365'; // 3 years if searching, 1 year otherwise
+  const lookbackDays = parseInt(process.env.MS_IMPORT_LOOKBACK_DAYS || defaultLookback, 10);
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - lookbackDays);
   const utcStart = startDate.toISOString();
 
-  const allMessages: Message[] = [];
-  const pageSize = 1000;
-  const maxPages = 5; // Limit to 5 pages = 5000 messages max
-  let pageCount = 0;
-  let nextUrl: string | undefined;
-
-  // Use Inbox folder endpoint with proper $select for performance
   const selectFields = 'id,subject,hasAttachments,receivedDateTime,from,bodyPreview';
 
-  // Use standard $filter approach with date range and hasAttachments
-  // We'll do local text filtering on the subject line only
-  let currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
+  // ---------- TEXT SEARCH MODE (Outlook-like full-text search across ALL folders) ----------
+  if (isTextSearch) {
+    console.log(`Starting full-text search across all folders for: "${searchText}"`);
 
-  let useAttachmentFallback = false;
+    // Escape quotes in search phrase and encode for URL
+    const phrase = searchText.replace(/"/g, '\\"').trim();
+    const encodedPhrase = encodeURIComponent(`"${phrase}"`);
+    let url = `/v1.0/users/${mailbox}/messages?$search=${encodedPhrase}&$select=${selectFields}&$top=25`;
+    let pageCount = 0;
+    const maxPages = 400; // Safety limit
 
-  // Keep fetching pages until we have enough messages, hit page limit, or no more pages
-  while (allMessages.length < limit && pageCount < maxPages) {
-    try {
-      const response = await graphFetch(nextUrl || currentUrl);
+    while (allMessages.length < limit && pageCount < maxPages) {
+      const response = await graphFetch(url, {
+        needsConsistencyLevel: true // This adds ConsistencyLevel: eventual header
+      });
 
       if (!response.ok) {
         const error = await response.text();
-
-        // If we get InefficientFilter error, try fallback approach
-        if (response.status === 400 && error.includes('InefficientFilter')) {
-          console.log('InefficientFilter detected, switching to fallback approach');
-          useAttachmentFallback = true;
-          // Fallback A: Remove hasAttachments from filter, keep date range + orderby
-          currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart}&$orderby=receivedDateTime desc&$top=${pageSize}`;
-          nextUrl = undefined; // Reset for retry
-          continue;
-        }
-
-        throw new Error(`Failed to search messages: ${response.status} ${error}`);
+        throw new Error(`Graph $search failed: ${response.status} ${error}`);
       }
 
       const data = await response.json();
-      const pageMessages = data.value || [];
+      const pageMessages = (data.value || []) as Message[];
 
-      // Filter messages based on search text
-      let filteredMessages = pageMessages;
+      console.log(`Page ${pageCount + 1}: Retrieved ${pageMessages.length} messages`);
+      allMessages.push(...pageMessages);
 
-      // If using fallback, filter for hasAttachments locally
-      if (useAttachmentFallback) {
-        filteredMessages = pageMessages.filter((message: Message) => message.hasAttachments);
+      const nextLink = data['@odata.nextLink'];
+      if (!nextLink || pageMessages.length === 0) {
+        break;
       }
 
-      // Apply local filtering for search text - ONLY in subject line
-      if (searchText) {
-        const cleanText = searchText.toLowerCase().trim();
-        const beforeFilter = filteredMessages.length;
-        filteredMessages = filteredMessages.filter((message: Message) => {
-          const subject = (message.subject || '').toLowerCase();
-          return subject.includes(cleanText);
-        });
-        console.log(`Subject filter: ${beforeFilter} → ${filteredMessages.length} emails (search: "${searchText}")`);
-      }
-
-      allMessages.push(...filteredMessages);
+      url = nextLink;
       pageCount++;
 
-      // Check if there's a next page
-      nextUrl = data['@odata.nextLink'];
-      if (!nextUrl || pageMessages.length === 0) {
-        break; // No more pages or empty page
+      if (allMessages.length >= limit) {
+        break;
       }
-    } catch (error) {
-      // If we haven't tried the simplest fallback yet, try it
-      if (!useAttachmentFallback && pageCount === 0) {
-        console.log('Primary approach failed, trying simple fallback without orderby');
-        // Fallback B: Remove orderby entirely, sort locally
-        currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart}&$top=${pageSize}`;
-        useAttachmentFallback = true;
+    }
+
+    console.log(`Raw search results: ${allMessages.length} messages`);
+
+    // Post-filter locally for attachments (set to true to match original behavior)
+    const attachmentsOnly = true;
+    let results = attachmentsOnly ? allMessages.filter(m => m.hasAttachments) : allMessages;
+    console.log(`After attachment filter: ${results.length} messages`);
+
+    // Apply lookback date filter
+    results = results.filter(m => new Date(m.receivedDateTime) >= new Date(utcStart));
+    console.log(`After date filter (${lookbackDays} days): ${results.length} messages`);
+
+    // Sort by receivedDateTime desc (newest first)
+    results.sort((a, b) => +new Date(b.receivedDateTime) - +new Date(a.receivedDateTime));
+
+    // Log final results
+    console.log(`========================================`);
+    console.log(`📧 Email Search Results (Full-Text)`);
+    console.log(`========================================`);
+    console.log(`Search Text: "${searchText}"`);
+    console.log(`Search Mode: Full-text across ALL folders`);
+    console.log(`Emails Found: ${results.length}`);
+    console.log(`Emails Returned: ${Math.min(results.length, limit)}`);
+    console.log(`Pages Processed: ${pageCount}`);
+    console.log(`Attachments Only: ${attachmentsOnly}`);
+    console.log(`Lookback Days: ${lookbackDays}`);
+    console.log(`========================================`);
+
+    return {
+      messages: results.slice(0, limit),
+      next: undefined
+    };
+  }
+
+  // ---------- BULK MODE (NO TEXT) — Inbox scan with filters ----------
+  console.log('Starting bulk mode: Inbox scan with filters');
+
+  const pageSize = 1000;
+  let url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
+  let nextUrl: string | undefined;
+  let pageCount = 0;
+  const maxPages = 5;
+
+  while (allMessages.length < limit && pageCount < maxPages) {
+    const response = await graphFetch(nextUrl || url);
+
+    if (!response.ok) {
+      const error = await response.text();
+
+      // Fallback: Remove hasAttachments filter if we get InefficientFilter error
+      if (response.status === 400 && error.includes('InefficientFilter')) {
+        console.log('InefficientFilter detected, removing hasAttachments filter');
+        url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart}&$top=${pageSize}`;
         nextUrl = undefined;
         continue;
       }
-      throw error;
-    }
-  }
-  
-  // If we removed orderby in fallback, sort locally by receivedDateTime desc
-  if (useAttachmentFallback) {
-    allMessages.sort((a: Message, b: Message) => {
-      const dateA = new Date(a.receivedDateTime);
-      const dateB = new Date(b.receivedDateTime);
-      return dateB.getTime() - dateA.getTime(); // desc order (newest first)
-    });
-  }
-  
-  // Trim to the requested limit
-  const messages = allMessages.slice(0, limit);
 
-  // Log email search results for visibility
+      throw new Error(`Inbox scan failed: ${response.status} ${error}`);
+    }
+
+    const data = await response.json();
+    const pageMessages = (data.value || []) as Message[];
+
+    allMessages.push(...pageMessages);
+    nextUrl = data['@odata.nextLink'];
+
+    if (!nextUrl || pageMessages.length === 0) {
+      break;
+    }
+
+    pageCount++;
+  }
+
   console.log(`========================================`);
-  console.log(`📧 Email Search Results`);
+  console.log(`📧 Email Search Results (Bulk Mode)`);
   console.log(`========================================`);
-  console.log(`Search Text: ${searchText || 'none'}`);
-  console.log(`Search Location: Subject line only`);
-  console.log(`Emails Found (with attachments): ${allMessages.length}`);
-  console.log(`Emails Returned: ${messages.length}`);
+  console.log(`Search Mode: Inbox folder only`);
+  console.log(`Emails Found: ${allMessages.length}`);
+  console.log(`Emails Returned: ${Math.min(allMessages.length, limit)}`);
   console.log(`Pages Processed: ${pageCount}`);
-  console.log(`Used Fallback: ${useAttachmentFallback}`);
   console.log(`Lookback Days: ${lookbackDays}`);
   console.log(`========================================`);
 
   return {
-    messages,
-    next: undefined // We've already handled pagination internally
+    messages: allMessages.slice(0, limit),
+    next: undefined
   };
 }
 
