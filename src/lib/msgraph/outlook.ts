@@ -55,64 +55,78 @@ export async function searchMessages(
   const maxPages = 5; // Limit to 5 pages = 5000 messages max
   let pageCount = 0;
   let nextUrl: string | undefined;
-  
+
   // Use Inbox folder endpoint with proper $select for performance
   const selectFields = 'id,subject,hasAttachments,receivedDateTime,from,bodyPreview';
-  
-  // Primary approach: date range + hasAttachments filter with orderby
-  let currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
+
+  // If searchText is provided, use Graph API's $search for full body search
+  // Otherwise use $filter for date range and attachments
+  let currentUrl: string;
+  let useGraphSearch = false;
+
+  if (searchText && searchText.trim()) {
+    // Use Microsoft Graph search for full email body search
+    // $search looks through subject, body, sender, recipients, and attachments
+    const encodedSearch = encodeURIComponent(`"${searchText.trim()}"`);
+    currentUrl = `/v1.0/users/${mailbox}/messages?$search=${encodedSearch}&$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
+    useGraphSearch = true;
+  } else {
+    // Primary approach: date range + hasAttachments filter with orderby
+    currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
+  }
 
   let useAttachmentFallback = false;
 
   // Keep fetching pages until we have enough messages, hit page limit, or no more pages
   while (allMessages.length < limit && pageCount < maxPages) {
     try {
-      const response = await graphFetch(nextUrl || currentUrl);
+      const response = await graphFetch(nextUrl || currentUrl, { needsConsistencyLevel: useGraphSearch });
 
       if (!response.ok) {
         const error = await response.text();
-        
+
         // If we get InefficientFilter error, try fallback approach
         if (response.status === 400 && error.includes('InefficientFilter')) {
           console.log('InefficientFilter detected, switching to fallback approach');
           useAttachmentFallback = true;
+          useGraphSearch = false;
           // Fallback A: Remove hasAttachments from filter, keep date range + orderby
           currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart}&$orderby=receivedDateTime desc&$top=${pageSize}`;
           nextUrl = undefined; // Reset for retry
           continue;
         }
-        
+
         throw new Error(`Failed to search messages: ${response.status} ${error}`);
       }
 
       const data = await response.json();
       const pageMessages = data.value || [];
-      
+
       // If using fallback, filter for hasAttachments locally
       let filteredMessages = pageMessages;
       if (useAttachmentFallback) {
         filteredMessages = pageMessages.filter((message: Message) => message.hasAttachments);
       }
-      
-      // Apply search text filter locally if provided
-      if (searchText) {
+
+      // When using Graph API search, results are already filtered by searchText
+      // Only apply local filtering if NOT using Graph search and searchText is provided
+      if (searchText && !useGraphSearch) {
         const cleanText = searchText.toLowerCase().trim();
-        const beforeFilter = filteredMessages.length;
         filteredMessages = filteredMessages.filter((message: Message) => {
           const subject = (message.subject || '').toLowerCase();
           const fromName = message.from?.emailAddress?.name?.toLowerCase() || '';
           const fromAddress = message.from?.emailAddress?.address?.toLowerCase() || '';
           const bodyPreview = (message.bodyPreview || '').toLowerCase();
-          
-          const matches = subject.includes(cleanText) || 
-                         fromName.includes(cleanText) || 
+
+          const matches = subject.includes(cleanText) ||
+                         fromName.includes(cleanText) ||
                          fromAddress.includes(cleanText) ||
                          bodyPreview.includes(cleanText);
-          
+
           return matches;
         });
       }
-      
+
       allMessages.push(...filteredMessages);
       pageCount++;
 
@@ -153,6 +167,7 @@ export async function searchMessages(
     totalEmailsFound: allMessages.length,
     emailsReturned: messages.length,
     pagesProcessed: pageCount,
+    usedGraphSearch: useGraphSearch,
     usedFallback: useAttachmentFallback,
     lookbackDays: lookbackDays
   });
