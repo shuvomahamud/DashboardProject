@@ -61,7 +61,7 @@ export async function searchMessages(
 
   // Use standard $filter approach with date range and hasAttachments
   // We'll do local text filtering on the subject line only
-  const currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
+  let currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
 
   let useAttachmentFallback = false;
 
@@ -77,7 +77,6 @@ export async function searchMessages(
         if (response.status === 400 && error.includes('InefficientFilter')) {
           console.log('InefficientFilter detected, switching to fallback approach');
           useAttachmentFallback = true;
-          useGraphSearch = false;
           // Fallback A: Remove hasAttachments from filter, keep date range + orderby
           currentUrl = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart}&$orderby=receivedDateTime desc&$top=${pageSize}`;
           nextUrl = undefined; // Reset for retry
