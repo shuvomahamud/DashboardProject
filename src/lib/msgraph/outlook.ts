@@ -65,9 +65,9 @@ export async function searchMessages(
   let useGraphSearch = false;
 
   if (searchText && searchText.trim()) {
-    // Use Microsoft Graph search for full email body search
-    // $search looks through subject, body, sender, recipients, and attachments
-    const encodedSearch = encodeURIComponent(`"${searchText.trim()}"`);
+    // Use Microsoft Graph search to find the ID in email subjects
+    // $search with "subject:" prefix restricts search to subject line only
+    const encodedSearch = encodeURIComponent(`subject:"${searchText.trim()}"`);
     currentUrl = `/v1.0/users/${mailbox}/messages?$search=${encodedSearch}&$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
     useGraphSearch = true;
   } else {
@@ -161,16 +161,18 @@ export async function searchMessages(
   // Trim to the requested limit
   const messages = allMessages.slice(0, limit);
 
-  // Log email search results for Vercel visibility
-  console.log(`Microsoft Graph email search completed:`, {
-    searchText: searchText || 'none',
-    totalEmailsFound: allMessages.length,
-    emailsReturned: messages.length,
-    pagesProcessed: pageCount,
-    usedGraphSearch: useGraphSearch,
-    usedFallback: useAttachmentFallback,
-    lookbackDays: lookbackDays
-  });
+  // Log email search results for visibility
+  console.log(`========================================`);
+  console.log(`📧 Email Search Results`);
+  console.log(`========================================`);
+  console.log(`Search Text: ${searchText || 'none'}`);
+  console.log(`Emails Found: ${allMessages.length}`);
+  console.log(`Emails Returned: ${messages.length}`);
+  console.log(`Pages Processed: ${pageCount}`);
+  console.log(`Used Graph Search: ${useGraphSearch}`);
+  console.log(`Used Fallback: ${useAttachmentFallback}`);
+  console.log(`Lookback Days: ${lookbackDays}`);
+  console.log(`========================================`);
 
   return {
     messages,
