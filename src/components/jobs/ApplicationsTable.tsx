@@ -44,6 +44,13 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   const [updating, setUpdating] = useState<number | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
 
+  // Search/Filter state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [minMatchScore, setMinMatchScore] = useState('');
+  const [maxFakeScore, setMaxFakeScore] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,13 +60,18 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
         page: String(page),
         pageSize: String(pageSize),
       });
-      
-      
+
+      // Add search/filter params
+      if (searchTerm) params.append('search', searchTerm);
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
+      if (minMatchScore) params.append('minMatch', minMatchScore);
+      if (maxFakeScore) params.append('maxFake', maxFakeScore);
+
       const res = await fetch(`/api/jobs/${jobId}/applications?${params.toString()}`);
       if (!res.ok) {
         throw new Error('Failed to load applications');
       }
-      
+
       const data: ApiResp = await res.json();
       setRows(data.applications || []);
       setTotal(data.pagination?.total || 0);
@@ -68,11 +80,23 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     } finally {
       setLoading(false);
     }
-  }, [jobId, page, pageSize]);
+  }, [jobId, page, pageSize, searchTerm, statusFilter, minMatchScore, maxFakeScore]);
 
   useEffect(() => {
-    load();
+    // Debounce search
+    const timer = setTimeout(() => {
+      load();
+    }, 300);
+    return () => clearTimeout(timer);
   }, [load]);
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setMinMatchScore('');
+    setMaxFakeScore('');
+    setPage(1);
+  };
 
   const updateStatus = async (resumeId: number, status: string) => {
     setUpdating(resumeId);
@@ -375,14 +399,151 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   }
 
 
+  const activeFiltersCount = [
+    searchTerm,
+    statusFilter !== 'all' ? statusFilter : null,
+    minMatchScore,
+    maxFakeScore
+  ].filter(Boolean).length;
+
   return (
     <div className="space-y-3">
-      {/* Delete All Button */}
+      {/* Search and Filter Section */}
+      <div className="p-3 bg-light border rounded">
+        <div className="d-flex gap-2 mb-3">
+          {/* Search Bar */}
+          <InputGroup style={{ flex: 1 }}>
+            <InputGroup.Text>
+              <i className="bi bi-search"></i>
+            </InputGroup.Text>
+            <Form.Control
+              type="text"
+              placeholder="Search by name, email, phone, skills, or experience..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+            />
+            {searchTerm && (
+              <Button
+                variant="outline-secondary"
+                onClick={() => {
+                  setSearchTerm('');
+                  setPage(1);
+                }}
+              >
+                <i className="bi bi-x"></i>
+              </Button>
+            )}
+          </InputGroup>
+
+          {/* Toggle Filters Button */}
+          <Button
+            variant={showFilters ? 'primary' : 'outline-primary'}
+            onClick={() => setShowFilters(!showFilters)}
+            className="d-flex align-items-center gap-2"
+          >
+            <i className="bi bi-funnel"></i>
+            Filters
+            {activeFiltersCount > 0 && (
+              <Badge bg="light" text="dark">{activeFiltersCount}</Badge>
+            )}
+          </Button>
+
+          {/* Clear All Button */}
+          {activeFiltersCount > 0 && (
+            <Button
+              variant="outline-secondary"
+              onClick={clearFilters}
+              title="Clear all filters"
+            >
+              <i className="bi bi-x-circle"></i>
+            </Button>
+          )}
+        </div>
+
+        {/* Advanced Filters */}
+        {showFilters && (
+          <div className="row g-3 pt-3 border-top">
+            <div className="col-md-3">
+              <Form.Label className="small fw-bold">Status</Form.Label>
+              <Form.Select
+                size="sm"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="all">All Statuses</option>
+                <option value="new">New</option>
+                <option value="submitted">Submitted</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="shortlisted">Shortlisted</option>
+                <option value="rejected">Rejected</option>
+                <option value="hired">Hired</option>
+              </Form.Select>
+            </div>
+
+            <div className="col-md-3">
+              <Form.Label className="small fw-bold">Min Match Score</Form.Label>
+              <Form.Control
+                type="number"
+                size="sm"
+                min="0"
+                max="100"
+                placeholder="e.g., 70"
+                value={minMatchScore}
+                onChange={(e) => {
+                  setMinMatchScore(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+
+            <div className="col-md-3">
+              <Form.Label className="small fw-bold">Max Fake Score</Form.Label>
+              <Form.Control
+                type="number"
+                size="sm"
+                min="0"
+                max="100"
+                placeholder="e.g., 30"
+                value={maxFakeScore}
+                onChange={(e) => {
+                  setMaxFakeScore(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+
+            <div className="col-md-3 d-flex align-items-end">
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                onClick={clearFilters}
+                className="w-100"
+              >
+                <i className="bi bi-arrow-counterclockwise me-1"></i>
+                Reset Filters
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Results Count and Delete All Button */}
       {total > 0 && (
         <div className="p-3 bg-light border-bottom">
           <div className="d-flex justify-content-between align-items-center">
             <div>
               <strong>{total}</strong> application{total !== 1 ? 's' : ''} found
+              {activeFiltersCount > 0 && (
+                <span className="text-muted ms-2">
+                  ({activeFiltersCount} filter{activeFiltersCount !== 1 ? 's' : ''} active)
+                </span>
+              )}
             </div>
             <Button
               variant="danger"

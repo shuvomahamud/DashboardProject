@@ -9,7 +9,11 @@ function parsePaging(url: string) {
   const page = Math.max(1, Number(sp.get("page") || 1));
   const pageSize = Math.min(100, Math.max(1, Number(sp.get("pageSize") || 10)));
   const q = (sp.get("q") || "").trim();
-  return { page, pageSize, q };
+  const search = (sp.get("search") || "").trim();
+  const status = (sp.get("status") || "").trim();
+  const minMatch = sp.get("minMatch") ? Number(sp.get("minMatch")) : null;
+  const maxFake = sp.get("maxFake") ? Number(sp.get("maxFake")) : null;
+  return { page, pageSize, q, search, status, minMatch, maxFake };
 }
 
 // GET /api/jobs/[id]/applications?q=&page=&pageSize=
@@ -23,21 +27,53 @@ async function _GET(req: NextRequest) {
   if (!Number.isFinite(jobId)) {
     return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
   }
-  const { page, pageSize, q } = parsePaging(req.url);
+  const { page, pageSize, q, search, status, minMatch, maxFake } = parsePaging(req.url);
 
   let whereClause: any = { jobId };
-  
+  const resumeFilters: any[] = [];
+
+  // Handle legacy 'q' parameter and new 'search' parameter
+  const searchTerm = search || q;
+
   // If search query exists, search in resume fields and contactInfo JSON
-  if (q) {
-    whereClause.resume = {
+  if (searchTerm) {
+    resumeFilters.push({
       OR: [
-        { originalName: { contains: q, mode: "insensitive" } },
-        { contactInfo: { contains: q, mode: "insensitive" } },
-        { skills: { contains: q, mode: "insensitive" } },
-        { experience: { contains: q, mode: "insensitive" } },
-        { sourceFrom: { contains: q, mode: "insensitive" } }
+        { candidateName: { contains: searchTerm, mode: "insensitive" } },
+        { email: { contains: searchTerm, mode: "insensitive" } },
+        { phone: { contains: searchTerm, mode: "insensitive" } },
+        { originalName: { contains: searchTerm, mode: "insensitive" } },
+        { contactInfo: { contains: searchTerm, mode: "insensitive" } },
+        { skills: { contains: searchTerm, mode: "insensitive" } },
+        { experience: { contains: searchTerm, mode: "insensitive" } },
+        { sourceFrom: { contains: searchTerm, mode: "insensitive" } },
+        { rawText: { contains: searchTerm, mode: "insensitive" } }
       ]
+    });
+  }
+
+  // Filter by fake score (max)
+  if (maxFake !== null && !isNaN(maxFake)) {
+    resumeFilters.push({
+      fakeScore: { lte: maxFake }
+    });
+  }
+
+  // Apply resume filters
+  if (resumeFilters.length > 0) {
+    whereClause.resume = {
+      AND: resumeFilters
     };
+  }
+
+  // Filter by status
+  if (status && status !== 'all') {
+    whereClause.status = status;
+  }
+
+  // Filter by match score (min)
+  if (minMatch !== null && !isNaN(minMatch)) {
+    whereClause.matchScore = { gte: minMatch };
   }
 
   const [total, apps] = await Promise.all([
@@ -146,7 +182,13 @@ async function _GET(req: NextRequest) {
   return NextResponse.json({
     applications: rows,
     pagination: { page, pageSize, total, pages: Math.ceil(total / pageSize) },
-    query: q,
+    query: searchTerm,
+    filters: {
+      search: searchTerm,
+      status: status || null,
+      minMatch,
+      maxFake
+    }
   });
 }
 
