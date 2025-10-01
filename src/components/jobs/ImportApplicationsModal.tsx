@@ -98,29 +98,45 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/jobs/${jobId}/import-email`, {
+      // Call the new queue-based enqueue endpoint
+      const res = await fetch(`/api/jobs/${jobId}/import-emails/enqueue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parse.data satisfies ImportEmailInput),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || "Import failed");
+        throw new Error(err?.error || "Failed to queue import");
       }
 
       const data = await res.json();
-      // expected shape:
-      // { createdResumes, linkedApplications, skippedDuplicates, failed, emailsScanned }
-      showToast(
-        `Import Complete! Created: ${data.createdResumes} resumes, Linked: ${data.linkedApplications} applications, Duplicates skipped: ${data.skippedDuplicates}, Failed: ${data.failed}, Emails scanned: ${data.emailsScanned}`,
-        'success',
-        8000  // Show for 8 seconds since it's more detailed
-      );
-      onImported?.(data);
+      // expected shape: { runId, status, message, existing }
+
+      if (data.existing) {
+        showToast(
+          `Import already ${data.status} for this job. Check the queue status above.`,
+          'info',
+          5000
+        );
+      } else {
+        showToast(
+          `✅ Import queued successfully! The system will process it in FIFO order. Watch the queue status above for progress.`,
+          'success',
+          6000
+        );
+      }
+
+      // Trigger refresh of the queue status
+      onImported?.({
+        createdResumes: 0,
+        linkedApplications: 0,
+        skippedDuplicates: 0,
+        failed: 0,
+        emailsScanned: 0
+      });
       onClose();
     } catch (e: any) {
-      showToast(e?.message || "Import failed", 'error');
+      showToast(e?.message || "Failed to queue import", 'error');
     } finally {
       setSubmitting(false);
     }

@@ -50,12 +50,12 @@ export default function ImportQueueStatus() {
   useEffect(() => {
     fetchSummary();
 
-    // Poll every 5 seconds when there's activity
+    // Poll every 3 seconds when there's activity, every 10 seconds otherwise
+    const pollInterval = (summary?.inProgress || (summary?.enqueued && summary.enqueued.length > 0)) ? 3000 : 10000;
+
     const interval = setInterval(() => {
-      if (summary?.inProgress || (summary?.enqueued && summary.enqueued.length > 0)) {
-        fetchSummary();
-      }
-    }, 5000);
+      fetchSummary();
+    }, pollInterval);
 
     return () => clearInterval(interval);
   }, [summary?.inProgress, summary?.enqueued]);
