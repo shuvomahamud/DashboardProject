@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { POST as processImport } from '../process/route';
 
 /**
  * POST /api/import-emails/dispatch
@@ -75,38 +76,24 @@ export async function POST(req: NextRequest) {
 
     console.log('✅ Promoted to running:', enqueued.id);
 
-    // Kick off processor using same origin as the request
-    // This ensures we always call the processor on the same deployment
-    const origin = new URL(req.url).origin;
-    const processUrl = `${origin}/api/import-emails/process`;
+    // Kick off processor directly instead of via HTTP
+    // This avoids network issues with preview deployment URLs
+    console.log('🔄 Triggering processor directly');
 
-    console.log('🔗 Triggering processor at:', processUrl);
-
-    const processPromise = fetch(processUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Vercel-Cron-Dispatcher'
-      },
-      body: JSON.stringify({ runId: enqueued.id })
-    }).then(res => {
-      if (res.ok) {
-        console.log('✅ Processor triggered successfully');
-      } else {
-        console.error(`⚠️  Processor returned ${res.status}`);
-      }
+    const processPromise = processImport(req).then(res => {
+      console.log('✅ Processor completed');
       return res;
     }).catch(err => {
-      console.error('❌ Failed to kick off processor:', err);
+      console.error('❌ Processor error:', err);
       // Don't throw - let the cron retry on next cycle
     });
 
     // Use waitUntil if available (Vercel), otherwise fire-and-forget
     if (typeof req.waitUntil === 'function') {
-      console.log('🔄 Using waitUntil to trigger processor');
+      console.log('🔄 Using waitUntil for processor');
       req.waitUntil(processPromise);
     } else {
-      console.log('🔄 Fire-and-forget processor trigger (no waitUntil)');
+      console.log('🔄 Fire-and-forget processor');
       // Fire and forget - don't await
       processPromise;
     }
