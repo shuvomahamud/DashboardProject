@@ -78,21 +78,24 @@ npm run test:queue
 
 ## Start Worker
 
-You have two options:
+**The worker now starts automatically with the dev server!**
 
-### Option 1: All-in-One (Recommended for Development)
-
-Start both dev server and worker with one command:
+Simply run:
 
 ```bash
-npm run dev:all
+npm run dev
 ```
 
-This runs both processes together. Press `Ctrl+C` to stop both.
+The import queue worker will start automatically in a background thread. You'll see:
 
-### Option 2: Separate Terminals
+```
+🚀 Starting import queue worker in background thread...
+✅ Import queue worker is ready and listening
+```
 
-If you prefer separate terminals:
+### Alternative: Separate Worker Process
+
+If you prefer to run the worker as a separate process (e.g., for debugging):
 
 **Terminal 1 (Dev Server):**
 ```bash
@@ -104,7 +107,7 @@ npm run dev
 npm run worker:import
 ```
 
-**Important:** The worker MUST be running for imports to be processed.
+**Note:** If you run a separate worker process, the background thread worker will not start automatically (only one should run at a time).
 
 ### How to Know if Worker is Running?
 
@@ -121,9 +124,11 @@ When items are queued but worker is NOT running, you'll see a **yellow warning**
 2. ✅ Generate Prisma client: `npx prisma generate`
 3. ✅ Initialize pg-boss: `npm run setup:queue`
 
-**Every time you develop (choose one):**
-- ✅ **Option A:** `npm run dev:all` (starts both dev server and worker)
-- ✅ **Option B:** `npm run dev` + `npm run worker:import` (in separate terminals)
+**Every time you develop:**
+- ✅ `npm run dev` - Starts both dev server and worker automatically!
+
+**Optional (for debugging):**
+- `npm run worker:import` - Run worker as separate process
 
 ## Troubleshooting
 

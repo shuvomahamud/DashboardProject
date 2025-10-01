@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Development
-npm run dev              # Start Next.js development server
+npm run dev              # Start Next.js development server (includes auto-start of email import worker)
 npm run build            # Build for production
 npm run start            # Start production server
 npm run lint             # Run ESLint
