@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/authOptions';
 import prisma from '@/lib/prisma';
 
 /**
@@ -17,6 +19,9 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    const userEmail = session?.user?.email || 'unknown';
+
     const body = await req.json();
     const { jobId, mailbox, searchText, maxEmails } = body;
 
@@ -73,6 +78,7 @@ export async function POST(req: NextRequest) {
     const run = await prisma.import_email_runs.create({
       data: {
         job_id: jobId,
+        requested_by: userEmail,
         mailbox,
         search_text: searchText,
         max_emails: maxEmails || 5000,
