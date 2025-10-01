@@ -184,16 +184,93 @@ CREATE TABLE import_email_items (
 );
 ```
 
+## Troubleshooting
+
+### Local Development Issues
+
+**Problem**: Cron doesn't trigger locally
+**Solution**: Vercel crons only run in production. Use manual trigger:
+```bash
+curl -X POST http://localhost:3000/api/import-emails/dispatch
+```
+
+**Problem**: "No running import found" error
+**Solution**: First enqueue an import, then trigger dispatcher:
+```bash
+curl -X POST http://localhost:3000/api/import-emails -d '{"jobId": 10}'
+curl -X POST http://localhost:3000/api/import-emails/dispatch
+```
+
+### Production Issues
+
+**Problem**: Import stuck in "enqueued" status
+**Solution**: Check Vercel cron logs. Cron should be calling dispatcher every minute.
+
+**Problem**: Import stuck in "running" status
+**Solution**: Check processor logs for errors. Run may have hit an unhandled error.
+
+**Problem**: Progress not updating
+**Solution**: Check `/api/import-email-runs/summary` endpoint. Processor updates progress after each batch.
+
+### Monitoring
+
+**Check Cron Status**: Vercel Dashboard → Project → Cron Jobs
+**Check Function Logs**: Vercel Dashboard → Project → Logs → Filter by `/api/import-emails`
+**Check Database**: Query `import_email_runs` and `import_email_items` tables
+
+### Manual Recovery
+
+If a run is stuck in "running" state:
+```sql
+-- Mark as failed to allow dispatcher to pick up next job
+UPDATE import_email_runs
+SET status = 'failed', finished_at = NOW()
+WHERE id = 'stuck-run-id';
+```
+
+## Performance Tuning
+
+### Adjust Time Budget
+```env
+# Increase slice duration (default: 30000ms)
+SOFT_BUDGET_MS=45000
+```
+
+### Adjust Concurrency
+```env
+# Process more emails in parallel (default: 2)
+ITEM_CONCURRENCY=3
+```
+
+### Adjust Lookback Window
+```env
+# Reduce emails fetched (default: 365 days)
+MS_IMPORT_LOOKBACK_DAYS=180
+```
+
+## Migration from Old System
+
+If you have queued jobs from the old pg-boss system:
+
+1. Those jobs are in a different table and won't be processed
+2. Re-enqueue them using the new endpoint:
+```bash
+curl -X POST https://your-domain.vercel.app/api/import-emails \
+  -H "Content-Type: application/json" \
+  -d '{"jobId": YOUR_JOB_ID}'
+```
+
 ## Next Steps
 
 1. ✅ Everything implemented
 2. ✅ Build successful
-3. 📤 **Deploy to Vercel**
-4. 🧪 Test with queued job
-5. 📊 Monitor progress in UI
+3. ✅ Pushed to GitHub
+4. 🚀 **Deployed to Vercel** (automatic)
+5. 🧪 Test with queued job
+6. 📊 Monitor progress in UI
 
 ---
 
 **Date**: October 2025
 **System**: Vercel Cron + Dispatcher + Time-Boxed Processor
-**Status**: READY FOR PRODUCTION ✅
+**Status**: DEPLOYED TO PRODUCTION ✅
