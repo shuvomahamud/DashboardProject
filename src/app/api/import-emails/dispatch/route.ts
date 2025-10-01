@@ -76,13 +76,32 @@ export async function POST(req: NextRequest) {
     console.log('✅ Promoted to running:', enqueued.id);
 
     // Kick off processor
-    const processUrl = new URL('/api/import-emails/process', req.url);
-    const processPromise = fetch(processUrl, {
+    // Use environment variable for base URL, fallback to request URL
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXTAUTH_URL || req.url;
+
+    const processUrl = new URL('/api/import-emails/process', baseUrl);
+
+    console.log('🔗 Triggering processor at:', processUrl.toString());
+
+    const processPromise = fetch(processUrl.toString(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Vercel-Cron-Dispatcher'
+      },
       body: JSON.stringify({ runId: enqueued.id })
+    }).then(res => {
+      if (res.ok) {
+        console.log('✅ Processor triggered successfully');
+      } else {
+        console.error(`⚠️  Processor returned ${res.status}`);
+      }
+      return res;
     }).catch(err => {
       console.error('❌ Failed to kick off processor:', err);
+      // Don't throw - let the cron retry on next cycle
     });
 
     // Use waitUntil if available (Vercel), otherwise fire-and-forget
