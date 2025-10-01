@@ -76,10 +76,10 @@ export async function POST(req: NextRequest) {
     console.log('✅ Promoted to running:', enqueued.id);
 
     // Kick off processor
-    // Use environment variable for base URL, fallback to request URL
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : process.env.NEXTAUTH_URL || req.url;
+    // Use production URL from NEXTAUTH_URL, fallback to VERCEL_URL
+    const baseUrl = process.env.NEXTAUTH_URL
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+      || new URL(req.url).origin;
 
     const processUrl = new URL('/api/import-emails/process', baseUrl);
 
