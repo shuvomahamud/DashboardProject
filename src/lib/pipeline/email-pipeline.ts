@@ -265,17 +265,20 @@ export async function processEmailItem(
   } catch (error: any) {
     console.error(`Pipeline error for item ${itemId}:`, error);
 
+    // Truncate error message to 500 characters to avoid database issues
+    const errorMessage = error.message?.substring(0, 500) || 'Unknown error';
+
     // Update item with error
     await prisma.import_email_items.update({
       where: { id: itemId },
       data: {
         status: 'failed',
-        last_error: error.message,
+        last_error: errorMessage,
         attempts: { increment: 1 }
       }
     });
 
-    return { success: false, step: currentStep, error: error.message };
+    return { success: false, step: currentStep, error: errorMessage };
   }
 }
 

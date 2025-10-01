@@ -192,34 +192,48 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if all items completed
-    const remainingItems = await prisma.import_email_items.count({
-      where: {
-        run_id: run.id,
-        status: 'pending'
-      }
-    });
+    const [pendingCount, completedCount, failedCount] = await Promise.all([
+      prisma.import_email_items.count({
+        where: { run_id: run.id, status: 'pending' }
+      }),
+      prisma.import_email_items.count({
+        where: { run_id: run.id, status: 'completed' }
+      }),
+      prisma.import_email_items.count({
+        where: { run_id: run.id, status: 'failed' }
+      })
+    ]);
 
-    if (remainingItems === 0) {
-      // All done - mark as succeeded
+    if (pendingCount === 0) {
+      // All items processed - determine final status
+      const finalStatus = completedCount > 0 ? 'succeeded' : 'failed';
+      const lastError = finalStatus === 'failed'
+        ? `All ${failedCount} items failed. Check item errors for details.`
+        : null;
+
       await prisma.import_email_runs.update({
         where: { id: run.id },
         data: {
-          status: 'succeeded',
+          status: finalStatus,
           finished_at: new Date(),
-          progress: 1.0
+          progress: 1.0,
+          processed_messages: completedCount,
+          last_error: lastError
         }
       });
 
-      console.log('✅ Import completed successfully');
+      console.log(`✅ Import finished: ${finalStatus} (completed: ${completedCount}, failed: ${failedCount})`);
       return NextResponse.json({
-        status: 'succeeded',
+        status: finalStatus,
         runId: run.id,
-        processedItems: processedCount
+        processedItems: processedCount,
+        completed: completedCount,
+        failed: failedCount
       });
     }
 
     // More work remains - poke dispatcher
-    console.log(`🔄 ${remainingItems} items remaining, re-queuing processor`);
+    console.log(`🔄 ${pendingCount} items remaining, re-queuing processor`);
 
     if (typeof req.waitUntil === 'function') {
       const dispatchUrl = new URL('/api/import-emails/dispatch', req.url);
@@ -237,7 +251,7 @@ export async function POST(req: NextRequest) {
       status: 'partial',
       runId: run.id,
       processedItems: processedCount,
-      remainingItems,
+      remainingItems: pendingCount,
       elapsed: budget.elapsed()
     });
 

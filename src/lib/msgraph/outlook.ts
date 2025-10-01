@@ -190,7 +190,8 @@ export async function listAttachments(messageId: string, mailboxUserId?: string)
   }
 
   // Use /messages/ instead of /mailFolders/Inbox/messages/ to support messages from any folder
-  const url = `/v1.0/users/${mailbox}/messages/${messageId}/attachments?$top=50`;
+  // URL-encode messageId to handle special characters
+  const url = `/v1.0/users/${mailbox}/messages/${encodeURIComponent(messageId)}/attachments?$top=50`;
   const response = await graphFetch(url);
 
   if (!response.ok) {
@@ -216,7 +217,8 @@ export async function getFileAttachmentBytes(
   }
 
   // Use /messages/ instead of /mailFolders/Inbox/messages/ to support messages from any folder
-  const url = `/v1.0/users/${mailbox}/messages/${messageId}/attachments/${attachmentId}`;
+  // URL-encode both messageId and attachmentId to handle special characters
+  const url = `/v1.0/users/${mailbox}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`;
   const response = await graphFetch(url);
 
   if (!response.ok) {
@@ -284,7 +286,8 @@ export async function checkEmailEligibility(
 
   try {
     // Use /messages/ instead of /mailFolders/Inbox/messages/ to support messages from any folder
-    const url = `/v1.0/users/${mailbox}/messages/${messageId}/attachments?$top=50`;
+    // URL-encode messageId to handle special characters
+    const url = `/v1.0/users/${mailbox}/messages/${encodeURIComponent(messageId)}/attachments?$top=50`;
     const response = await graphFetch(url);
 
     if (!response.ok) {
