@@ -189,7 +189,8 @@ export async function listAttachments(messageId: string, mailboxUserId?: string)
     throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
   }
 
-  const url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages/${messageId}/attachments?$top=50`;
+  // Use /messages/ instead of /mailFolders/Inbox/messages/ to support messages from any folder
+  const url = `/v1.0/users/${mailbox}/messages/${messageId}/attachments?$top=50`;
   const response = await graphFetch(url);
 
   if (!response.ok) {
@@ -214,7 +215,8 @@ export async function getFileAttachmentBytes(
     throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
   }
 
-  const url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages/${messageId}/attachments/${attachmentId}`;
+  // Use /messages/ instead of /mailFolders/Inbox/messages/ to support messages from any folder
+  const url = `/v1.0/users/${mailbox}/messages/${messageId}/attachments/${attachmentId}`;
   const response = await graphFetch(url);
 
   if (!response.ok) {
@@ -281,7 +283,8 @@ export async function checkEmailEligibility(
   }
 
   try {
-    const url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages/${messageId}/attachments?$top=50`;
+    // Use /messages/ instead of /mailFolders/Inbox/messages/ to support messages from any folder
+    const url = `/v1.0/users/${mailbox}/messages/${messageId}/attachments?$top=50`;
     const response = await graphFetch(url);
 
     if (!response.ok) {
