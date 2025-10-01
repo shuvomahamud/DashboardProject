@@ -98,10 +98,11 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
 
     setSubmitting(true);
     try {
-      // Call the new queue-based enqueue endpoint
-      const res = await fetch(`/api/jobs/${jobId}/import-emails/enqueue`, {
+      // Call the new cron-based enqueue endpoint
+      const res = await fetch(`/api/import-emails`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
       });
 
       if (!res.ok) {
@@ -110,19 +111,19 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
       }
 
       const data = await res.json();
-      // expected shape: { runId, status, message, existing }
+      // expected shape: { status: 'enqueued', runId, jobId, jobTitle, message }
 
-      if (data.existing) {
-        showToast(
-          `Import already ${data.status} for this job. Check the queue status above.`,
-          'info',
-          5000
-        );
-      } else {
+      if (data.status === 'enqueued') {
         showToast(
           `✅ Import queued successfully! The system will process it in FIFO order. Watch the queue status above for progress.`,
           'success',
           6000
+        );
+      } else {
+        showToast(
+          data.message || 'Import request processed',
+          'info',
+          5000
         );
       }
 
