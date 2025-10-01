@@ -81,9 +81,17 @@ async function _POST(req: NextRequest, ctx?: { params: { id: string } }) {
     });
 
   } catch (error: any) {
-    console.error('Failed to enqueue import:', error.message);
+    console.error('Failed to enqueue import:', error);
+
+    // More specific error messages
+    if (error.message?.includes('does not exist')) {
+      return NextResponse.json({
+        error: 'Queue system not initialized. Please start the worker first: npm run worker:import'
+      }, { status: 503 });
+    }
+
     return NextResponse.json({
-      error: 'Failed to enqueue import'
+      error: `Failed to enqueue import: ${error.message}`
     }, { status: 500 });
   }
 }

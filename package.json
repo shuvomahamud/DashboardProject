@@ -21,6 +21,7 @@
     "test:ai": "npx tsx scripts/test-ai-parsing.ts",
     "test:queue": "npx tsx scripts/test-import-queue.ts",
     "setup:storage": "npx tsx scripts/setup-supabase-storage.ts",
+    "setup:queue": "npx tsx scripts/init-pgboss.ts",
     "worker:import": "npx tsx scripts/run-import-worker.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

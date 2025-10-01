@@ -59,22 +59,56 @@ CREATE INDEX IF NOT EXISTS import_runs_job_id_idx
 ON import_email_runs (job_id, created_at DESC);
 ```
 
+## Initialize pg-boss Queue System
+
+After creating the database table, initialize the pg-boss queue:
+
+```bash
+npm run setup:queue
+```
+
+This creates the pg-boss schema and the `import-emails` queue.
+
 ## Verify Setup
 
 ```bash
-# Test database connection
+# Test database connection and table
 npm run test:queue
 ```
 
 ## Start Worker
 
-After database setup, start the worker in a separate terminal:
+After setup is complete, start the worker in a separate terminal:
 
 ```bash
 npm run worker:import
 ```
 
+**Important:** The worker MUST be running for imports to be processed. Leave it running in a separate terminal.
+
+## Complete Setup Checklist
+
+1. ✅ Create database table: `npx prisma db push`
+2. ✅ Generate Prisma client: `npx prisma generate`
+3. ✅ Initialize pg-boss: `npm run setup:queue`
+4. ✅ Start worker: `npm run worker:import` (keep running)
+5. ✅ Start dev server: `npm run dev`
+
 ## Troubleshooting
+
+### Error: "Queue import-emails does not exist"
+
+**Cause:** pg-boss schema not initialized
+
+**Solution:**
+```bash
+npm run setup:queue
+```
+
+Then start the worker:
+```bash
+npm run worker:import
+```
 
 ### Error: "Table does not exist"
 
