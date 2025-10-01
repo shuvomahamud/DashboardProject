@@ -131,6 +131,26 @@ export default function ImportQueueStatus() {
         )}
       </Card.Header>
       <Card.Body>
+        {/* Warning: Items queued but worker not processing */}
+        {!summary.inProgress && summary.enqueued.length > 0 && (
+          <Alert variant="warning" className="mb-3">
+            <div className="d-flex align-items-start">
+              <i className="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+              <div>
+                <strong>Worker Not Running</strong>
+                <p className="mb-0 small">
+                  {summary.enqueued.length} job{summary.enqueued.length !== 1 ? 's' : ''} waiting to be processed.
+                  Start the worker to begin processing:
+                </p>
+                <code className="small">npm run worker:import</code>
+                <p className="mb-0 small mt-1 text-muted">
+                  Or use <code>npm run dev:all</code> to start both dev server and worker together.
+                </p>
+              </div>
+            </div>
+          </Alert>
+        )}
+
         {/* In Progress Section */}
         {summary.inProgress ? (
           <div className="mb-4">
