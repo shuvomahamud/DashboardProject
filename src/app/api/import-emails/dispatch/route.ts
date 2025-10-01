@@ -75,17 +75,14 @@ export async function POST(req: NextRequest) {
 
     console.log('✅ Promoted to running:', enqueued.id);
 
-    // Kick off processor
-    // Use production URL from NEXTAUTH_URL, fallback to VERCEL_URL
-    const baseUrl = process.env.NEXTAUTH_URL
-      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-      || new URL(req.url).origin;
+    // Kick off processor using same origin as the request
+    // This ensures we always call the processor on the same deployment
+    const origin = new URL(req.url).origin;
+    const processUrl = `${origin}/api/import-emails/process`;
 
-    const processUrl = new URL('/api/import-emails/process', baseUrl);
+    console.log('🔗 Triggering processor at:', processUrl);
 
-    console.log('🔗 Triggering processor at:', processUrl.toString());
-
-    const processPromise = fetch(processUrl.toString(), {
+    const processPromise = fetch(processUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
