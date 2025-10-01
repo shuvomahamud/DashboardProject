@@ -19,7 +19,9 @@
     "test:interviews": "npx tsx scripts/test-interviews-sync.ts",
     "test:msgraph": "npx tsx scripts/test-msgraph.ts",
     "test:ai": "npx tsx scripts/test-ai-parsing.ts",
+    "test:queue": "npx tsx scripts/test-import-queue.ts",
     "setup:storage": "npx tsx scripts/setup-supabase-storage.ts",
+    "worker:import": "npx tsx scripts/run-import-worker.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio"
@@ -41,6 +43,7 @@
     "next-auth": "^4.24.11",
     "openai": "^5.16.0",
     "pdf-parse": "^1.1.1",
+    "pg-boss": "^11.0.4",
     "prisma": "^6.11.1",
     "react": "^18.3.1",
     "react-bootstrap": "^2.10.5",

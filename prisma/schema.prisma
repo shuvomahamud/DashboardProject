@@ -287,86 +287,73 @@ model Company {
 }
 
 model Job {
-  id             Int              @id @default(autoincrement())
-  title          String
-  description    String
-  requirements   String?
-  salaryMin      Decimal?         @db.Decimal(5, 2)
-  salaryMax      Decimal?         @db.Decimal(5, 2)
-  location       String?
-  isRemote       Boolean          @default(false)
-  employmentType String?
-  status         String           @default("active")
-  postedDate     DateTime         @default(now()) @db.Timestamptz(6)
-  expiryDate     DateTime?        @db.Timestamptz(6)
-  companyId      Int?             // Made optional for backwards compatibility
-  companyName    String?          // New field for company name
-  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
+  id               Int              @id @default(autoincrement())
+  title            String
+  description      String
+  requirements     String?
+  salaryMin        Decimal?         @db.Decimal(5, 2)
+  salaryMax        Decimal?         @db.Decimal(5, 2)
+  location         String?
+  isRemote         Boolean          @default(false)
+  employmentType   String?
+  status           String           @default("active")
+  postedDate       DateTime         @default(now()) @db.Timestamptz(6)
+  expiryDate       DateTime?        @db.Timestamptz(6)
+  companyId        Int?
+  createdAt        DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(6)
   aiExtractJson    String?
   aiSummary        String?
-  
-  // Phase 2 field
-  applicationQuery String?          @db.Text // AQS query for email ingestion
-  
-  company        Company?         @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  applications   JobApplication[]
-  job_embeddings job_embeddings[]
+  applicationQuery String?
+  companyName      String?
+  company          Company?         @relation(fields: [companyId], references: [id])
+  applications     JobApplication[]
+  job_embeddings   job_embeddings[]
+  import_email_runs import_email_runs[]
 }
 
 model Resume {
-  id                Int                 @id @default(autoincrement())
-  fileName          String
-  originalName      String
-  fileSize          Int
-  mimeType          String
-  storagePath       String
-  uploadedBy        String?
-  parsedText        String?
-  skills            String?
-  experience        String?
-  education         String?
-  contactInfo       String?
-  createdAt         DateTime            @default(now()) @db.Timestamptz(6)
-  updatedAt         DateTime            @updatedAt @db.Timestamptz(6)
-  aiExtractJson     String?
-  aiSummary         String?
-  
-  // Phase 2 fields
-  sourceType        String    @default("upload") // upload, email, cloud_import
-  sourceMessageId   String?   // Outlook message ID
-  sourceSubject     String?   // Email subject
-  sourceFrom        String?   // Email sender
-  sourcePath        String?   // OneDrive path or other source path
-  fileHash          String?   // SHA256 hash for deduplication
-  fileSizeBytes     Int?      // File size in bytes
-  fileStorageUrl    String?   // Storage URL or path
-  rawText           String?   @db.Text // Extracted text content
-  
-  // Phase 3 AI parsing fields
-  companies         String?   @db.Text // Comma-separated company names
-  employmentHistoryJson String? @db.Text // JSON array of employment history
-  totalExperienceY  Decimal?  @db.Decimal(5,2) // Total years of experience
-  parsedAt          DateTime? @db.Timestamptz(6) // When AI parsing was completed
-  
-  // Phase 4 scoring fields
-  companyScore      Decimal?  @db.Decimal(5,2) // Company reputation score 0-100
-  fakeScore         Decimal?  @db.Decimal(5,2) // Fake resume risk score 0-100
-  
-  // Phase 4 parsing metadata for idempotency
-  textHash          String?   // SHA256 hash of rawText
-  promptVersion     String?   // Version of prompt used for parsing
-  parseModel        String?   // Model used for parsing (e.g., gpt-4o-mini)
-  parseError        String?   // Error message if parsing failed
-  
-  // Convenience fields for quick access
-  candidateName     String?   // Extracted candidate name
-  email             String?   // Primary email address
-  phone             String?   // Primary phone number
+  id                    Int                 @id @default(autoincrement())
+  fileName              String
+  originalName          String
+  fileSize              Int
+  mimeType              String
+  storagePath           String
+  uploadedBy            String?
+  skills                String?
+  experience            String?
+  education             String?
+  createdAt             DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime            @updatedAt @db.Timestamptz(6)
+  aiExtractJson         String?
+  aiSummary             String?
+  sourceType            String              @default("upload")
+  sourceMessageId       String?
+  sourceSubject         String?
+  sourceFrom            String?
+  sourcePath            String?
+  fileHash              String?
+  fileSizeBytes         Int?
+  fileStorageUrl        String?
+  rawText               String?
+  companies             String?
+  employmentHistoryJson String?
+  totalExperienceY      Decimal?            @db.Decimal(5, 2)
+  parsedAt              DateTime?           @db.Timestamptz(6)
+  candidateName         String?
+  companyScore          Decimal?            @db.Decimal(5, 2)
+  email                 String?
+  fakeScore             Decimal?            @db.Decimal(5, 2)
+  parseError            String?
+  parseModel            String?
+  phone                 String?
+  promptVersion         String?
+  textHash              String?
+  contactInfo           String?
+  parsedText            String?
+  applications          JobApplication[]
+  resume_embeddings     resume_embeddings[]
 
-  applications      JobApplication[]
-  resume_embeddings resume_embeddings[]
-  
   @@index([fileHash])
   @@index([sourceMessageId])
   @@index([parsedAt])
@@ -381,10 +368,9 @@ model JobApplication {
   notes          String?
   createdAt      DateTime @default(now()) @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @db.Timestamptz(6)
-  aiExtractJson  Json?    // Stores per-application snapshot with aiMatch, aiCompany, aiFake, experience
-  matchScore     Decimal? @db.Decimal(5, 2) // Job-resume match score 0-100
-  aiCompanyScore Decimal? @db.Decimal(5, 2) // Company reputation score 0-100
-
+  matchScore     Decimal? @db.Decimal(5, 2)
+  aiExtractJson  Json?
+  aiCompanyScore Decimal? @db.Decimal(5, 2)
   job            Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   resume         Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
@@ -442,4 +428,23 @@ model resume_embeddings {
   @@unique([resume_id, content_hash], map: "idx_resume_embeddings_unique")
   @@index([resume_id], map: "idx_resume_embeddings_resume_id")
   @@index([embedding], map: "idx_resume_embeddings_vector")
+}
+
+model import_email_runs {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  job_id             Int
+  requested_by       String?
+  status             String
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  started_at         DateTime? @db.Timestamptz(6)
+  finished_at        DateTime? @db.Timestamptz(6)
+  progress           Decimal   @default(0) @db.Decimal(5, 2)
+  total_messages     Int?
+  processed_messages Int       @default(0)
+  attempts           Int       @default(0)
+  last_error         String?
+  Job                Job       @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status, created_at(sort: Desc)])
+  @@index([job_id, created_at(sort: Desc)])
 }

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Alert, Badge } from 'react-bootstrap';
 import DataTable from '@/components/DataTable';
+import ImportQueueStatus from '@/components/jobs/ImportQueueStatus';
 
 interface Job {
   id: number;
@@ -232,6 +233,9 @@ export default function JobsPage() {
           Add New Job
         </Button>
       </div>
+
+      {/* Import Queue Status */}
+      <ImportQueueStatus />
 
       {jobs.length === 0 && !loading ? (
         <div className="text-center py-5">
