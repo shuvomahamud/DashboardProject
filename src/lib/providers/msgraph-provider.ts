@@ -11,7 +11,7 @@ export class MSGraphEmailProvider implements EmailProvider {
   constructor(mailboxUserId?: string) {
     this.mailboxUserId = mailboxUserId || process.env.MS_MAILBOX_USER_ID || '';
     if (!this.mailboxUserId) {
-      throw new Error('MS_MAILBOX_USER_ID not configured');
+      throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
     }
   }
 
@@ -80,6 +80,6 @@ export class MSGraphEmailProvider implements EmailProvider {
 }
 
 // Factory function
-export function createEmailProvider(): EmailProvider {
-  return new MSGraphEmailProvider();
+export function createEmailProvider(mailboxUserId?: string): EmailProvider {
+  return new MSGraphEmailProvider(mailboxUserId);
 }

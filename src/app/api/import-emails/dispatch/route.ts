@@ -18,7 +18,9 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    console.log('🔄 Dispatcher invoked');
+    const timestamp = new Date().toISOString();
+    console.log(`🔄 [${timestamp}] Vercel Cron: Dispatcher invoked`);
+    console.log('🕐 This log confirms the cron job is running on Vercel');
 
     // Check if any run is already running
     const running = await prisma.import_email_runs.findFirst({

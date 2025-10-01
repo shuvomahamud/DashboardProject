@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { jobId } = body;
+    const { jobId, mailbox, searchText, maxEmails } = body;
 
     if (!jobId || typeof jobId !== 'number') {
       return NextResponse.json(
@@ -27,7 +27,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log('📥 Enqueuing import for job:', jobId);
+    if (!mailbox || !searchText) {
+      return NextResponse.json(
+        { error: 'mailbox and searchText are required' },
+        { status: 400 }
+      );
+    }
+
+    console.log('📥 Enqueuing import for job:', jobId, 'mailbox:', mailbox, 'search:', searchText);
 
     // Check if job exists
     const job = await prisma.job.findUnique({
@@ -66,6 +73,9 @@ export async function POST(req: NextRequest) {
     const run = await prisma.import_email_runs.create({
       data: {
         job_id: jobId,
+        mailbox,
+        search_text: searchText,
+        max_emails: maxEmails || 5000,
         status: 'enqueued',
         progress: 0,
         processed_messages: 0,

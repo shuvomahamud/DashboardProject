@@ -437,6 +437,9 @@ model import_email_runs {
   id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   job_id             Int
   requested_by       String?
+  mailbox            String?
+  search_text        String?
+  max_emails         Int?
   status             String
   created_at         DateTime              @default(now()) @db.Timestamptz(6)
   started_at         DateTime?             @db.Timestamptz(6)

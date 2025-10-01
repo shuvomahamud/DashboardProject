@@ -102,7 +102,12 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
       const res = await fetch(`/api/import-emails`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId }),
+        body: JSON.stringify({
+          jobId,
+          mailbox,
+          searchText: text,
+          maxEmails: top
+        }),
       });
 
       if (!res.ok) {

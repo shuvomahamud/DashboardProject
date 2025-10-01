@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`📦 Processing run ${run.id} for job ${run.job_id} (${run.Job.title})`);
+    console.log(`📧 Search params - mailbox: ${run.mailbox}, text: "${run.search_text}", max: ${run.max_emails}`);
 
     // Check if canceled
     if (run.status === 'canceled') {
@@ -50,15 +51,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'canceled' });
     }
 
-    const provider = createEmailProvider();
+    // Validate required fields
+    if (!run.mailbox || !run.search_text) {
+      console.error('❌ Missing mailbox or search_text in run');
+      await prisma.import_email_runs.update({
+        where: { id: run.id },
+        data: {
+          status: 'failed',
+          finished_at: new Date(),
+          last_error: 'Missing mailbox or search_text configuration'
+        }
+      });
+      return NextResponse.json({ status: 'error', error: 'Missing configuration' });
+    }
+
+    const provider = createEmailProvider(run.mailbox);
 
     // Phase A: Enumerate emails (only if total_messages = 0)
     if (run.total_messages === 0) {
       console.log('📋 Phase A: Enumerating emails');
 
       const messages = await provider.listMessages({
-        jobTitle: run.Job.title,
-        limit: 5000
+        jobTitle: run.search_text,
+        limit: run.max_emails || 5000
       });
 
       console.log(`📧 Found ${messages.length} messages`);
