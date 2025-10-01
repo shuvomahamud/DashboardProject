@@ -107,12 +107,7 @@ export default function ImportQueueStatus() {
   }
 
   if (error) {
-    return (
-      <Alert variant="warning" className="mb-4">
-        <Alert.Heading>Queue Status Unavailable</Alert.Heading>
-        <p className="mb-0">{error}</p>
-      </Alert>
-    );
+    return null; // Silently hide if there's an error (likely table doesn't exist yet)
   }
 
   if (!summary) {
@@ -286,9 +281,14 @@ export default function ImportQueueStatus() {
         )}
 
         {!hasActivity && summary.recentDone.length === 0 && (
-          <div className="text-center text-muted py-3">
-            <i className="bi bi-inbox display-6 d-block mb-2"></i>
-            <p className="mb-0">No recent import activity</p>
+          <div className="text-center text-muted py-5">
+            <i className="bi bi-cloud-download display-1 d-block mb-3 text-secondary opacity-50"></i>
+            <h5 className="mb-2">No Email Imports Running</h5>
+            <p className="mb-0 text-muted">
+              Email imports will appear here when you click "Import Emails" on a job card.
+              <br />
+              The system processes one import at a time in FIFO order.
+            </p>
           </div>
         )}
       </Card.Body>

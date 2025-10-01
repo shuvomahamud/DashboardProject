@@ -30,12 +30,12 @@ export async function startWorker() {
     console.log(`\n📧 Processing import run ${runId} for job ${jobId} (${jobTitle})`);
 
     // Load current state
-    const run = await prisma.importEmailRun.findUnique({
+    const run = await prisma.import_email_runs.findUnique({
       where: { id: runId },
       select: {
         id: true,
         status: true,
-        jobId: true,
+        job_id: true,
         attempts: true
       }
     });
@@ -52,14 +52,14 @@ export async function startWorker() {
 
     // Try to mark as running (global unique index will block if another is running)
     try {
-      await prisma.importEmailRun.update({
+      await prisma.import_email_runs.update({
         where: {
           id: runId,
           status: 'enqueued' // Ensure still enqueued
         },
         data: {
           status: 'running',
-          startedAt: new Date(),
+          started_at: new Date(),
           attempts: run.attempts + 1
         }
       });
@@ -112,7 +112,7 @@ export async function startWorker() {
       });
 
       // Check if canceled during processing
-      const currentRun = await prisma.importEmailRun.findUnique({
+      const currentRun = await prisma.import_email_runs.findUnique({
         where: { id: runId },
         select: { status: true }
       });
@@ -132,15 +132,15 @@ export async function startWorker() {
           }
         }),
         // Mark run as succeeded
-        prisma.importEmailRun.update({
+        prisma.import_email_runs.update({
           where: { id: runId },
           data: {
             status: 'succeeded',
-            finishedAt: new Date(),
+            finished_at: new Date(),
             progress: 100,
-            totalMessages: summary.emailsScanned,
-            processedMessages: summary.emailsScanned,
-            lastError: null
+            total_messages: summary.emailsScanned,
+            processed_messages: summary.emailsScanned,
+            last_error: null
           }
         })
       ]);
@@ -156,12 +156,12 @@ export async function startWorker() {
       const retryAfter = error.retryAfter || 60;
 
       // Mark as failed
-      await prisma.importEmailRun.update({
+      await prisma.import_email_runs.update({
         where: { id: runId },
         data: {
           status: 'failed',
-          finishedAt: new Date(),
-          lastError: isRateLimit
+          finished_at: new Date(),
+          last_error: isRateLimit
             ? `Rate limited - retry after ${retryAfter}s: ${error.message}`
             : error.message?.substring(0, 500) || 'Unknown error'
         }

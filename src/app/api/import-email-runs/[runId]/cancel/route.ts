@@ -13,12 +13,12 @@ async function _POST(req: NextRequest, ctx?: { params: { runId: string } }) {
 
   try {
     // Get the run
-    const run = await prisma.importEmailRun.findUnique({
+    const run = await prisma.import_email_runs.findUnique({
       where: { id: runId },
       select: {
         id: true,
         status: true,
-        jobId: true
+        job_id: true
       }
     });
 
@@ -35,26 +35,32 @@ async function _POST(req: NextRequest, ctx?: { params: { runId: string } }) {
     }
 
     // Cancel it
-    const updatedRun = await prisma.importEmailRun.update({
+    const updatedRun = await prisma.import_email_runs.update({
       where: { id: runId },
       data: {
         status: 'canceled',
-        finishedAt: new Date()
+        finished_at: new Date()
       },
       select: {
         id: true,
         status: true,
-        jobId: true,
-        createdAt: true,
-        finishedAt: true
+        job_id: true,
+        created_at: true,
+        finished_at: true
       }
     });
 
-    console.log(`✅ Canceled import run ${runId} for job ${run.jobId}`);
+    console.log(`✅ Canceled import run ${runId} for job ${run.job_id}`);
 
     return NextResponse.json({
       message: 'Import canceled successfully',
-      run: updatedRun
+      run: {
+        id: updatedRun.id,
+        status: updatedRun.status,
+        jobId: updatedRun.job_id,
+        createdAt: updatedRun.created_at,
+        finishedAt: updatedRun.finished_at
+      }
     });
 
   } catch (error: any) {
