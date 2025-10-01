@@ -287,29 +287,31 @@ model Company {
 }
 
 model Job {
-  id               Int              @id @default(autoincrement())
-  title            String
-  description      String
-  requirements     String?
-  salaryMin        Decimal?         @db.Decimal(5, 2)
-  salaryMax        Decimal?         @db.Decimal(5, 2)
-  location         String?
-  isRemote         Boolean          @default(false)
-  employmentType   String?
-  status           String           @default("active")
-  postedDate       DateTime         @default(now()) @db.Timestamptz(6)
-  expiryDate       DateTime?        @db.Timestamptz(6)
-  companyId        Int?
-  createdAt        DateTime         @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime         @updatedAt @db.Timestamptz(6)
-  aiExtractJson    String?
-  aiSummary        String?
-  applicationQuery String?
-  companyName      String?
-  company          Company?         @relation(fields: [companyId], references: [id])
-  applications     JobApplication[]
-  job_embeddings   job_embeddings[]
-  import_email_runs import_email_runs[]
+  id                  Int                   @id @default(autoincrement())
+  title               String
+  description         String
+  requirements        String?
+  salaryMin           Decimal?              @db.Decimal(5, 2)
+  salaryMax           Decimal?              @db.Decimal(5, 2)
+  location            String?
+  isRemote            Boolean               @default(false)
+  employmentType      String?
+  status              String                @default("active")
+  postedDate          DateTime              @default(now()) @db.Timestamptz(6)
+  expiryDate          DateTime?             @db.Timestamptz(6)
+  companyId           Int?
+  createdAt           DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime              @updatedAt @db.Timestamptz(6)
+  aiExtractJson       String?
+  aiSummary           String?
+  applicationQuery    String?
+  companyName         String?
+  last_email_sync_at  DateTime?             @db.Timestamptz(6)
+  company             Company?              @relation(fields: [companyId], references: [id])
+  applications        JobApplication[]
+  job_embeddings      job_embeddings[]
+  import_email_runs   import_email_runs[]
+  import_email_items  import_email_items[]
 }
 
 model Resume {
@@ -360,19 +362,20 @@ model Resume {
 }
 
 model JobApplication {
-  id             Int      @id @default(autoincrement())
-  jobId          Int
-  resumeId       Int
-  status         String   @default("submitted")
-  appliedDate    DateTime @default(now()) @db.Timestamptz(6)
-  notes          String?
-  createdAt      DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
-  matchScore     Decimal? @db.Decimal(5, 2)
-  aiExtractJson  Json?
-  aiCompanyScore Decimal? @db.Decimal(5, 2)
-  job            Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  resume         Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  id                  Int      @id @default(autoincrement())
+  jobId               Int
+  resumeId            Int
+  external_message_id String?
+  status              String   @default("submitted")
+  appliedDate         DateTime @default(now()) @db.Timestamptz(6)
+  notes               String?
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(6)
+  matchScore          Decimal? @db.Decimal(5, 2)
+  aiExtractJson       Json?
+  aiCompanyScore      Decimal? @db.Decimal(5, 2)
+  job                 Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resume              Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@unique([jobId, resumeId])
   @@index([resumeId])
@@ -431,20 +434,45 @@ model resume_embeddings {
 }
 
 model import_email_runs {
-  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   job_id             Int
   requested_by       String?
   status             String
-  created_at         DateTime  @default(now()) @db.Timestamptz(6)
-  started_at         DateTime? @db.Timestamptz(6)
-  finished_at        DateTime? @db.Timestamptz(6)
-  progress           Decimal   @default(0) @db.Decimal(5, 2)
+  created_at         DateTime              @default(now()) @db.Timestamptz(6)
+  started_at         DateTime?             @db.Timestamptz(6)
+  finished_at        DateTime?             @db.Timestamptz(6)
+  progress           Decimal               @default(0) @db.Decimal(5, 2)
   total_messages     Int?
-  processed_messages Int       @default(0)
-  attempts           Int       @default(0)
+  processed_messages Int                   @default(0)
+  attempts           Int                   @default(0)
   last_error         String?
-  Job                Job       @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  since              DateTime?             @db.Timestamptz(6)
+  page_cursor        String?
+  meta               Json?
+  Job                Job                   @relation(fields: [job_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  items              import_email_items[]
 
   @@index([status, created_at(sort: Desc)])
   @@index([job_id, created_at(sort: Desc)])
+}
+
+model import_email_items {
+  id                  BigInt              @id @default(autoincrement())
+  run_id              String              @db.Uuid
+  job_id              Int
+  external_message_id String
+  external_thread_id  String?
+  received_at         DateTime?           @db.Timestamptz(6)
+  status              String              @default("pending")
+  step                String              @default("none")
+  attempts            Int                 @default(0)
+  last_error          String?
+  created_at          DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+  run                 import_email_runs   @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  Job                 Job                 @relation(fields: [job_id], references: [id], onDelete: Cascade)
+
+  @@unique([run_id, external_message_id])
+  @@index([run_id, status, id])
+  @@index([job_id])
 }

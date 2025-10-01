@@ -1,112 +1,81 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-export const dynamic = 'force-dynamic';
-
-async function _GET(req: NextRequest) {
+/**
+ * GET /api/import-email-runs/summary
+ *
+ * Returns queue status for UI:
+ * - inProgress: max 1 running
+ * - enqueued: FIFO queue
+ * - recentDone: last 3 completed/failed/canceled
+ */
+export async function GET() {
   try {
-    // Check if the table exists by trying a simple query
-    const inProgress = await prisma.import_email_runs.findFirst({
-      where: {
-        status: 'running'
-      },
-      orderBy: {
-        started_at: 'desc'
-      },
-      include: {
-        Job: {
-          select: {
-            id: true,
-            title: true
+    const [inProgressRuns, enqueuedRuns, recentDoneRuns] = await Promise.all([
+      // Max 1 running (enforced by DB unique index)
+      prisma.import_email_runs.findMany({
+        where: { status: 'running' },
+        include: {
+          Job: {
+            select: { id: true, title: true }
           }
-        }
-      }
-    });
+        },
+        orderBy: { started_at: 'desc' },
+        take: 1
+      }),
 
-    // Get all enqueued imports (FIFO order)
-    const enqueued = await prisma.import_email_runs.findMany({
-      where: {
-        status: 'enqueued'
-      },
-      orderBy: {
-        created_at: 'asc' // FIFO
-      },
-      include: {
-        Job: {
-          select: {
-            id: true,
-            title: true
+      // All enqueued (FIFO)
+      prisma.import_email_runs.findMany({
+        where: { status: 'enqueued' },
+        include: {
+          Job: {
+            select: { id: true, title: true }
           }
-        }
-      }
-    });
+        },
+        orderBy: { created_at: 'asc' }
+      }),
 
-    // Get last 3 finished imports
-    const recentDone = await prisma.import_email_runs.findMany({
-      where: {
-        status: { in: ['succeeded', 'failed', 'canceled'] }
-      },
-      orderBy: [
-        { finished_at: 'desc' },
-        { created_at: 'desc' }
-      ],
-      take: 3,
-      include: {
-        Job: {
-          select: {
-            id: true,
-            title: true
+      // Last 3 done
+      prisma.import_email_runs.findMany({
+        where: {
+          status: { in: ['succeeded', 'failed', 'canceled'] }
+        },
+        include: {
+          Job: {
+            select: { id: true, title: true }
           }
-        }
-      }
+        },
+        orderBy: { finished_at: 'desc' },
+        take: 3
+      })
+    ]);
+
+    // Format for UI
+    const formatRun = (run: any) => ({
+      id: run.id,
+      jobId: run.job_id,
+      jobTitle: run.Job.title,
+      status: run.status,
+      progress: parseFloat(run.progress.toString()),
+      processedMessages: run.processed_messages,
+      totalMessages: run.total_messages,
+      lastError: run.last_error,
+      createdAt: run.created_at.toISOString(),
+      startedAt: run.started_at?.toISOString(),
+      finishedAt: run.finished_at?.toISOString()
     });
 
     return NextResponse.json({
-      inProgress: inProgress ? {
-        id: inProgress.id,
-        jobId: inProgress.job_id,
-        jobTitle: inProgress.Job.title,
-        status: inProgress.status,
-        progress: Number(inProgress.progress),
-        processedMessages: inProgress.processed_messages,
-        totalMessages: inProgress.total_messages,
-        startedAt: inProgress.started_at?.toISOString(),
-        createdAt: inProgress.created_at.toISOString()
-      } : null,
-      enqueued: enqueued.map(run => ({
-        id: run.id,
-        jobId: run.job_id,
-        jobTitle: run.Job.title,
-        status: run.status,
-        createdAt: run.created_at.toISOString()
-      })),
-      recentDone: recentDone.map(run => ({
-        id: run.id,
-        jobId: run.job_id,
-        jobTitle: run.Job.title,
-        status: run.status,
-        progress: Number(run.progress),
-        processedMessages: run.processed_messages,
-        totalMessages: run.total_messages,
-        lastError: run.last_error,
-        createdAt: run.created_at.toISOString(),
-        startedAt: run.started_at?.toISOString(),
-        finishedAt: run.finished_at?.toISOString()
-      }))
+      inProgress: inProgressRuns[0] ? formatRun(inProgressRuns[0]) : null,
+      enqueued: enqueuedRuns.map(formatRun),
+      recentDone: recentDoneRuns.map(formatRun)
     });
 
   } catch (error: any) {
-    console.error('Failed to get import summary:', error.message);
-
-    // Return empty data structure instead of error
-    return NextResponse.json({
-      inProgress: null,
-      enqueued: [],
-      recentDone: [],
-      error: null // No error shown to user
-    });
+    console.error('Error fetching import summary:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch import queue status' },
+      { status: 500 }
+    );
   }
 }
-
-export const GET = withTableAuthAppRouter('jobs', _GET);

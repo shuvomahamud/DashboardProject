@@ -1,74 +1,60 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
+import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-export const dynamic = 'force-dynamic';
-
-async function _POST(req: NextRequest, ctx?: { params: { runId: string } }) {
-  const runId = ctx?.params?.runId;
-
-  if (!runId) {
-    return NextResponse.json({ error: 'Invalid run id' }, { status: 400 });
-  }
-
+/**
+ * POST /api/import-email-runs/[runId]/cancel
+ *
+ * Cancel an import run:
+ * - If enqueued: mark canceled immediately
+ * - If running: mark canceled, processor will stop after current item
+ */
+export async function POST(
+  _req: Request,
+  { params }: { params: { runId: string } }
+) {
   try {
-    // Get the run
-    const run = await prisma.import_email_runs.findUnique({
-      where: { id: runId },
-      select: {
-        id: true,
-        status: true,
-        job_id: true
-      }
-    });
+    const { runId } = params;
 
-    if (!run) {
-      return NextResponse.json({ error: 'Import run not found' }, { status: 404 });
-    }
-
-    // Check if already finished
-    if (['succeeded', 'failed', 'canceled'].includes(run.status)) {
-      return NextResponse.json({
-        message: `Import already ${run.status}`,
-        status: run.status
-      });
-    }
-
-    // Cancel it
-    const updatedRun = await prisma.import_email_runs.update({
-      where: { id: runId },
+    // Update status to canceled
+    const updated = await prisma.import_email_runs.updateMany({
+      where: {
+        id: runId,
+        status: { in: ['enqueued', 'running'] }
+      },
       data: {
         status: 'canceled',
         finished_at: new Date()
-      },
-      select: {
-        id: true,
-        status: true,
-        job_id: true,
-        created_at: true,
-        finished_at: true
       }
     });
 
-    console.log(`✅ Canceled import run ${runId} for job ${run.job_id}`);
+    if (updated.count === 0) {
+      return NextResponse.json(
+        { error: 'Run not found or already finished' },
+        { status: 404 }
+      );
+    }
+
+    // Also cancel any pending items
+    await prisma.import_email_items.updateMany({
+      where: {
+        run_id: runId,
+        status: { in: ['pending', 'processing'] }
+      },
+      data: {
+        status: 'canceled'
+      }
+    });
 
     return NextResponse.json({
-      message: 'Import canceled successfully',
-      run: {
-        id: updatedRun.id,
-        status: updatedRun.status,
-        jobId: updatedRun.job_id,
-        createdAt: updatedRun.created_at,
-        finishedAt: updatedRun.finished_at
-      }
+      status: 'canceled',
+      message: 'Import run canceled successfully'
     });
 
   } catch (error: any) {
-    console.error('Failed to cancel import:', error.message);
-    return NextResponse.json({
-      error: 'Failed to cancel import'
-    }, { status: 500 });
+    console.error('Error canceling import run:', error);
+    return NextResponse.json(
+      { error: 'Failed to cancel import run' },
+      { status: 500 }
+    );
   }
 }
-
-export const POST = withTableAuthAppRouter('jobs', _POST);

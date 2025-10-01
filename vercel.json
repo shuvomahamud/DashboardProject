@@ -1,0 +1,19 @@
+{
+  "functions": {
+    "src/app/api/import-emails/route.ts": {
+      "maxDuration": 10
+    },
+    "src/app/api/import-emails/dispatch/route.ts": {
+      "maxDuration": 10
+    },
+    "src/app/api/import-emails/process/route.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/import-emails/dispatch",
+      "schedule": "* * * * *"
+    }
+  ]
+}
