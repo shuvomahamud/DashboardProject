@@ -189,9 +189,14 @@ export async function listAttachments(messageId: string, mailboxUserId?: string)
     throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
   }
 
+  // Log the message ID we're trying to fetch
+  console.log(`📎 Fetching attachments for message ID: ${messageId} (length: ${messageId.length})`);
+
   // Use /messages/ instead of /mailFolders/Inbox/messages/ to support messages from any folder
   // URL-encode messageId to handle special characters
   const url = `/v1.0/users/${mailbox}/messages/${encodeURIComponent(messageId)}/attachments?$top=50`;
+  console.log(`📎 Full URL: ${url.substring(0, 100)}...`);
+
   const response = await graphFetch(url);
 
   if (!response.ok) {
