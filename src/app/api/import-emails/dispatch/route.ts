@@ -75,25 +75,30 @@ export async function POST(req: NextRequest) {
 
     console.log('✅ Promoted to running:', enqueued.id);
 
-    // Kick off processor (in production, use waitUntil)
-    // For now, just return success - you'll call /process manually in dev
+    // Kick off processor
+    const processUrl = new URL('/api/import-emails/process', req.url);
+    const processPromise = fetch(processUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId: enqueued.id })
+    }).catch(err => {
+      console.error('❌ Failed to kick off processor:', err);
+    });
+
+    // Use waitUntil if available (Vercel), otherwise fire-and-forget
     if (typeof req.waitUntil === 'function') {
-      const processUrl = new URL('/api/import-emails/process', req.url);
-      req.waitUntil(
-        fetch(processUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ runId: enqueued.id })
-        }).catch(err => {
-          console.error('Failed to kick off processor:', err);
-        })
-      );
+      console.log('🔄 Using waitUntil to trigger processor');
+      req.waitUntil(processPromise);
+    } else {
+      console.log('🔄 Fire-and-forget processor trigger (no waitUntil)');
+      // Fire and forget - don't await
+      processPromise;
     }
 
     return NextResponse.json({
       status: 'dispatched',
       runId: enqueued.id,
-      message: 'Run promoted to running. Call /api/import-emails/process to start processing.'
+      message: 'Run promoted to running. Processor triggered.'
     });
 
   } catch (error: any) {
