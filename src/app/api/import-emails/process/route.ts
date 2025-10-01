@@ -42,18 +42,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'no_work' });
     }
 
-    console.log(`📦 Processing run ${run.id} for job ${run.job_id} (${run.Job.title})`);
-    console.log(`📧 Search params - mailbox: ${run.mailbox}, text: "${run.search_text}", max: ${run.max_emails}`);
+    console.log(`📦 [RUN:${run.id}] Processing run for job ${run.job_id} (${run.Job.title})`);
+    console.log(`📧 [RUN:${run.id}] Search params - mailbox: ${run.mailbox}, text: "${run.search_text}", max: ${run.max_emails}`);
 
     // Check if canceled
     if (run.status === 'canceled') {
-      console.log('🚫 Run canceled, stopping');
+      console.log(`🚫 [RUN:${run.id}] Run canceled, stopping`);
       return NextResponse.json({ status: 'canceled' });
     }
 
     // Validate required fields
     if (!run.mailbox || !run.search_text) {
-      console.error('❌ Missing mailbox or search_text in run');
+      console.error(`❌ [RUN:${run.id}] Missing mailbox or search_text in run`);
       await prisma.import_email_runs.update({
         where: { id: run.id },
         data: {
@@ -69,14 +69,14 @@ export async function POST(req: NextRequest) {
 
     // Phase A: Enumerate emails (only if total_messages = 0)
     if (run.total_messages === 0) {
-      console.log('📋 Phase A: Enumerating emails');
+      console.log(`📋 [RUN:${run.id}] Phase A: Enumerating emails`);
 
       const messages = await provider.listMessages({
         jobTitle: run.search_text,
         limit: run.max_emails || 5000
       });
 
-      console.log(`📧 Found ${messages.length} messages`);
+      console.log(`📧 [RUN:${run.id}] Found ${messages.length} messages`);
 
       // Create items for each message
       const items = messages.map(msg => ({
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
         data: { total_messages: messages.length }
       });
 
-      console.log(`✅ Created ${items.length} items`);
+      console.log(`✅ [RUN:${run.id}] Created ${items.length} items`);
 
       // If no messages, mark as completed
       if (messages.length === 0) {
@@ -116,13 +116,13 @@ export async function POST(req: NextRequest) {
           }
         });
 
-        console.log('✅ No messages to process, marking as succeeded');
+        console.log(`✅ [RUN:${run.id}] No messages to process, marking as succeeded`);
         return NextResponse.json({ status: 'succeeded', runId: run.id });
       }
     }
 
     // Phase B: Process items with time-boxed slicing
-    console.log('⚙️  Phase B: Processing items');
+    console.log(`⚙️  [RUN:${run.id}] Phase B: Processing items`);
 
     const concurrency = parseInt(process.env.ITEM_CONCURRENCY || '2', 10);
     let processedCount = 0;
@@ -139,17 +139,17 @@ export async function POST(req: NextRequest) {
       });
 
       if (pendingItems.length === 0) {
-        console.log('✅ No more pending items');
+        console.log(`✅ [RUN:${run.id}] No more pending items`);
         break;
       }
 
-      console.log(`🔄 Processing batch of ${Math.min(pendingItems.length, concurrency)} items`);
+      console.log(`🔄 [RUN:${run.id}] Processing batch of ${Math.min(pendingItems.length, concurrency)} items`);
 
       // Process items with bounded concurrency
       const batch = pendingItems.slice(0, concurrency);
       await mapWithConcurrency(batch, concurrency, async (item) => {
         if (!budget.shouldContinue()) {
-          console.log(`⏱️  Time budget exhausted, stopping`);
+          console.log(`⏱️  [RUN:${run.id}] Time budget exhausted, stopping`);
           return;
         }
 
@@ -182,11 +182,11 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      console.log(`📊 Progress: ${totalProcessed}/${run.total_messages} (${(progress * 100).toFixed(1)}%)`);
+      console.log(`📊 [RUN:${run.id}] Progress: ${totalProcessed}/${run.total_messages} (${(progress * 100).toFixed(1)}%)`);
 
       // Check if time budget exhausted
       if (!budget.shouldContinue()) {
-        console.log(`⏱️  Time budget exhausted (${budget.elapsed()}ms), stopping slice`);
+        console.log(`⏱️  [RUN:${run.id}] Time budget exhausted (${budget.elapsed()}ms), stopping slice`);
         break;
       }
     }
@@ -222,7 +222,7 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      console.log(`✅ Import finished: ${finalStatus} (completed: ${completedCount}, failed: ${failedCount})`);
+      console.log(`✅ [RUN:${run.id}] Import finished: ${finalStatus} (completed: ${completedCount}, failed: ${failedCount})`);
       return NextResponse.json({
         status: finalStatus,
         runId: run.id,
@@ -233,7 +233,7 @@ export async function POST(req: NextRequest) {
     }
 
     // More work remains - poke dispatcher
-    console.log(`🔄 ${pendingCount} items remaining, re-queuing processor`);
+    console.log(`🔄 [RUN:${run.id}] ${pendingCount} items remaining, re-queuing processor`);
 
     if (typeof req.waitUntil === 'function') {
       const dispatchUrl = new URL('/api/import-emails/dispatch', req.url);
@@ -265,6 +265,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (run) {
+        console.error(`❌ [RUN:${run.id}] Marking run as failed due to error`);
         await prisma.import_email_runs.update({
           where: { id: run.id },
           data: {

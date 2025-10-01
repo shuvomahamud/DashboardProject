@@ -41,6 +41,7 @@ export async function processEmailItem(
   const { id: itemId, externalMessageId, step: currentStep } = item;
 
   try {
+    console.log(`📧 [RUN:${runId}] [ITEM:${itemId}] Processing email item at step: ${currentStep}`);
     let step = currentStep;
 
     // Step 1: Fetch message and attachments
@@ -263,7 +264,7 @@ export async function processEmailItem(
     return { success: true, step };
 
   } catch (error: any) {
-    console.error(`Pipeline error for item ${itemId}:`, error);
+    console.error(`❌ [RUN:${runId}] [ITEM:${itemId}] Pipeline error:`, error);
 
     // Truncate error message to 500 characters to avoid database issues
     const errorMessage = error.message?.substring(0, 500) || 'Unknown error';
