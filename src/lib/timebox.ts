@@ -22,7 +22,7 @@ export class TimeBudget {
   }
 
   /** Check if we should continue (with buffer) */
-  shouldContinue(bufferMs: number = 5000): boolean {
+  shouldContinue(bufferMs: number = 2000): boolean {
     return this.remaining() > bufferMs;
   }
 
@@ -34,9 +34,10 @@ export class TimeBudget {
 
 /**
  * Parse soft budget from environment
+ * Default: 8 seconds (to stay within Vercel's 10s timeout with 2s buffer)
  */
 export function getSoftBudgetMs(): number {
-  return parseInt(process.env.SOFT_BUDGET_MS || '30000', 10);
+  return parseInt(process.env.SOFT_BUDGET_MS || '8000', 10);
 }
 
 /**

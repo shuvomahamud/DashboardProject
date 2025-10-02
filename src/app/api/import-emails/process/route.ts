@@ -319,20 +319,18 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // More work remains - poke dispatcher
-    console.log(`🔄 [RUN:${run.id}] ${pendingCount} items remaining, re-queuing processor`);
+    // More work remains - trigger processor again for next batch
+    console.log(`🔄 [RUN:${run.id}] ${pendingCount} items remaining, triggering next processor cycle`);
 
-    if (typeof req.waitUntil === 'function') {
-      const dispatchUrl = new URL('/api/import-emails/dispatch', req.url);
-      req.waitUntil(
-        fetch(dispatchUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        }).catch(err => {
-          console.error('Failed to kick off dispatcher:', err);
-        })
-      );
-    }
+    // Trigger processor again via HTTP (don't await - let it run independently)
+    const processorUrl = new URL('/api/import-emails/process', req.url);
+    fetch(processorUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(err => {
+      console.error(`❌ [RUN:${run.id}] Failed to trigger next processor cycle:`, err);
+      // Error logged but not thrown - cron will pick it up on next cycle if this fails
+    });
 
     return NextResponse.json({
       status: 'partial',

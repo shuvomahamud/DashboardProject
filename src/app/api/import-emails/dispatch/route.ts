@@ -72,24 +72,26 @@ export async function POST(req: NextRequest) {
 
     console.log(`✅ [RUN:${enqueued.id}] Promoted to running`);
 
-    // Kick off processor directly instead of via HTTP
-    // This avoids network issues with preview deployment URLs
-    console.log(`🔄 [RUN:${enqueued.id}] Triggering processor`);
+    // Trigger processor via separate HTTP call to avoid timeout
+    // This allows dispatcher to return quickly while processor works independently
+    console.log(`🔄 [RUN:${enqueued.id}] Triggering processor via HTTP`);
 
-    // Always await the processor to ensure it runs to completion
-    // The processor has its own time budget and will return when done or time's up
-    try {
-      await processImport(req);
-      console.log(`✅ [RUN:${enqueued.id}] Processor completed`);
-    } catch (err) {
-      console.error(`❌ [RUN:${enqueued.id}] Processor error:`, err);
-      // Don't throw - run is already marked as running, cron will retry
-    }
+    const processorUrl = new URL('/api/import-emails/process', req.url);
+
+    // Fire off processor asynchronously - don't await
+    // The processor will call dispatcher again when it needs more time
+    fetch(processorUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).catch(err => {
+      console.error(`❌ [RUN:${enqueued.id}] Processor trigger failed:`, err);
+      // Error is logged but not thrown - cron will retry on next cycle
+    });
 
     return NextResponse.json({
       status: 'dispatched',
       runId: enqueued.id,
-      message: 'Run promoted to running. Processor completed.'
+      message: 'Run promoted to running. Processor triggered.'
     });
 
   } catch (error: any) {
