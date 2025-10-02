@@ -26,10 +26,21 @@ export async function POST(req: NextRequest) {
     });
 
     if (running) {
-      // Silently return - no need to log every cron check
+      // Continue processing the running run
+      console.log(`🔄 [RUN:${running.id}] Continuing existing running import`);
+
+      const processorUrl = new URL('/api/import-emails/process', req.url);
+      fetch(processorUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).catch(err => {
+        console.error(`❌ [RUN:${running.id}] Processor trigger failed:`, err);
+      });
+
       return NextResponse.json({
-        status: 'already_running',
-        runId: running.id
+        status: 'continuing',
+        runId: running.id,
+        message: 'Continuing existing run. Processor triggered.'
       });
     }
 

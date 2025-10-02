@@ -34,10 +34,10 @@ export class TimeBudget {
 
 /**
  * Parse soft budget from environment
- * Default: 8 seconds (to stay within Vercel's 10s timeout with 2s buffer)
+ * Default: 6 seconds (to stay within Vercel's 10s timeout with 4s buffer)
  */
 export function getSoftBudgetMs(): number {
-  return parseInt(process.env.SOFT_BUDGET_MS || '8000', 10);
+  return parseInt(process.env.SOFT_BUDGET_MS || '6000', 10);
 }
 
 /**
