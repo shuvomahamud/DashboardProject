@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import prisma, { ensureConnection } from '@/lib/prisma';
 
 /**
  * GET /api/import-email-runs/summary
@@ -10,12 +10,30 @@ import prisma from '@/lib/prisma';
  * - recentDone: last 3 completed/failed/canceled
  */
 
+// Force dynamic rendering - this endpoint needs database access
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // Throttle logging to once every 5 minutes
 let lastLogTime = 0;
 const LOG_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 export async function GET() {
   try {
+    // Ensure database connection is healthy with retry
+    const isConnected = await ensureConnection(2);
+    if (!isConnected) {
+      return NextResponse.json(
+        {
+          error: 'Database connection unavailable',
+          inProgress: null,
+          enqueued: [],
+          recentDone: []
+        },
+        { status: 503 }
+      );
+    }
+
     const [inProgressRuns, enqueuedRuns, recentDoneRuns] = await Promise.all([
       // Max 1 running (enforced by DB unique index)
       prisma.import_email_runs.findMany({
@@ -84,9 +102,15 @@ export async function GET() {
       lastLogTime = now;
     }
 
+    // Return empty state instead of error to prevent UI breaking
     return NextResponse.json(
-      { error: 'Failed to fetch import queue status' },
-      { status: 500 }
+      {
+        error: 'Database temporarily unavailable',
+        inProgress: null,
+        enqueued: [],
+        recentDone: []
+      },
+      { status: 200 } // Return 200 with empty state so UI doesn't break
     );
   }
 }
