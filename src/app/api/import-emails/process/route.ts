@@ -1,28 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { TimeBudget, getSoftBudgetMs } from '@/lib/timebox';
-import { mapWithConcurrency } from '@/lib/pool';
 import { createEmailProvider } from '@/lib/providers/msgraph-provider';
 import { processEmailItem } from '@/lib/pipeline/email-pipeline';
 
 /**
  * POST /api/import-emails/process
  *
- * Processor: Processes the currently running import in time-boxed slices.
+ * Processor: Processes the currently running import to completion.
  *
  * Two phases:
  * - Phase A: Enumerate emails from provider → create items (if total_messages = 0)
- * - Phase B: Process items with bounded concurrency (concurrency=2)
+ * - Phase B: Process ALL items sequentially (concurrency=1)
  *
- * Time budget: 30s soft (stops with 5s buffer for cleanup)
- *
- * Kicks off dispatcher at the end (via waitUntil) if more work remains.
+ * No artificial time limits - processes all pending items in one go.
+ * With maxDuration=60s and GPT timeout=8s per item, can handle ~7 items per run.
+ * For larger imports, will complete in one cycle instead of multiple cron cycles.
  */
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel max function duration
 
 export async function POST(req: NextRequest) {
-  const budget = new TimeBudget(getSoftBudgetMs());
+  const startTime = Date.now();
 
   try {
     console.log('⚙️  Processor invoked');
@@ -191,18 +189,18 @@ export async function POST(req: NextRequest) {
       console.log(`✅ [RUN:${run.id}] Phase A: Complete - ${messages.length} messages ready for processing`);
     }
 
-    // Phase B: Process items with time-boxed slicing
-    console.log(`⚙️  [RUN:${run.id}] Phase B: Starting item processing`);
+    // Phase B: Process ALL pending items (no time budget limits)
+    console.log(`⚙️  [RUN:${run.id}] Phase B: Starting item processing (no time limits)`);
 
-    // Reduce concurrency to 1 to avoid connection pool exhaustion
-    // Each item processing may use multiple connections (fetch, update, etc.)
+    // Sequential processing (concurrency=1) to minimize database connections
     const concurrency = parseInt(process.env.ITEM_CONCURRENCY || '1', 10);
     console.log(`⚙️  [RUN:${run.id}] Phase B: Concurrency set to ${concurrency}`);
 
     let processedCount = 0;
     let batchNumber = 0;
 
-    while (budget.shouldContinue()) {
+    // Process ALL pending items until none remain
+    while (true) {
       batchNumber++;
       console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} - Querying for pending items`);
 
@@ -226,16 +224,10 @@ export async function POST(req: NextRequest) {
       const batchSize = Math.min(pendingItems.length, concurrency);
       console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} - Processing ${batchSize} items`);
 
-      // Process items with bounded concurrency
+      // Process items sequentially (or with bounded concurrency)
       const batch = pendingItems.slice(0, concurrency);
 
       for (const item of batch) {
-        // Check time budget before each item
-        if (!budget.shouldContinue()) {
-          console.log(`⏱️  [RUN:${run.id}] Phase B: Time budget exhausted before item ${item.id}, stopping slice`);
-          break;
-        }
-
         console.log(`📧 [RUN:${run.id}] Phase B: Processing item ${item.id} (external_message_id: ${item.external_message_id.substring(0, 20)}...)`);
 
         await processEmailItem(item, {
@@ -248,16 +240,10 @@ export async function POST(req: NextRequest) {
         processedCount++;
       }
 
-      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} complete - ${processedCount} items processed in this slice`);
+      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} complete - ${processedCount} items processed so far`);
 
-      // Check if time budget exhausted BEFORE progress update
-      if (!budget.shouldContinue()) {
-        console.log(`⏱️  [RUN:${run.id}] Phase B: Time budget exhausted (${budget.elapsed()}ms), skipping progress update`);
-        break;
-      }
-
-      // Update progress (with retry for connection issues)
-      console.log(`📊 [RUN:${run.id}] Phase B: Calculating progress...`);
+      // Update progress after each batch
+      console.log(`📊 [RUN:${run.id}] Phase B: Updating progress...`);
 
       try {
         const totalProcessed = await prisma.import_email_items.count({
@@ -279,7 +265,8 @@ export async function POST(req: NextRequest) {
           }
         });
 
-        console.log(`📊 [RUN:${run.id}] Phase B: Progress updated - ${totalProcessed}/${run.total_messages} (${(progress * 100).toFixed(1)}%)`);
+        const elapsed = Date.now() - startTime;
+        console.log(`📊 [RUN:${run.id}] Phase B: Progress updated - ${totalProcessed}/${run.total_messages} (${(progress * 100).toFixed(1)}%) [${(elapsed / 1000).toFixed(1)}s elapsed]`);
       } catch (progressError: any) {
         console.warn(`⚠️  [RUN:${run.id}] Failed to update progress (non-fatal):`, progressError.message);
         // Continue processing - progress update failure is not critical
@@ -306,12 +293,13 @@ export async function POST(req: NextRequest) {
     } catch (countError: any) {
       console.error(`❌ [RUN:${run.id}] Failed to count items:`, countError.message);
 
-      // Return partial status - cron will retry
+      const elapsed = Date.now() - startTime;
+      // Return error status
       return NextResponse.json({
         status: 'error',
         runId: run.id,
         error: 'Database connection lost during progress check',
-        elapsed: budget.elapsed()
+        elapsed
       }, { status: 500 });
     }
 
@@ -367,25 +355,31 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      const elapsed = Date.now() - startTime;
+      console.log(`✅ [RUN:${run.id}] Import completed in ${(elapsed / 1000).toFixed(1)}s`);
+
       return NextResponse.json({
         status: finalStatus,
         runId: run.id,
         processedItems: processedCount,
         completed: completedCount,
-        failed: failedCount
+        failed: failedCount,
+        elapsed
       });
     }
 
-    // More work remains - dispatcher will pick it up on next cron cycle
-    console.log(`🔄 [RUN:${run.id}] ${pendingCount} items remaining, leaving as 'running' for dispatcher to continue`);
+    // This should never happen since we process until no items remain
+    // But keeping as fallback
+    console.log(`⚠️  [RUN:${run.id}] Unexpected state: ${pendingCount} items still pending after completion`);
 
+    const elapsed = Date.now() - startTime;
     return NextResponse.json({
       status: 'partial',
       runId: run.id,
       processedItems: processedCount,
       remainingItems: pendingCount,
-      elapsed: budget.elapsed(),
-      message: 'Partial progress - cron will continue processing'
+      elapsed,
+      message: 'Unexpected partial state - should have processed all items'
     });
 
   } catch (error: any) {

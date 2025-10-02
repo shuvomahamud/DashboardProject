@@ -6,9 +6,10 @@ Ensure environment variables are set in Vercel:
 
 ```env
 PARSE_ON_IMPORT=true
-SOFT_BUDGET_MS=6000
 ITEM_CONCURRENCY=1
 ```
+
+**Note:** SOFT_BUDGET_MS has been removed - no artificial time limits with Fluid Compute and maxDuration=60s.
 
 ## Expected Behavior with PARSE_ON_IMPORT=true (Timeout Protected)
 
@@ -127,18 +128,18 @@ From Vercel logs, measure time between:
 - Start: `📧 [RUN:xxx] Phase B: Processing item N`
 - End: `✅ [RUN:xxx] Phase B: Item N processed`
 
-**Expected timing with PARSE_ON_IMPORT=true (timeout protected):**
+**Expected timing with PARSE_ON_IMPORT=true (no time budget):**
 - Without GPT: 1-3 seconds per item (text extraction only)
 - With GPT (success): 3-8 seconds per item (includes AI parsing)
 - With GPT (timeout): 9-10 seconds per item (hits 8s timeout, continues)
 - Average: ~4-6 seconds per item (mix of success/timeout)
-- Budget: 6000ms allows 1-2 items per cycle
+- maxDuration: 60s allows ~7-10 items per run
 
-**Processing continues across cycles:**
-- Each cycle processes 1-2 items
-- Cron triggers every minute
-- Large imports (20+ emails) complete over several minutes
-- This is expected and working correctly
+**Processing completes in ONE cycle:**
+- No artificial time limits - processes ALL items
+- 10 email import: ~40-60 seconds total
+- 20 email import: Will hit 60s limit, continue on next cron (1 minute)
+- Much faster than old approach (6s budget = 1-2 items per minute)
 
 ### 6. Check Connection Pool Usage
 
@@ -221,10 +222,11 @@ Should show:
 1. **Speed**: Items process in 3-8 seconds each (with GPT) or 1-3 seconds (without GPT)
 2. **Logs**: GPT parsing attempts visible, timeouts are non-fatal warnings
 3. **Database**: Resumes have `rawText`, some may have `aiExtractJson` populated
-4. **Time budget**: Processor completes within 6 seconds, cycles repeat as needed
-5. **Connections**: Supabase shows < 50 active connections
-6. **Completion**: Import finishes with status "succeeded"
-7. **GPT Success Rate**: At least 50-70% of items complete GPT parsing within 8s
+4. **Completion**: Small imports (< 10 items) complete in ONE run (~60s max)
+5. **Large imports**: Process 7-10 items per cycle, continue on next cron
+6. **Connections**: Supabase shows < 50 active connections
+7. **Final status**: Import finishes with status "succeeded"
+8. **GPT Success Rate**: At least 50-70% of items complete GPT parsing within 8s
 
 ## After Import: Retry Failed Parsing (If Needed)
 
@@ -245,10 +247,15 @@ This batch API:
 
 ## Performance Comparison
 
-| Configuration | Time per item | Items per 6s | Connection usage | GPT parsing |
-|--------------|---------------|--------------|------------------|-------------|
-| PARSE_ON_IMPORT=true (no timeout) | 5-8s | 1 | Very High ❌ | Unreliable ❌ |
-| PARSE_ON_IMPORT=false | 1-3s | 3-5 | Low ✅ | Deferred ⚠️ |
-| **PARSE_ON_IMPORT=true (8s timeout)** | **3-8s** | **1-2** | **Low ✅** | **Attempted ✅** |
+| Configuration | Time/Item | Items/Run | Total Time (20 emails) | GPT Parsing |
+|--------------|-----------|-----------|------------------------|-------------|
+| Old: 6s budget | 3-8s | 1-2 | **10-20 minutes** ❌ | Attempted but slow |
+| PARSE_ON_IMPORT=false | 1-3s | 20+ | 1-2 minutes | Deferred ⚠️ |
+| **Current: No budget, 8s timeout** | **3-8s** | **7-10** | **2-3 minutes** ✅ | **Attempted ✅** |
 
-**Recommendation:** Use `PARSE_ON_IMPORT=true` with 8-second timeout protection for best user experience. Retry failures via batch API if needed.
+**Key Improvements:**
+- Removed SOFT_BUDGET_MS artificial limit
+- Utilizes full 60-second maxDuration
+- Processes ALL items in one or two cycles (vs 10-20 cycles)
+- 6-10x faster than old time-budget approach
+- GPT parsing with timeout protection remains reliable

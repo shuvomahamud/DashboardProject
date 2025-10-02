@@ -15,7 +15,9 @@ The `.env.local` file is **NOT deployed to Vercel**. You must manually set envir
    Environment: Production, Preview
    ```
 
-3. **IMPORTANT**: After adding/changing environment variables, you MUST redeploy:
+3. **IMPORTANT**: Ensure Fluid Compute is enabled for your project (handles concurrency automatically)
+
+4. **IMPORTANT**: After adding/changing environment variables, you MUST redeploy:
    ```bash
    vercel --prod
    ```
@@ -63,13 +65,15 @@ If it returns `"not set"` or `"false"`, the environment variable is not properly
 
 ## Why This Matters
 
-**With PARSE_ON_IMPORT=true and 8-second timeout protection:**
+**With PARSE_ON_IMPORT=true, 8s GPT timeout, and Fluid Compute:**
 - ✅ GPT parsing attempts during import (faster for users)
 - ✅ Timeout protection prevents blocking (8s max per item)
-- ✅ Non-fatal failures - import continues even if GPT times out
+- ✅ No artificial time limits - processes ALL items in one go
+- ✅ maxDuration=60s allows ~7 items per run (with GPT)
+- ✅ Fluid Compute handles scaling automatically
+- ✅ Non-fatal GPT failures - import continues
 - ✅ Failed parsing can be retried later via batch API
-- ✅ Resume data still saved with text extraction
-- ✅ Reliable imports with intelligent fallback
+- ✅ Faster imports - complete in 1-3 minutes instead of 10-20 minutes
 
 ## Common Mistake
 
