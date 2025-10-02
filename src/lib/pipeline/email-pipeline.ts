@@ -41,7 +41,6 @@ export async function processEmailItem(
   const { id: itemId, externalMessageId, step: currentStep } = item;
 
   try {
-    console.log(`📧 [RUN:${runId}] [ITEM:${itemId}] Processing email item at step: ${currentStep}`);
     let step = currentStep;
 
     // Step 1: Fetch message and attachments

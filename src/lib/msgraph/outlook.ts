@@ -57,7 +57,7 @@ export async function searchMessages(
 
   // ---------- TEXT SEARCH MODE (Outlook-like full-text search across ALL folders) ----------
   if (isTextSearch) {
-    console.log(`Starting full-text search across all folders for: "${searchText}"`);
+    console.log(`📧 MS Graph: Searching for "${searchText}"`);
 
     // Escape quotes in search phrase and encode for URL
     const phrase = searchText.replace(/"/g, '\\"').trim();
@@ -79,7 +79,6 @@ export async function searchMessages(
       const data = await response.json();
       const pageMessages = (data.value || []) as Message[];
 
-      console.log(`Page ${pageCount + 1}: Retrieved ${pageMessages.length} messages`);
       allMessages.push(...pageMessages);
 
       const nextLink = data['@odata.nextLink'];
@@ -95,32 +94,17 @@ export async function searchMessages(
       }
     }
 
-    console.log(`Raw search results: ${allMessages.length} messages`);
-
     // Post-filter locally for attachments (set to true to match original behavior)
     const attachmentsOnly = true;
     let results = attachmentsOnly ? allMessages.filter(m => m.hasAttachments) : allMessages;
-    console.log(`After attachment filter: ${results.length} messages`);
 
     // Apply lookback date filter
     results = results.filter(m => new Date(m.receivedDateTime) >= new Date(utcStart));
-    console.log(`After date filter (${lookbackDays} days): ${results.length} messages`);
 
     // Sort by receivedDateTime desc (newest first)
     results.sort((a, b) => +new Date(b.receivedDateTime) - +new Date(a.receivedDateTime));
 
-    // Log final results
-    console.log(`========================================`);
-    console.log(`📧 Email Search Results (Full-Text)`);
-    console.log(`========================================`);
-    console.log(`Search Text: "${searchText}"`);
-    console.log(`Search Mode: Full-text across ALL folders`);
-    console.log(`Emails Found: ${results.length}`);
-    console.log(`Emails Returned: ${Math.min(results.length, limit)}`);
-    console.log(`Pages Processed: ${pageCount}`);
-    console.log(`Attachments Only: ${attachmentsOnly}`);
-    console.log(`Lookback Days: ${lookbackDays}`);
-    console.log(`========================================`);
+    console.log(`📧 MS Graph: Found ${results.length} messages (${pageCount} pages)`);
 
     return {
       messages: results.slice(0, limit),
@@ -129,7 +113,7 @@ export async function searchMessages(
   }
 
   // ---------- BULK MODE (NO TEXT) — Inbox scan with filters ----------
-  console.log('Starting bulk mode: Inbox scan with filters');
+  console.log(`📧 MS Graph: Bulk import from Inbox`);
 
   const pageSize = 1000;
   let url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
@@ -145,7 +129,7 @@ export async function searchMessages(
 
       // Fallback: Remove hasAttachments filter if we get InefficientFilter error
       if (response.status === 400 && error.includes('InefficientFilter')) {
-        console.log('InefficientFilter detected, removing hasAttachments filter');
+        console.log('📧 MS Graph: InefficientFilter detected, removing hasAttachments filter');
         url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart}&$top=${pageSize}`;
         nextUrl = undefined;
         continue;
@@ -167,15 +151,7 @@ export async function searchMessages(
     pageCount++;
   }
 
-  console.log(`========================================`);
-  console.log(`📧 Email Search Results (Bulk Mode)`);
-  console.log(`========================================`);
-  console.log(`Search Mode: Inbox folder only`);
-  console.log(`Emails Found: ${allMessages.length}`);
-  console.log(`Emails Returned: ${Math.min(allMessages.length, limit)}`);
-  console.log(`Pages Processed: ${pageCount}`);
-  console.log(`Lookback Days: ${lookbackDays}`);
-  console.log(`========================================`);
+  console.log(`📧 MS Graph: Found ${allMessages.length} messages (${pageCount} pages)`);
 
   return {
     messages: allMessages.slice(0, limit),
@@ -189,13 +165,9 @@ export async function listAttachments(messageId: string, mailboxUserId?: string)
     throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
   }
 
-  // Log the message ID we're trying to fetch
-  console.log(`📎 Fetching attachments for message ID: ${messageId} (length: ${messageId.length})`);
-
   // Use /messages/ instead of /mailFolders/Inbox/messages/ to support messages from any folder
   // URL-encode messageId to handle special characters
   const url = `/v1.0/users/${mailbox}/messages/${encodeURIComponent(messageId)}/attachments?$top=50`;
-  console.log(`📎 Full URL: ${url.substring(0, 100)}...`);
 
   const response = await graphFetch(url);
 
@@ -205,7 +177,7 @@ export async function listAttachments(messageId: string, mailboxUserId?: string)
   }
 
   const data = await response.json();
-  
+
   return {
     attachments: data.value || []
   };
