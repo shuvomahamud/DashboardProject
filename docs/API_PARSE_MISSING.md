@@ -87,14 +87,6 @@ Content-Type: application/json
 }
 ```
 
-### AI Features Disabled (503)
-
-```json
-{
-  "error": "AI features are currently disabled"
-}
-```
-
 ### Budget Exceeded (429)
 
 ```json
@@ -190,7 +182,6 @@ curl -X POST https://your-domain.com/api/resumes/parse-missing \
 
 Required:
 ```env
-AI_FEATURES=on                    # Enable AI parsing
 OPENAI_API_KEY=sk-...            # OpenAI API key
 OPENAI_RESUME_MODEL=gpt-4o-mini  # Model to use
 ```

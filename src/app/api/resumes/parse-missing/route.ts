@@ -28,13 +28,6 @@ async function handler(req: NextRequest): Promise<NextResponse> {
     const body = await req.json().catch(() => ({}));
     const { limit } = RequestSchema.parse(body);
 
-    // Check if AI features are enabled
-    if (process.env.AI_FEATURES !== 'on') {
-      return NextResponse.json({ 
-        error: 'AI features are currently disabled' 
-      }, { status: 503 });
-    }
-
     // Get current budget status
     const budgetStatus = getBudgetStatus();
     if (budgetStatus.remaining <= 0) {

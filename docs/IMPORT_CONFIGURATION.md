@@ -24,11 +24,6 @@ PARSE_ON_IMPORT=false
 
 ### Batch Parsing After Import
 
-**Prerequisites:**
-```env
-AI_FEATURES=on  # Required for batch parsing API
-```
-
 Run GPT parsing as a separate batch job after import completes:
 
 ```bash
