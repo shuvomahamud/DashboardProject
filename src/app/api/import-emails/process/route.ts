@@ -124,7 +124,9 @@ export async function POST(req: NextRequest) {
     // Phase B: Process items with time-boxed slicing
     console.log(`⚙️  [RUN:${run.id}] Phase B: Processing items`);
 
-    const concurrency = parseInt(process.env.ITEM_CONCURRENCY || '2', 10);
+    // Reduce concurrency to 1 to avoid connection pool exhaustion
+    // Each item processing may use multiple connections (fetch, update, etc.)
+    const concurrency = parseInt(process.env.ITEM_CONCURRENCY || '1', 10);
     let processedCount = 0;
 
     while (budget.shouldContinue()) {
