@@ -13,7 +13,7 @@ import type { EmailProvider } from '@/lib/providers/email-provider';
 
 export interface EmailItem {
   id: bigint;
-  externalMessageId: string;
+  external_message_id: string;  // Match Prisma snake_case
   status: string;
   step: string;
 }
@@ -38,7 +38,7 @@ export async function processEmailItem(
   context: PipelineContext
 ): Promise<PipelineResult> {
   const { provider, jobId, runId } = context;
-  const { id: itemId, externalMessageId, step: currentStep } = item;
+  const { id: itemId, external_message_id: externalMessageId, step: currentStep } = item;
 
   try {
     console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Starting pipeline at step: ${currentStep}`);
