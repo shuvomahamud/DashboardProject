@@ -203,18 +203,41 @@ export async function processEmailItem(
       resumeId = resume.id;
 
       // Extract text
-      const extractedText = await extractText(fileBytes, safeName, attachment.contentType);
+      try {
+        const extractedText = await extractText(fileBytes, safeName, attachment.contentType);
 
-      if (extractedText !== 'UNSUPPORTED_DOC_LEGACY') {
-        const maxLength = 2 * 1024 * 1024; // 2MB
-        const finalText = extractedText.length > maxLength
-          ? extractedText.substring(0, maxLength) + '\n\n[Text truncated]'
-          : extractedText;
+        if (extractedText !== 'UNSUPPORTED_DOC_LEGACY') {
+          const maxLength = 2 * 1024 * 1024; // 2MB
+          const finalText = extractedText.length > maxLength
+            ? extractedText.substring(0, maxLength) + '\n\n[Text truncated]'
+            : extractedText;
 
+          await prisma.resume.update({
+            where: { id: resume.id },
+            data: {
+              rawText: finalText,
+              parsedAt: new Date()
+            }
+          });
+        } else {
+          // Legacy .doc format not supported
+          await prisma.resume.update({
+            where: { id: resume.id },
+            data: {
+              rawText: '[UNSUPPORTED_DOC_LEGACY]',
+              parsedAt: new Date()
+            }
+          });
+        }
+      } catch (extractError: any) {
+        // Log error but don't fail the entire import
+        console.error(`⚠️  [RUN:${runId}] [ITEM:${itemId}] Text extraction failed:`, extractError.message);
+
+        // Mark resume with extraction error
         await prisma.resume.update({
           where: { id: resume.id },
           data: {
-            rawText: finalText,
+            rawText: `[TEXT_EXTRACTION_FAILED: ${extractError.message}]`,
             parsedAt: new Date()
           }
         });

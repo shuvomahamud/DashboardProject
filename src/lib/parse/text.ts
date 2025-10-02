@@ -1,57 +1,46 @@
 import * as mammoth from 'mammoth';
 import { getFileExtension } from '../files/resumeFiles';
+import { extractPdfText, hasValidText } from './pdf-extractor';
 
-// Safe PDF parser with lazy initialization
-let pdfParse: ((buffer: Buffer | Uint8Array) => Promise<{ text: string }>) | null = null;
-let pdfParseError: Error | null = null;
-let initAttempted = false;
-
-async function tryInitPdf() {
-  if (initAttempted) return;
-  initAttempted = true;
-
-  try {
-    const mod = await import('pdf-parse');
-    // @ts-expect-error pdf-parse types
-    pdfParse = (mod.default || mod) as any;
-    console.log('pdf-parse library initialized successfully');
-  } catch (error) {
-    pdfParseError = error instanceof Error ? error : new Error('Failed to load pdf-parse library');
-    console.warn('pdf-parse library unavailable:', pdfParseError.message);
-    pdfParse = null;
-  }
-}
-
+/**
+ * Extract text from PDF using pure JavaScript pdfjs-dist
+ * Works in Vercel Node.js runtime without native dependencies
+ */
 export async function extractTextFromPdf(bytes: Uint8Array): Promise<string> {
-  // Initialize PDF parser on first use
-  await tryInitPdf();
+  const buffer = Buffer.from(bytes);
 
-  if (!pdfParse) {
-    console.warn('PDF parsing unavailable:', pdfParseError?.message || 'Library failed to initialize');
-    throw new Error('PDF text extraction is currently unavailable');
-  }
+  // Extract with configurable timeout and page cap
+  const maxPages = parseInt(process.env.PDF_HARD_PAGE_CAP || '15', 10);
+  const timeoutMs = parseInt(process.env.PDF_EXTRACTION_TIMEOUT_MS || '3000', 10);
 
-  try {
-    const buffer = Buffer.from(bytes);
-    const data = await pdfParse(buffer);
-    return data.text || '';
-  } catch (error) {
-    console.error('PDF parsing error:', error);
+  const result = await extractPdfText(buffer, {
+    maxPages,
+    timeoutMs,
+  });
 
-    // Handle specific pdf-parse library test file errors
-    if (error instanceof Error && error.message.includes('05-versions-space.pdf')) {
-      console.warn('PDF parsing failed due to library test file reference - returning empty text');
-      return '';
+  // Handle errors
+  if (result.error) {
+    if (result.error === 'SCANNED_PDF_NO_TEXT_LAYER') {
+      console.warn('PDF has no text layer (likely scanned)');
+      throw new Error('SCANNED_PDF_NO_TEXT_LAYER');
     }
 
-    // Handle file not found errors from test files
-    if (error instanceof Error && error.message.includes('ENOENT') && error.message.includes('test/data')) {
-      console.warn('PDF parsing failed due to library test file reference - returning empty text');
-      return '';
+    if (result.error === 'PDF_EXTRACTION_TIMEOUT') {
+      console.warn('PDF extraction timeout');
+      throw new Error('PDF_EXTRACTION_TIMEOUT');
     }
 
-    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('PDF extraction error:', result.error);
+    throw new Error(result.error);
   }
+
+  // Validate text quality
+  if (!hasValidText(result.text, 50)) {
+    console.warn('PDF extracted but text appears empty or invalid');
+    throw new Error('PDF_TEXT_TOO_SHORT');
+  }
+
+  return result.text;
 }
 
 export async function extractTextFromDocx(bytes: Uint8Array): Promise<string> {
