@@ -298,6 +298,18 @@ export async function POST(req: NextRequest) {
         ? `All ${failedCount} items failed. Check item errors for details.`
         : null;
 
+      console.log(`✅ [RUN:${run.id}] Import finished: ${finalStatus} (completed: ${completedCount}, failed: ${failedCount})`);
+
+      // Clean up processed items to keep table lean
+      console.log(`🧹 [RUN:${run.id}] Cleaning up ${completedCount + failedCount} processed items`);
+      await prisma.import_email_items.deleteMany({
+        where: {
+          run_id: run.id,
+          status: { in: ['completed', 'failed'] }
+        }
+      });
+
+      // Mark run as complete
       await prisma.import_email_runs.update({
         where: { id: run.id },
         data: {
@@ -309,7 +321,28 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      console.log(`✅ [RUN:${run.id}] Import finished: ${finalStatus} (completed: ${completedCount}, failed: ${failedCount})`);
+      console.log(`✅ [RUN:${run.id}] Cleanup complete - run marked as ${finalStatus}`);
+
+      // Clean up old completed runs (keep only last 10 per job)
+      const oldRuns = await prisma.import_email_runs.findMany({
+        where: {
+          job_id: run.job_id,
+          status: { in: ['succeeded', 'failed', 'canceled'] }
+        },
+        orderBy: { finished_at: 'desc' },
+        skip: 10,
+        select: { id: true }
+      });
+
+      if (oldRuns.length > 0) {
+        console.log(`🧹 [RUN:${run.id}] Cleaning up ${oldRuns.length} old runs for job ${run.job_id}`);
+        await prisma.import_email_runs.deleteMany({
+          where: {
+            id: { in: oldRuns.map(r => r.id) }
+          }
+        });
+      }
+
       return NextResponse.json({
         status: finalStatus,
         runId: run.id,
