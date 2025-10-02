@@ -72,7 +72,7 @@ export async function GET() {
     });
 
   } catch (error: any) {
-    console.error('Error fetching import summary:', error);
+    // Silently fail - this is polled frequently by UI
     return NextResponse.json(
       { error: 'Failed to fetch import queue status' },
       { status: 500 }
