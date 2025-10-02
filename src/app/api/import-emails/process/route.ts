@@ -1,23 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { createEmailProvider } from '@/lib/providers/msgraph-provider';
-import { processEmailItem } from '@/lib/pipeline/email-pipeline';
+import { processEmailItem, tryGPTParsing } from '@/lib/pipeline/email-pipeline';
 
 /**
  * POST /api/import-emails/process
  *
- * Processor: Processes the currently running import to completion.
+ * Processor: Processes the currently running import with smart time budgeting.
  *
- * Two phases:
+ * Three phases:
  * - Phase A: Enumerate emails from provider → create items (if total_messages = 0)
- * - Phase B: Process ALL items sequentially (concurrency=1)
+ * - Phase B: Process items with soft 50s time limit (10s safety buffer)
+ * - Phase C: Retry failed GPT calls if time permits
  *
- * No artificial time limits - processes all pending items in one go.
- * With maxDuration=60s and GPT timeout=8s per item, can handle ~7 items per run.
- * For larger imports, will complete in one cycle instead of multiple cron cycles.
+ * Time budget strategy:
+ * - Soft limit: 50s (allows safe processing of ~7-8 items)
+ * - Hard limit: 60s (Vercel maxDuration & gateway timeout)
+ * - GPT timeout: 8s first attempt, 10s retry
+ * - Target: 90-95% GPT success rate with retry queue
  */
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel max function duration
+
+// Time budget constants
+const SOFT_TIME_LIMIT_MS = 50000; // 50s - stop processing new items
+const HARD_TIME_LIMIT_MS = 60000; // 60s - absolute limit (gateway timeout)
+const GPT_TIMEOUT_FIRST_MS = 8000; // 8s - first attempt
+const GPT_TIMEOUT_RETRY_MS = 10000; // 10s - retry attempt
+const MIN_TIME_FOR_RETRY_MS = 12000; // 12s - minimum time needed for retry (10s + 2s overhead)
+
+interface GPTRetryItem {
+  itemId: bigint;
+  resumeId: number;
+  jobContext: {
+    jobTitle: string;
+    jobDescriptionShort: string;
+  };
+}
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -189,8 +208,8 @@ export async function POST(req: NextRequest) {
       console.log(`✅ [RUN:${run.id}] Phase A: Complete - ${messages.length} messages ready for processing`);
     }
 
-    // Phase B: Process ALL pending items (no time budget limits)
-    console.log(`⚙️  [RUN:${run.id}] Phase B: Starting item processing (no time limits)`);
+    // Phase B: Process pending items with soft time limit
+    console.log(`⚙️  [RUN:${run.id}] Phase B: Starting item processing (soft limit: ${SOFT_TIME_LIMIT_MS}ms)`);
 
     // Sequential processing (concurrency=1) to minimize database connections
     const concurrency = parseInt(process.env.ITEM_CONCURRENCY || '1', 10);
@@ -198,11 +217,33 @@ export async function POST(req: NextRequest) {
 
     let processedCount = 0;
     let batchNumber = 0;
+    const gptRetryQueue: GPTRetryItem[] = [];
 
-    // Process ALL pending items until none remain
+    // Get job context once for GPT parsing
+    const job = await prisma.job.findUnique({
+      where: { id: run.job_id },
+      select: { title: true, description: true }
+    });
+
+    const jobContext = job ? {
+      jobTitle: job.title,
+      jobDescriptionShort: job.description.length > 500
+        ? job.description.substring(0, 500) + '...'
+        : job.description
+    } : null;
+
+    // Process items until soft time limit or no items remain
     while (true) {
       batchNumber++;
-      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} - Querying for pending items`);
+      const elapsed = Date.now() - startTime;
+
+      // Check soft time limit BEFORE starting new item
+      if (elapsed > SOFT_TIME_LIMIT_MS) {
+        console.log(`⏱️  [RUN:${run.id}] Phase B: Soft time limit reached (${elapsed}ms), stopping to avoid timeout`);
+        break;
+      }
+
+      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} - Querying for pending items (elapsed: ${elapsed}ms)`);
 
       // Get next batch of pending items
       const pendingItems = await prisma.import_email_items.findMany({
@@ -230,7 +271,7 @@ export async function POST(req: NextRequest) {
       for (const item of batch) {
         console.log(`📧 [RUN:${run.id}] Phase B: Processing item ${item.id} (external_message_id: ${item.external_message_id.substring(0, 20)}...)`);
 
-        await processEmailItem(item, {
+        const result = await processEmailItem(item, {
           provider,
           jobId: run.job_id,
           runId: run.id
@@ -238,9 +279,19 @@ export async function POST(req: NextRequest) {
 
         console.log(`✅ [RUN:${run.id}] Phase B: Item ${item.id} processed`);
         processedCount++;
+
+        // Track GPT failures for retry
+        if (result.success && !result.gptSuccess && result.resumeId && jobContext) {
+          console.log(`📋 [RUN:${run.id}] Adding resume ${result.resumeId} to GPT retry queue`);
+          gptRetryQueue.push({
+            itemId: item.id,
+            resumeId: result.resumeId,
+            jobContext
+          });
+        }
       }
 
-      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} complete - ${processedCount} items processed so far`);
+      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} complete - ${processedCount} items processed, ${gptRetryQueue.length} in retry queue`);
 
       // Update progress after each batch
       console.log(`📊 [RUN:${run.id}] Phase B: Updating progress...`);
@@ -271,6 +322,46 @@ export async function POST(req: NextRequest) {
         console.warn(`⚠️  [RUN:${run.id}] Failed to update progress (non-fatal):`, progressError.message);
         // Continue processing - progress update failure is not critical
       }
+    }
+
+    // Phase C: Retry failed GPT calls if we have time
+    console.log(`🔄 [RUN:${run.id}] Phase C: GPT retry phase - ${gptRetryQueue.length} items in queue`);
+
+    let retriedCount = 0;
+    let retrySuccessCount = 0;
+
+    if (gptRetryQueue.length > 0) {
+      for (const retryItem of gptRetryQueue) {
+        const elapsed = Date.now() - startTime;
+        const remaining = HARD_TIME_LIMIT_MS - elapsed;
+
+        // Check if we have enough time for retry
+        if (remaining < MIN_TIME_FOR_RETRY_MS) {
+          console.log(`⏱️  [RUN:${run.id}] Phase C: Not enough time for retry (${remaining}ms left), leaving ${gptRetryQueue.length - retriedCount} items for batch API`);
+          break;
+        }
+
+        console.log(`🔄 [RUN:${run.id}] Phase C: Retrying GPT for resume ${retryItem.resumeId} (${remaining}ms remaining)`);
+        retriedCount++;
+
+        const success = await tryGPTParsing(
+          retryItem.resumeId,
+          retryItem.jobContext,
+          GPT_TIMEOUT_RETRY_MS,
+          run.id
+        );
+
+        if (success) {
+          retrySuccessCount++;
+          console.log(`✅ [RUN:${run.id}] Phase C: GPT retry successful for resume ${retryItem.resumeId}`);
+        } else {
+          console.log(`⚠️  [RUN:${run.id}] Phase C: GPT retry failed for resume ${retryItem.resumeId} - leaving for batch API`);
+        }
+      }
+
+      const finalElapsed = Date.now() - startTime;
+      console.log(`✅ [RUN:${run.id}] Phase C: Complete - ${retrySuccessCount}/${retriedCount} retries successful (${finalElapsed}ms total elapsed)`);
+      console.log(`📊 [RUN:${run.id}] Phase C: GPT success rate: ${retrySuccessCount + processedCount - gptRetryQueue.length}/${processedCount} (${((retrySuccessCount + processedCount - gptRetryQueue.length) / processedCount * 100).toFixed(1)}%)`);
     }
 
     // Check if all items completed (with retry for connection issues)

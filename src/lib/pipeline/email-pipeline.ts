@@ -28,6 +28,8 @@ export interface PipelineResult {
   success: boolean;
   step: string; // Last completed step
   error?: string;
+  gptSuccess?: boolean; // Whether GPT parsing succeeded
+  resumeId?: number; // Resume ID for retry queue
 }
 
 /**
@@ -248,6 +250,8 @@ export async function processEmailItem(
     }
 
     // Step 5: AI processing (optional)
+    let gptSuccess = false;
+
     if (step === 'parsed' && process.env.PARSE_ON_IMPORT === 'true') {
       // Get resume ID if not in memory
       if (!resumeId!) {
@@ -284,12 +288,11 @@ export async function processEmailItem(
           ]);
 
           console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] GPT parsing completed`);
+          gptSuccess = true;
         } catch (error: any) {
-          // Log but don't fail - parsing can be retried later via /api/resumes/parse-missing
-          console.warn(`⚠️  [RUN:${runId}] [ITEM:${itemId}] GPT parsing failed (non-fatal):`, error.message);
-
-          // Continue without GPT parsing - resume is still imported
-          // User can parse later via batch API
+          // Log but don't fail - parsing can be retried later
+          console.warn(`⚠️  [RUN:${runId}] [ITEM:${itemId}] GPT parsing failed (will retry):`, error.message);
+          gptSuccess = false;
         }
       }
 
@@ -316,7 +319,12 @@ export async function processEmailItem(
       await updateItemStatus(itemId, 'completed', step);
     }
 
-    return { success: true, step };
+    return {
+      success: true,
+      step,
+      gptSuccess,
+      resumeId
+    };
 
   } catch (error: any) {
     console.error(`❌ [RUN:${runId}] [ITEM:${itemId}] Pipeline error:`, error);
@@ -339,6 +347,32 @@ export async function processEmailItem(
 }
 
 // Helper functions
+
+/**
+ * Try GPT parsing with configurable timeout
+ * Returns true if successful, false if timeout/error
+ */
+export async function tryGPTParsing(
+  resumeId: number,
+  jobContext: { jobTitle: string; jobDescriptionShort: string },
+  timeoutMs: number,
+  runId: string
+): Promise<boolean> {
+  try {
+    await Promise.race([
+      parseAndScoreResume(resumeId, jobContext),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('GPT_TIMEOUT')), timeoutMs)
+      )
+    ]);
+
+    console.log(`✅ [RUN:${runId}] GPT parsing completed for resume ${resumeId} (${timeoutMs}ms timeout)`);
+    return true;
+  } catch (error: any) {
+    console.warn(`⚠️  [RUN:${runId}] GPT parsing failed for resume ${resumeId}: ${error.message}`);
+    return false;
+  }
+}
 
 function hashFileContent(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
