@@ -169,10 +169,14 @@ export async function listAttachments(messageId: string, mailboxUserId?: string)
   // URL-encode messageId to handle special characters
   const url = `/v1.0/users/${mailbox}/messages/${encodeURIComponent(messageId)}/attachments?$top=50`;
 
+  console.log(`📎 MS Graph: listAttachments - messageId: ${messageId.substring(0, 30)}... (length: ${messageId.length})`);
+  console.log(`📎 MS Graph: listAttachments - encoded URL: ${url.substring(0, 120)}...`);
+
   const response = await graphFetch(url);
 
   if (!response.ok) {
     const error = await response.text();
+    console.error(`📎 MS Graph: listAttachments failed - Status: ${response.status}, Error: ${error}`);
     throw new Error(`Failed to list attachments: ${response.status} ${error}`);
   }
 
