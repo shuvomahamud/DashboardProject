@@ -95,6 +95,12 @@ export async function POST(req: NextRequest) {
 
       // Create items for each message
       console.log(`📋 [RUN:${run.id}] Phase A: Creating ${messages.length} import items in database`);
+
+      // Log first message details for debugging
+      if (messages.length > 0) {
+        console.log(`📋 [RUN:${run.id}] Phase A: Sample message - externalId: ${messages[0].externalId}, receivedAt: ${messages[0].receivedAt}`);
+      }
+
       const items = messages.map(msg => ({
         run_id: run.id,
         job_id: run.job_id,
@@ -106,12 +112,27 @@ export async function POST(req: NextRequest) {
         attempts: 0
       }));
 
-      const createResult = await prisma.import_email_items.createMany({
-        data: items,
-        skipDuplicates: true
-      });
+      console.log(`📋 [RUN:${run.id}] Phase A: Mapped ${items.length} items, calling createMany...`);
 
-      console.log(`📋 [RUN:${run.id}] Phase A: Inserted ${createResult.count} items (${items.length - createResult.count} duplicates skipped)`);
+      try {
+        const createResult = await prisma.import_email_items.createMany({
+          data: items,
+          skipDuplicates: true
+        });
+
+        console.log(`📋 [RUN:${run.id}] Phase A: createMany returned count: ${createResult.count}`);
+        console.log(`📋 [RUN:${run.id}] Phase A: Inserted ${createResult.count} items (${items.length - createResult.count} duplicates skipped)`);
+
+        // Verify items were actually inserted
+        const verifyCount = await prisma.import_email_items.count({
+          where: { run_id: run.id }
+        });
+        console.log(`📋 [RUN:${run.id}] Phase A: Verification - Found ${verifyCount} items in database for this run`);
+
+      } catch (error: any) {
+        console.error(`❌ [RUN:${run.id}] Phase A: Failed to insert items:`, error);
+        throw error;
+      }
 
       // Update run with total
       await prisma.import_email_runs.update({
