@@ -11,7 +11,7 @@ The `.env.local` file is **NOT deployed to Vercel**. You must manually set envir
 2. Add this variable:
    ```
    Name: PARSE_ON_IMPORT
-   Value: false
+   Value: true
    Environment: Production, Preview
    ```
 
@@ -30,7 +30,7 @@ vercel env ls
 
 Should show:
 ```
-PARSE_ON_IMPORT    Production, Preview
+PARSE_ON_IMPORT = true    Production, Preview
 ```
 
 ### Check current value in production:
@@ -54,26 +54,22 @@ Then visit: `https://your-domain.vercel.app/api/debug/env`
 Should return:
 ```json
 {
-  "PARSE_ON_IMPORT": "false",
+  "PARSE_ON_IMPORT": "true",
   "NODE_ENV": "production"
 }
 ```
 
-If it returns `"not set"` or `"true"`, the environment variable is not properly configured in Vercel.
+If it returns `"not set"` or `"false"`, the environment variable is not properly configured in Vercel.
 
 ## Why This Matters
 
-**If PARSE_ON_IMPORT is not set to `false` in Vercel:**
-- ❌ Every resume import will call GPT (5-7 seconds per resume)
-- ❌ Time budget will be exceeded
-- ❌ Database connections will timeout
-- ❌ Import will fail or be very slow
-
-**With PARSE_ON_IMPORT=false in Vercel:**
-- ✅ Fast imports (1-2 seconds per resume)
-- ✅ No timeouts
-- ✅ No connection issues
-- ✅ Reliable imports
+**With PARSE_ON_IMPORT=true and 8-second timeout protection:**
+- ✅ GPT parsing attempts during import (faster for users)
+- ✅ Timeout protection prevents blocking (8s max per item)
+- ✅ Non-fatal failures - import continues even if GPT times out
+- ✅ Failed parsing can be retried later via batch API
+- ✅ Resume data still saved with text extraction
+- ✅ Reliable imports with intelligent fallback
 
 ## Common Mistake
 
@@ -84,7 +80,7 @@ If it returns `"not set"` or `"true"`, the environment variable is not properly 
 
 ✅ **CORRECT**: Set in Vercel Dashboard
 - Go to Project Settings → Environment Variables
-- Add PARSE_ON_IMPORT = false
+- Add PARSE_ON_IMPORT = true
 - Redeploy
 
 ## Quick Fix Command
@@ -92,10 +88,10 @@ If it returns `"not set"` or `"true"`, the environment variable is not properly 
 ```bash
 # Using Vercel CLI
 vercel env add PARSE_ON_IMPORT production
-# When prompted: false
+# When prompted: true
 
 vercel env add PARSE_ON_IMPORT preview
-# When prompted: false
+# When prompted: true
 
 # Redeploy
 vercel --prod

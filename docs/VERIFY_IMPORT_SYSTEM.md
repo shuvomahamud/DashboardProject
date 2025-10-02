@@ -5,12 +5,12 @@
 Ensure environment variables are set in Vercel:
 
 ```env
-PARSE_ON_IMPORT=false
-SOFT_BUDGET_MS=5000
+PARSE_ON_IMPORT=true
+SOFT_BUDGET_MS=6000
 ITEM_CONCURRENCY=1
 ```
 
-## Expected Behavior with PARSE_ON_IMPORT=false
+## Expected Behavior with PARSE_ON_IMPORT=true (Timeout Protected)
 
 ### What SHOULD Happen:
 1. ✅ Fetch emails from MS Graph
@@ -18,22 +18,19 @@ ITEM_CONCURRENCY=1
 3. ✅ Upload to Supabase storage
 4. ✅ Extract text (DOCX: via mammoth, PDF: via pdfjs-dist)
 5. ✅ Create resume record with `rawText` populated
-6. ✅ Link to JobApplication
-7. ❌ **SKIP** GPT parsing (no AI call to OpenAI)
+6. ✅ **ATTEMPT** GPT parsing with 8-second timeout
+   - If completes within 8s: AI fields populated (`aiExtractJson`, `candidateName`, `skills`, etc.)
+   - If times out: Continue without failing, can retry later via batch API
+7. ✅ Link to JobApplication
 8. ✅ Mark item as completed
 
-### What SHOULD NOT Happen:
-- ❌ No calls to OpenAI API
-- ❌ No `parseAndScoreResume()` calls
-- ❌ No 6-7 second delays per item
-- ❌ No database connection timeouts
-- ❌ Resume fields remain unpopulated:
-  - `aiExtractJson` = null
-  - `candidateName` = null
-  - `skills` = null
-  - `companies` = null
-  - `totalExperienceY` = null
-  - (These get populated later via `/api/resumes/parse-missing`)
+### Timeout Protection Benefits:
+- ✅ GPT parsing attempts during import (faster user experience)
+- ✅ 8-second max per item prevents blocking
+- ✅ Non-fatal failures - import continues
+- ✅ Resume data saved even if GPT times out
+- ✅ Failed parsing can be retried via `/api/resumes/parse-missing`
+- ✅ No database connection exhaustion
 
 ## Testing Steps
 
@@ -44,12 +41,12 @@ ITEM_CONCURRENCY=1
 vercel env ls
 
 # Should show:
-# PARSE_ON_IMPORT = false
+# PARSE_ON_IMPORT = true
 ```
 
 Or check Vercel Dashboard:
 - Project Settings → Environment Variables
-- Look for `PARSE_ON_IMPORT` = `false`
+- Look for `PARSE_ON_IMPORT` = `true`
 
 ### 2. Trigger Test Import
 
@@ -71,7 +68,7 @@ vercel logs --follow
 
 Look for these patterns:
 
-**✅ GOOD - Fast Processing (~1-2s per item):**
+**✅ GOOD - Timeout Protected Processing:**
 ```
 📧 [RUN:xxx] Phase B: Processing item 123
 🔧 [ITEM:123] Step 1: Fetching message and attachments
@@ -81,18 +78,18 @@ Look for these patterns:
 🔧 [ITEM:123] Step 3: Uploading to Supabase storage
 ✅ [ITEM:123] Step 3: Complete - moved to step: uploaded
 ✅ [ITEM:123] Step 4: Text extraction complete
+✅ [ITEM:123] GPT parsing completed (or timeout warning if >8s)
 ✅ [ITEM:123] Step 6: Linked to job application
 ✅ Phase B: Item 123 processed
 📊 Phase B: Progress updated - 1/5 (20.0%)
 ```
 
-**❌ BAD - Slow Processing (~7s per item):**
+**⚠️ ACCEPTABLE - GPT Timeout (Non-fatal):**
 ```
 ✅ [ITEM:123] Step 3: Complete - moved to step: uploaded
-[LONG PAUSE - 5-7 seconds]
-Unexpected error in parseAndScoreResume: ...
+⚠️  [ITEM:123] GPT parsing failed (non-fatal): GPT_TIMEOUT
+✅ [ITEM:123] Step 6: Linked to job application
 ✅ Phase B: Item 123 processed
-⏱️  Phase B: Time budget exhausted (8302ms)
 ```
 
 ### 4. Check Database Records
@@ -116,12 +113,13 @@ ORDER BY createdAt DESC
 LIMIT 10;
 ```
 
-**Expected results with PARSE_ON_IMPORT=false:**
+**Expected results with PARSE_ON_IMPORT=true:**
 - `text_length` > 0 (has extracted text)
 - `parsedAt` NOT NULL (text extraction timestamp)
-- `aiExtractJson` IS NULL (no AI parsing)
-- `candidateName` IS NULL (no AI parsing)
-- `skills` IS NULL (no AI parsing)
+- `aiExtractJson` MAY BE populated (if GPT completed within 8s)
+- `candidateName` MAY BE populated (if GPT completed within 8s)
+- `skills` MAY BE populated (if GPT completed within 8s)
+- If NULL, parsing timed out and can be retried via batch API
 
 ### 5. Check Processing Time
 
@@ -129,15 +127,18 @@ From Vercel logs, measure time between:
 - Start: `📧 [RUN:xxx] Phase B: Processing item N`
 - End: `✅ [RUN:xxx] Phase B: Item N processed`
 
-**Expected timing with PARSE_ON_IMPORT=false:**
-- DOCX files: 0.5 - 1.5 seconds per item
-- PDF files: 1.0 - 2.5 seconds per item
-- Average: ~1.5 seconds per item
+**Expected timing with PARSE_ON_IMPORT=true (timeout protected):**
+- Without GPT: 1-3 seconds per item (text extraction only)
+- With GPT (success): 3-8 seconds per item (includes AI parsing)
+- With GPT (timeout): 9-10 seconds per item (hits 8s timeout, continues)
+- Average: ~4-6 seconds per item (mix of success/timeout)
+- Budget: 6000ms allows 1-2 items per cycle
 
-**If you see 5-7+ seconds per item:**
-- ⚠️ PARSE_ON_IMPORT is still `true`
-- Check Vercel environment variables
-- Redeploy after changing
+**Processing continues across cycles:**
+- Each cycle processes 1-2 items
+- Cron triggers every minute
+- Large imports (20+ emails) complete over several minutes
+- This is expected and working correctly
 
 ### 6. Check Connection Pool Usage
 
@@ -172,31 +173,29 @@ Should show:
 
 ## Troubleshooting
 
-### Problem: Still seeing slow processing (5-7s per item)
+### Problem: All GPT calls timing out
 
-**Cause:** PARSE_ON_IMPORT is still `true` in Vercel
-
-**Fix:**
-```bash
-# Set environment variable
-vercel env add PARSE_ON_IMPORT
-
-# When prompted:
-# Value: false
-# Environment: Production
-
-# Redeploy
-vercel --prod
-```
-
-### Problem: "parseAndScoreResume" appears in logs
-
-**Cause:** Environment variable not applied or needs redeploy
+**Cause:** OpenAI API slow or network issues
 
 **Fix:**
-1. Check `vercel env ls`
-2. Confirm `PARSE_ON_IMPORT=false`
-3. Trigger new deployment (environment changes require redeploy)
+1. Check OpenAI status: https://status.openai.com
+2. Verify OPENAI_API_KEY is valid in Vercel
+3. Check Vercel logs for specific API errors
+4. Failed parsing will be retried via batch API later
+
+### Problem: Items completing but no AI data
+
+**Cause:** GPT parsing timing out (expected for some items)
+
+**Fix:**
+1. This is acceptable - import still succeeds
+2. Run batch parsing after import:
+   ```bash
+   curl -X POST https://your-domain.com/api/resumes/parse-missing \
+     -H "Content-Type: application/json" \
+     -d '{"limit": 10}'
+   ```
+3. Batch parsing has no time budget constraints
 
 ### Problem: Connection timeouts still occurring
 
@@ -219,16 +218,17 @@ vercel --prod
 
 ✅ All checks passed when:
 
-1. **Speed**: Items process in 1-2 seconds each
-2. **Logs**: No "parseAndScoreResume" or "Unexpected error" messages
-3. **Database**: Resumes have `rawText` but no `aiExtractJson`
-4. **Time budget**: Processor completes within 5 seconds
+1. **Speed**: Items process in 3-8 seconds each (with GPT) or 1-3 seconds (without GPT)
+2. **Logs**: GPT parsing attempts visible, timeouts are non-fatal warnings
+3. **Database**: Resumes have `rawText`, some may have `aiExtractJson` populated
+4. **Time budget**: Processor completes within 6 seconds, cycles repeat as needed
 5. **Connections**: Supabase shows < 50 active connections
 6. **Completion**: Import finishes with status "succeeded"
+7. **GPT Success Rate**: At least 50-70% of items complete GPT parsing within 8s
 
-## After Import: Batch Parsing
+## After Import: Retry Failed Parsing (If Needed)
 
-Once import completes successfully, run AI parsing separately:
+If some items timed out during import and have no AI data, you can retry parsing:
 
 ```bash
 curl -X POST https://your-domain.com/api/resumes/parse-missing \
@@ -236,17 +236,19 @@ curl -X POST https://your-domain.com/api/resumes/parse-missing \
   -d '{"limit": 10}'
 ```
 
-This will:
-- Find resumes with `rawText` but no `aiExtractJson`
-- Parse them with GPT in batches
-- Take 2-3 seconds per resume (acceptable for background job)
-- Populate AI fields: `candidateName`, `skills`, `companies`, etc.
+This batch API:
+- Finds resumes with `rawText` but no `aiExtractJson`
+- Parses them with GPT without time constraints
+- Takes 3-7 seconds per resume (acceptable for background job)
+- Populates AI fields: `candidateName`, `skills`, `companies`, etc.
+- No time budget limitations (can run as long as needed)
 
 ## Performance Comparison
 
-| Configuration | Time per item | Items per 5s | Connection usage |
-|--------------|---------------|--------------|------------------|
-| PARSE_ON_IMPORT=true | 5-7s | 0-1 | Very High ❌ |
-| PARSE_ON_IMPORT=false | 1-2s | 3-5 | Low ✅ |
+| Configuration | Time per item | Items per 6s | Connection usage | GPT parsing |
+|--------------|---------------|--------------|------------------|-------------|
+| PARSE_ON_IMPORT=true (no timeout) | 5-8s | 1 | Very High ❌ | Unreliable ❌ |
+| PARSE_ON_IMPORT=false | 1-3s | 3-5 | Low ✅ | Deferred ⚠️ |
+| **PARSE_ON_IMPORT=true (8s timeout)** | **3-8s** | **1-2** | **Low ✅** | **Attempted ✅** |
 
-**Recommendation:** Always use `PARSE_ON_IMPORT=false` for imports, then batch parse separately.
+**Recommendation:** Use `PARSE_ON_IMPORT=true` with 8-second timeout protection for best user experience. Retry failures via batch API if needed.

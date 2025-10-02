@@ -274,7 +274,23 @@ export async function processEmailItem(
             : job.description
         };
 
-        await parseAndScoreResume(resumeId, jobContext);
+        try {
+          // Parse with timeout to prevent blocking
+          await Promise.race([
+            parseAndScoreResume(resumeId, jobContext),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('GPT_TIMEOUT')), 8000)
+            )
+          ]);
+
+          console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] GPT parsing completed`);
+        } catch (error: any) {
+          // Log but don't fail - parsing can be retried later via /api/resumes/parse-missing
+          console.warn(`⚠️  [RUN:${runId}] [ITEM:${itemId}] GPT parsing failed (non-fatal):`, error.message);
+
+          // Continue without GPT parsing - resume is still imported
+          // User can parse later via batch API
+        }
       }
 
       step = 'gpt';
