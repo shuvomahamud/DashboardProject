@@ -74,30 +74,22 @@ export async function POST(req: NextRequest) {
 
     // Kick off processor directly instead of via HTTP
     // This avoids network issues with preview deployment URLs
-    console.log(`🔄 [RUN:${enqueued.id}] Triggering processor directly`);
+    console.log(`🔄 [RUN:${enqueued.id}] Triggering processor`);
 
-    const processPromise = processImport(req).then(res => {
+    // Always await the processor to ensure it runs to completion
+    // The processor has its own time budget and will return when done or time's up
+    try {
+      await processImport(req);
       console.log(`✅ [RUN:${enqueued.id}] Processor completed`);
-      return res;
-    }).catch(err => {
+    } catch (err) {
       console.error(`❌ [RUN:${enqueued.id}] Processor error:`, err);
-      // Don't throw - let the cron retry on next cycle
-    });
-
-    // Use waitUntil if available (Vercel), otherwise fire-and-forget
-    if (typeof req.waitUntil === 'function') {
-      console.log(`🔄 [RUN:${enqueued.id}] Using waitUntil for processor`);
-      req.waitUntil(processPromise);
-    } else {
-      console.log(`🔄 [RUN:${enqueued.id}] Fire-and-forget processor`);
-      // Fire and forget - don't await
-      processPromise;
+      // Don't throw - run is already marked as running, cron will retry
     }
 
     return NextResponse.json({
       status: 'dispatched',
       runId: enqueued.id,
-      message: 'Run promoted to running. Processor triggered.'
+      message: 'Run promoted to running. Processor completed.'
     });
 
   } catch (error: any) {
