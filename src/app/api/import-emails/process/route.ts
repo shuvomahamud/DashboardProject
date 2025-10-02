@@ -250,48 +250,70 @@ export async function POST(req: NextRequest) {
 
       console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} complete - ${processedCount} items processed in this slice`);
 
-      // Update progress
-      console.log(`📊 [RUN:${run.id}] Phase B: Calculating progress...`);
-      const totalProcessed = await prisma.import_email_items.count({
-        where: {
-          run_id: run.id,
-          status: { in: ['completed', 'failed'] }
-        }
-      });
-
-      const progress = run.total_messages > 0
-        ? totalProcessed / run.total_messages
-        : 0;
-
-      await prisma.import_email_runs.update({
-        where: { id: run.id },
-        data: {
-          processed_messages: totalProcessed,
-          progress
-        }
-      });
-
-      console.log(`📊 [RUN:${run.id}] Phase B: Progress updated - ${totalProcessed}/${run.total_messages} (${(progress * 100).toFixed(1)}%)`);
-
-      // Check if time budget exhausted
+      // Check if time budget exhausted BEFORE progress update
       if (!budget.shouldContinue()) {
-        console.log(`⏱️  [RUN:${run.id}] Phase B: Time budget exhausted (${budget.elapsed()}ms), stopping slice`);
+        console.log(`⏱️  [RUN:${run.id}] Phase B: Time budget exhausted (${budget.elapsed()}ms), skipping progress update`);
         break;
+      }
+
+      // Update progress (with retry for connection issues)
+      console.log(`📊 [RUN:${run.id}] Phase B: Calculating progress...`);
+
+      try {
+        const totalProcessed = await prisma.import_email_items.count({
+          where: {
+            run_id: run.id,
+            status: { in: ['completed', 'failed'] }
+          }
+        });
+
+        const progress = run.total_messages > 0
+          ? totalProcessed / run.total_messages
+          : 0;
+
+        await prisma.import_email_runs.update({
+          where: { id: run.id },
+          data: {
+            processed_messages: totalProcessed,
+            progress
+          }
+        });
+
+        console.log(`📊 [RUN:${run.id}] Phase B: Progress updated - ${totalProcessed}/${run.total_messages} (${(progress * 100).toFixed(1)}%)`);
+      } catch (progressError: any) {
+        console.warn(`⚠️  [RUN:${run.id}] Failed to update progress (non-fatal):`, progressError.message);
+        // Continue processing - progress update failure is not critical
       }
     }
 
-    // Check if all items completed
-    const [pendingCount, completedCount, failedCount] = await Promise.all([
-      prisma.import_email_items.count({
-        where: { run_id: run.id, status: 'pending' }
-      }),
-      prisma.import_email_items.count({
-        where: { run_id: run.id, status: 'completed' }
-      }),
-      prisma.import_email_items.count({
-        where: { run_id: run.id, status: 'failed' }
-      })
-    ]);
+    // Check if all items completed (with retry for connection issues)
+    let pendingCount = 0;
+    let completedCount = 0;
+    let failedCount = 0;
+
+    try {
+      [pendingCount, completedCount, failedCount] = await Promise.all([
+        prisma.import_email_items.count({
+          where: { run_id: run.id, status: 'pending' }
+        }),
+        prisma.import_email_items.count({
+          where: { run_id: run.id, status: 'completed' }
+        }),
+        prisma.import_email_items.count({
+          where: { run_id: run.id, status: 'failed' }
+        })
+      ]);
+    } catch (countError: any) {
+      console.error(`❌ [RUN:${run.id}] Failed to count items:`, countError.message);
+
+      // Return partial status - cron will retry
+      return NextResponse.json({
+        status: 'error',
+        runId: run.id,
+        error: 'Database connection lost during progress check',
+        elapsed: budget.elapsed()
+      }, { status: 500 });
+    }
 
     if (pendingCount === 0) {
       // All items processed - determine final status
