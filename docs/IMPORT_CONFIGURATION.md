@@ -24,17 +24,58 @@ PARSE_ON_IMPORT=false
 
 ### Batch Parsing After Import
 
+**Prerequisites:**
+```env
+AI_FEATURES=on  # Required for batch parsing API
+```
+
 Run GPT parsing as a separate batch job after import completes:
 
 ```bash
-# Parse all unparsed resumes
-curl -X POST https://your-domain.com/api/resumes/parse-missing
+# Parse up to 10 unparsed resumes (default)
+curl -X POST https://your-domain.com/api/resumes/parse-missing \
+  -H "Content-Type: application/json"
+
+# Parse up to 50 resumes in one batch
+curl -X POST https://your-domain.com/api/resumes/parse-missing \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 50}'
 ```
 
-Or trigger from UI:
-- Go to Jobs page
-- Click on job
-- Click "Parse Missing Resumes" button
+**API Response:**
+```json
+{
+  "message": "Batch processing complete: 10/10 succeeded",
+  "attempted": 10,
+  "succeeded": 10,
+  "failed": 0,
+  "totalTokensUsed": 25000,
+  "results": [
+    {
+      "resumeId": 123,
+      "success": true,
+      "candidateName": "John Doe",
+      "tokensUsed": 2500
+    }
+  ],
+  "stats": {
+    "total": 100,
+    "parsed": 10,
+    "unparsed": 90
+  },
+  "budget": {
+    "used": 25000,
+    "limit": 1000000,
+    "remaining": 975000
+  }
+}
+```
+
+**Features:**
+- Processes resumes with extracted text but no AI parsing
+- Respects daily token budget (stops if limit reached)
+- Returns detailed results per resume
+- 500ms delay between requests to avoid API rate limits
 
 ## Other Configuration
 
