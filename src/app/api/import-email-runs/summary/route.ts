@@ -9,6 +9,11 @@ import prisma from '@/lib/prisma';
  * - enqueued: FIFO queue
  * - recentDone: last 3 completed/failed/canceled
  */
+
+// Throttle logging to once every 5 minutes
+let lastLogTime = 0;
+const LOG_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
 export async function GET() {
   try {
     const [inProgressRuns, enqueuedRuns, recentDoneRuns] = await Promise.all([
@@ -72,7 +77,13 @@ export async function GET() {
     });
 
   } catch (error: any) {
-    // Silently fail - this is polled frequently by UI
+    // Throttle error logging - only log once every 5 minutes
+    const now = Date.now();
+    if (now - lastLogTime >= LOG_INTERVAL) {
+      console.error('Error fetching import summary:', error);
+      lastLogTime = now;
+    }
+
     return NextResponse.json(
       { error: 'Failed to fetch import queue status' },
       { status: 500 }
