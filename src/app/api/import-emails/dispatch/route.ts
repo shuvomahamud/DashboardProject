@@ -19,10 +19,6 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    const timestamp = new Date().toISOString();
-    console.log(`🔄 [${timestamp}] Vercel Cron: Dispatcher invoked`);
-    console.log('🕐 This log confirms the cron job is running on Vercel');
-
     // Check if any run is already running
     const running = await prisma.import_email_runs.findFirst({
       where: { status: 'running' },
@@ -30,7 +26,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (running) {
-      console.log(`⏸️  [RUN:${running.id}] Already running`);
+      // Silently return - no need to log every cron check
       return NextResponse.json({
         status: 'already_running',
         runId: running.id
@@ -45,7 +41,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!enqueued) {
-      console.log('✅ No work to do');
+      // Silently return - no work to do
       return NextResponse.json({
         status: 'no_work'
       });

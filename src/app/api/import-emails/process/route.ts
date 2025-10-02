@@ -69,16 +69,32 @@ export async function POST(req: NextRequest) {
 
     // Phase A: Enumerate emails (only if total_messages = 0)
     if (run.total_messages === 0) {
-      console.log(`📋 [RUN:${run.id}] Phase A: Enumerating emails`);
+      console.log(`📋 [RUN:${run.id}] Phase A: Starting email enumeration`);
+      console.log(`📋 [RUN:${run.id}] Phase A: Calling provider.listMessages with search="${run.search_text}", limit=${run.max_emails || 5000}`);
 
       const messages = await provider.listMessages({
         jobTitle: run.search_text,
         limit: run.max_emails || 5000
       });
 
-      console.log(`📧 [RUN:${run.id}] Found ${messages.length} messages`);
+      console.log(`📧 [RUN:${run.id}] Phase A: Provider returned ${messages.length} messages`);
+
+      if (messages.length === 0) {
+        console.log(`⚠️  [RUN:${run.id}] Phase A: No messages found - marking run as succeeded`);
+        await prisma.import_email_runs.update({
+          where: { id: run.id },
+          data: {
+            status: 'succeeded',
+            finished_at: new Date(),
+            progress: 1.0,
+            total_messages: 0
+          }
+        });
+        return NextResponse.json({ status: 'succeeded', runId: run.id });
+      }
 
       // Create items for each message
+      console.log(`📋 [RUN:${run.id}] Phase A: Creating ${messages.length} import items in database`);
       const items = messages.map(msg => ({
         run_id: run.id,
         job_id: run.job_id,
@@ -90,12 +106,12 @@ export async function POST(req: NextRequest) {
         attempts: 0
       }));
 
-      if (items.length > 0) {
-        await prisma.import_email_items.createMany({
-          data: items,
-          skipDuplicates: true
-        });
-      }
+      const createResult = await prisma.import_email_items.createMany({
+        data: items,
+        skipDuplicates: true
+      });
+
+      console.log(`📋 [RUN:${run.id}] Phase A: Inserted ${createResult.count} items (${items.length - createResult.count} duplicates skipped)`);
 
       // Update run with total
       await prisma.import_email_runs.update({
@@ -103,33 +119,24 @@ export async function POST(req: NextRequest) {
         data: { total_messages: messages.length }
       });
 
-      console.log(`✅ [RUN:${run.id}] Created ${items.length} items`);
-
-      // If no messages, mark as completed
-      if (messages.length === 0) {
-        await prisma.import_email_runs.update({
-          where: { id: run.id },
-          data: {
-            status: 'succeeded',
-            finished_at: new Date(),
-            progress: 1.0
-          }
-        });
-
-        console.log(`✅ [RUN:${run.id}] No messages to process, marking as succeeded`);
-        return NextResponse.json({ status: 'succeeded', runId: run.id });
-      }
+      console.log(`✅ [RUN:${run.id}] Phase A: Complete - ${messages.length} messages ready for processing`);
     }
 
     // Phase B: Process items with time-boxed slicing
-    console.log(`⚙️  [RUN:${run.id}] Phase B: Processing items`);
+    console.log(`⚙️  [RUN:${run.id}] Phase B: Starting item processing`);
 
     // Reduce concurrency to 1 to avoid connection pool exhaustion
     // Each item processing may use multiple connections (fetch, update, etc.)
     const concurrency = parseInt(process.env.ITEM_CONCURRENCY || '1', 10);
+    console.log(`⚙️  [RUN:${run.id}] Phase B: Concurrency set to ${concurrency}`);
+
     let processedCount = 0;
+    let batchNumber = 0;
 
     while (budget.shouldContinue()) {
+      batchNumber++;
+      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} - Querying for pending items`);
+
       // Get next batch of pending items
       const pendingItems = await prisma.import_email_items.findMany({
         where: {
@@ -140,20 +147,25 @@ export async function POST(req: NextRequest) {
         take: concurrency * 2 // Fetch 2x concurrency for smoother batching
       });
 
+      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} - Found ${pendingItems.length} pending items`);
+
       if (pendingItems.length === 0) {
-        console.log(`✅ [RUN:${run.id}] No more pending items`);
+        console.log(`✅ [RUN:${run.id}] Phase B: No more pending items - processing complete`);
         break;
       }
 
-      console.log(`🔄 [RUN:${run.id}] Processing batch of ${Math.min(pendingItems.length, concurrency)} items`);
+      const batchSize = Math.min(pendingItems.length, concurrency);
+      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} - Processing ${batchSize} items`);
 
       // Process items with bounded concurrency
       const batch = pendingItems.slice(0, concurrency);
-      await mapWithConcurrency(batch, concurrency, async (item) => {
+      await mapWithConcurrency(batch, concurrency, async (item, index) => {
         if (!budget.shouldContinue()) {
-          console.log(`⏱️  [RUN:${run.id}] Time budget exhausted, stopping`);
+          console.log(`⏱️  [RUN:${run.id}] Phase B: Time budget exhausted, stopping`);
           return;
         }
+
+        console.log(`📧 [RUN:${run.id}] Phase B: Processing item ${item.id} (external_message_id: ${item.external_message_id.substring(0, 20)}...)`);
 
         await processEmailItem(item, {
           provider,
@@ -161,10 +173,14 @@ export async function POST(req: NextRequest) {
           runId: run.id
         });
 
+        console.log(`✅ [RUN:${run.id}] Phase B: Item ${item.id} processed`);
         processedCount++;
       });
 
+      console.log(`🔄 [RUN:${run.id}] Phase B: Batch ${batchNumber} complete - ${processedCount} items processed in this slice`);
+
       // Update progress
+      console.log(`📊 [RUN:${run.id}] Phase B: Calculating progress...`);
       const totalProcessed = await prisma.import_email_items.count({
         where: {
           run_id: run.id,
@@ -184,11 +200,11 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      console.log(`📊 [RUN:${run.id}] Progress: ${totalProcessed}/${run.total_messages} (${(progress * 100).toFixed(1)}%)`);
+      console.log(`📊 [RUN:${run.id}] Phase B: Progress updated - ${totalProcessed}/${run.total_messages} (${(progress * 100).toFixed(1)}%)`);
 
       // Check if time budget exhausted
       if (!budget.shouldContinue()) {
-        console.log(`⏱️  [RUN:${run.id}] Time budget exhausted (${budget.elapsed()}ms), stopping slice`);
+        console.log(`⏱️  [RUN:${run.id}] Phase B: Time budget exhausted (${budget.elapsed()}ms), stopping slice`);
         break;
       }
     }

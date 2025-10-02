@@ -41,20 +41,25 @@ export async function processEmailItem(
   const { id: itemId, externalMessageId, step: currentStep } = item;
 
   try {
+    console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Starting pipeline at step: ${currentStep}`);
     let step = currentStep;
 
     // Step 1: Fetch message and attachments
     if (step === 'none') {
+      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 1: Fetching message and attachments`);
       const { message, attachments } = await provider.getMessage(externalMessageId);
 
+      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 1: Found ${attachments.length} eligible attachments`);
+
       if (attachments.length === 0) {
-        // No eligible attachments - mark as completed
+        console.log(`⚠️  [RUN:${runId}] [ITEM:${itemId}] Step 1: No eligible attachments - marking as completed`);
         await updateItemStatus(itemId, 'completed', 'fetched');
         return { success: true, step: 'fetched' };
       }
 
       step = 'fetched';
       await updateItemStep(itemId, step);
+      console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] Step 1: Complete - moved to step: ${step}`);
     }
 
     // Step 2: Download and save file bytes
@@ -63,8 +68,11 @@ export async function processEmailItem(
     let attachmentMeta: { name: string; size: number; contentType: string };
 
     if (step === 'fetched') {
+      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 2: Downloading attachment bytes`);
       const { attachments } = await provider.getMessage(externalMessageId);
       const attachment = attachments[0]; // Process first eligible attachment
+
+      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 2: Processing attachment "${attachment.name}" (${attachment.size} bytes)`);
 
       fileBytes = await provider.getAttachmentBytes(externalMessageId, attachment.id);
       fileHash = hashFileContent(fileBytes);
@@ -73,6 +81,8 @@ export async function processEmailItem(
         size: attachment.size,
         contentType: attachment.contentType
       };
+
+      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 2: File hash: ${fileHash.substring(0, 16)}...`);
 
       // Check if resume already exists (deduplication)
       const existing = await prisma.resume.findFirst({
@@ -83,7 +93,7 @@ export async function processEmailItem(
       });
 
       if (existing) {
-        // Duplicate - link to job and mark complete
+        console.log(`⚠️  [RUN:${runId}] [ITEM:${itemId}] Step 2: Duplicate detected - linking to existing resume ${existing.id}`);
         await linkJobApplication(jobId, existing.id, externalMessageId);
         await updateItemStatus(itemId, 'completed', 'saved');
         return { success: true, step: 'saved' };
@@ -91,12 +101,16 @@ export async function processEmailItem(
 
       step = 'saved';
       await updateItemStep(itemId, step);
+      console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] Step 2: Complete - moved to step: ${step}`);
     }
 
     // Step 3: Upload to storage
     if (step === 'saved') {
+      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 3: Uploading to Supabase storage`);
+
       // Re-fetch if not in memory
       if (!fileBytes!) {
+        console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 3: Re-fetching attachment (not in memory)`);
         const { attachments } = await provider.getMessage(externalMessageId);
         const attachment = attachments[0];
         fileBytes = await provider.getAttachmentBytes(externalMessageId, attachment.id);
@@ -117,8 +131,11 @@ export async function processEmailItem(
         attachmentMeta!.contentType
       );
 
+      console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] Step 3: Uploaded to ${uploadResult.path}`);
+
       step = 'uploaded';
       await updateItemStep(itemId, step);
+      console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] Step 3: Complete - moved to step: ${step}`);
     }
 
     // Step 4: Parse text
