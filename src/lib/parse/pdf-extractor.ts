@@ -3,15 +3,42 @@
  * Works in Vercel Node.js runtime without native dependencies
  */
 
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+// Polyfill browser APIs that pdfjs-dist expects in Node.js
+if (typeof window === 'undefined') {
+  // @ts-ignore - DOMMatrix polyfill for coordinate transforms
+  globalThis.DOMMatrix = class DOMMatrix {
+    a: number; b: number; c: number; d: number; e: number; f: number;
 
-// Configure for Node.js environment
-// In server-side (Node.js), we don't need a worker
-// The library will fall back to synchronous mode
-if (typeof window === 'undefined' && (pdfjsLib as any).GlobalWorkerOptions) {
-  // Don't set workerSrc to anything - let it remain undefined for Node
-  // This prevents the "Invalid workerSrc type" error
+    constructor(init?: any) {
+      this.a = 1; this.b = 0; this.c = 0;
+      this.d = 1; this.e = 0; this.f = 0;
+    }
+
+    translate(tx: number, ty: number) { return this; }
+    scale(sx: number, sy?: number) { return this; }
+    rotate(angle: number) { return this; }
+    multiply(other: any) { return this; }
+    inverse() { return this; }
+    transformPoint(point: any) { return point; }
+  };
+
+  // @ts-ignore - Path2D polyfill (minimal, pdfjs might use for rendering)
+  globalThis.Path2D = class Path2D {
+    constructor(path?: any) {}
+    addPath(path: any) {}
+    closePath() {}
+    moveTo(x: number, y: number) {}
+    lineTo(x: number, y: number) {}
+    bezierCurveTo(cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number) {}
+    quadraticCurveTo(cpx: number, cpy: number, x: number, y: number) {}
+    arc(x: number, y: number, radius: number, startAngle: number, endAngle: number, counterclockwise?: boolean) {}
+    arcTo(x1: number, y1: number, x2: number, y2: number, radius: number) {}
+    ellipse(x: number, y: number, radiusX: number, radiusY: number, rotation: number, startAngle: number, endAngle: number, counterclockwise?: boolean) {}
+    rect(x: number, y: number, w: number, h: number) {}
+  };
 }
+
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 export interface PdfExtractionOptions {
   maxPages?: number;      // Hard cap on pages to extract (default: 15)
