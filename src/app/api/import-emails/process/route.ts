@@ -27,6 +27,29 @@ export async function POST(req: NextRequest) {
   try {
     console.log('⚙️  Processor invoked');
 
+    // Test database connectivity with retry
+    let dbReady = false;
+    for (let i = 0; i < 3; i++) {
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        dbReady = true;
+        break;
+      } catch (error: any) {
+        console.log(`⚠️  Database connectivity check failed (attempt ${i + 1}/3)`);
+        if (i < 2) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    if (!dbReady) {
+      console.error('❌ Database not reachable after 3 attempts');
+      return NextResponse.json({
+        status: 'error',
+        error: 'Database connection failed'
+      }, { status: 503 });
+    }
+
     // Get running run
     const run = await prisma.import_email_runs.findFirst({
       where: { status: 'running' },
@@ -114,24 +137,49 @@ export async function POST(req: NextRequest) {
 
       console.log(`📋 [RUN:${run.id}] Phase A: Mapped ${items.length} items, calling createMany...`);
 
-      try {
-        const createResult = await prisma.import_email_items.createMany({
-          data: items,
-          skipDuplicates: true
-        });
+      // Retry logic for database operations
+      let retries = 3;
+      let lastError: any = null;
 
-        console.log(`📋 [RUN:${run.id}] Phase A: createMany returned count: ${createResult.count}`);
-        console.log(`📋 [RUN:${run.id}] Phase A: Inserted ${createResult.count} items (${items.length - createResult.count} duplicates skipped)`);
+      while (retries > 0) {
+        try {
+          const createResult = await prisma.import_email_items.createMany({
+            data: items,
+            skipDuplicates: true
+          });
 
-        // Verify items were actually inserted
-        const verifyCount = await prisma.import_email_items.count({
-          where: { run_id: run.id }
-        });
-        console.log(`📋 [RUN:${run.id}] Phase A: Verification - Found ${verifyCount} items in database for this run`);
+          console.log(`📋 [RUN:${run.id}] Phase A: createMany returned count: ${createResult.count}`);
+          console.log(`📋 [RUN:${run.id}] Phase A: Inserted ${createResult.count} items (${items.length - createResult.count} duplicates skipped)`);
 
-      } catch (error: any) {
-        console.error(`❌ [RUN:${run.id}] Phase A: Failed to insert items:`, error);
-        throw error;
+          // Verify items were actually inserted
+          const verifyCount = await prisma.import_email_items.count({
+            where: { run_id: run.id }
+          });
+          console.log(`📋 [RUN:${run.id}] Phase A: Verification - Found ${verifyCount} items in database for this run`);
+
+          // Success - break out of retry loop
+          break;
+
+        } catch (error: any) {
+          lastError = error;
+          retries--;
+
+          const isConnectionError = error.code === 'P1001' || error.message?.includes('Can\'t reach database');
+          const isPoolError = error.message?.includes('Timed out fetching a new connection');
+
+          if ((isConnectionError || isPoolError) && retries > 0) {
+            const waitTime = (4 - retries) * 2000; // 2s, 4s, 6s
+            console.log(`⚠️  [RUN:${run.id}] Phase A: Database error, retrying in ${waitTime}ms (${retries} retries left)`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          } else {
+            console.error(`❌ [RUN:${run.id}] Phase A: Failed to insert items after ${3 - retries} attempts:`, error);
+            throw error;
+          }
+        }
+      }
+
+      if (retries === 0 && lastError) {
+        throw lastError;
       }
 
       // Update run with total

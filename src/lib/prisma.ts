@@ -5,7 +5,7 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 // Configure connection pool via DATABASE_URL query parameters
-// Format: postgresql://user:pass@host/db?connection_limit=10&pool_timeout=20
+// Format: postgresql://user:pass@host/db?connection_limit=15&pool_timeout=30&connect_timeout=10
 const getDatabaseUrl = () => {
   const baseUrl = process.env.DATABASE_URL || '';
 
@@ -14,9 +14,9 @@ const getDatabaseUrl = () => {
     return baseUrl;
   }
 
-  // Add connection pool params for email import concurrency
+  // Add connection pool params with increased limits and timeouts
   const separator = baseUrl.includes('?') ? '&' : '?';
-  return `${baseUrl}${separator}connection_limit=10&pool_timeout=20`;
+  return `${baseUrl}${separator}connection_limit=15&pool_timeout=30&connect_timeout=10`;
 };
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({
