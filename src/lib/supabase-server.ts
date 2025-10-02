@@ -18,8 +18,13 @@ if (!global.__supabaseLogged) {
   console.log('Supabase URL (masked):', supabaseUrl.slice(0, 25), '...');
   global.__supabaseLogged = true;
 
-  // Canary health check
-  fetch(`${supabaseUrl}/auth/v1/health`)
+  // Canary health check with API key
+  fetch(`${supabaseUrl}/auth/v1/health`, {
+    headers: {
+      'apikey': supabaseServiceRole,
+      'Authorization': `Bearer ${supabaseServiceRole}`
+    }
+  })
     .then(r => r.text())
     .then(text => console.log('Supabase health check:', text.slice(0, 50)))
     .catch(e => console.warn('Supabase health check failed:', e.message));
