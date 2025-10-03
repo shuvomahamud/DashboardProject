@@ -29,15 +29,13 @@ export async function POST(req: NextRequest) {
       // Continue processing the running run
       console.log(`🔄 [RUN:${running.id}] Continuing existing running import`);
 
-      // Call processor directly instead of HTTP to avoid connection errors
-      processImport(req).catch(err => {
-        console.error(`❌ [RUN:${running.id}] Processor trigger failed:`, err);
-      });
+      // Await processor to prevent Vercel from freezing un-awaited work
+      await processImport(req);
 
       return NextResponse.json({
         status: 'continuing',
         runId: running.id,
-        message: 'Continuing existing run. Processor triggered.'
+        message: 'Processor completed or stopped early in this slice.'
       });
     }
 
@@ -81,20 +79,15 @@ export async function POST(req: NextRequest) {
     console.log(`✅ [RUN:${enqueued.id}] Promoted to running`);
 
     // Trigger processor directly to avoid HTTP connection errors
-    // This allows dispatcher to return quickly while processor works independently
     console.log(`🔄 [RUN:${enqueued.id}] Triggering processor directly`);
 
-    // Fire off processor asynchronously - don't await
-    // The processor will call dispatcher again when it needs more time
-    processImport(req).catch(err => {
-      console.error(`❌ [RUN:${enqueued.id}] Processor trigger failed:`, err);
-      // Error is logged but not thrown - cron will retry on next cycle
-    });
+    // Await processor to prevent Vercel from freezing un-awaited work
+    await processImport(req);
 
     return NextResponse.json({
       status: 'dispatched',
       runId: enqueued.id,
-      message: 'Run promoted to running. Processor triggered.'
+      message: 'Processor completed or stopped early in this slice.'
     });
 
   } catch (error: any) {

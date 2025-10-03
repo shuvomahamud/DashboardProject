@@ -359,12 +359,8 @@ export async function tryGPTParsing(
   runId: string
 ): Promise<boolean> {
   try {
-    await Promise.race([
-      parseAndScoreResume(resumeId, jobContext),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('GPT_TIMEOUT')), timeoutMs)
-      )
-    ]);
+    // Pass timeout to parseAndScoreResume, which enforces it at the OpenAI SDK level
+    await parseAndScoreResume(resumeId, jobContext, false, timeoutMs);
 
     console.log(`✅ [RUN:${runId}] GPT parsing completed for resume ${resumeId} (${timeoutMs}ms timeout)`);
     return true;

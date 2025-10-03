@@ -338,7 +338,11 @@ RESUME_TEXT`;
 }
 
 // Main parsing function - single call to gpt-4o-mini with no fallback
-async function callOpenAIForParsing(jobContext: JobContext, redactedText: string): Promise<ParseResult> {
+async function callOpenAIForParsing(
+  jobContext: JobContext,
+  redactedText: string,
+  timeoutMs: number = 12000
+): Promise<ParseResult> {
   try {
     const model = process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini';
     const temperature = Number(process.env.OPENAI_TEMPERATURE || 0.1);
@@ -350,6 +354,7 @@ async function callOpenAIForParsing(jobContext: JobContext, redactedText: string
     console.log('\n=== OPENAI PROMPT DEBUG ===');
     console.log('Model:', model);
     console.log('Temperature:', temperature);
+    console.log('Timeout:', timeoutMs, 'ms');
     console.log('\n--- SYSTEM MESSAGE ---');
     console.log(systemMessage);
     console.log('\n--- USER MESSAGE ---');
@@ -370,7 +375,8 @@ async function callOpenAIForParsing(jobContext: JobContext, redactedText: string
         }
       ],
       response_format: { type: 'json_object' },
-      temperature
+      temperature,
+      timeout: timeoutMs  // Enforce timeout at OpenAI SDK level
       // No max_tokens override - let the API default handle it
     });
 
@@ -575,7 +581,8 @@ async function needsParsing(resumeId: number, textHash: string): Promise<boolean
 export async function parseAndScoreResume(
   resumeId: number,
   jobContext: JobContext,
-  force: boolean = false
+  force: boolean = false,
+  timeoutMs: number = 12000
 ): Promise<{ success: boolean; summary?: ParseSummary; error?: string }> {
   try {
     // Check if PARSE_ON_IMPORT is enabled
@@ -667,8 +674,8 @@ export async function parseAndScoreResume(
       console.log(`Truncated resume from ${redactedText.length} to ${processedText.length} chars to prevent timeout`);
     }
 
-    // Call OpenAI for parsing
-    const parseResult = await callOpenAIForParsing(jobContext, processedText);
+    // Call OpenAI for parsing with timeout
+    const parseResult = await callOpenAIForParsing(jobContext, processedText, timeoutMs);
 
     if (!parseResult.success) {
       // Mark parse failure with retry logic

@@ -3,6 +3,22 @@ import prisma from '@/lib/prisma';
 import { createEmailProvider } from '@/lib/providers/msgraph-provider';
 import { processEmailItem, tryGPTParsing } from '@/lib/pipeline/email-pipeline';
 
+// Configure Node.js networking for stability (IPv4 preference, reasonable timeouts)
+if (typeof globalThis !== 'undefined') {
+  try {
+    const { setGlobalDispatcher, Agent } = require('undici');
+    setGlobalDispatcher(new Agent({
+      connect: {
+        timeout: 10_000,  // 10s connection timeout
+        family: 4         // Prefer IPv4 to avoid IPv6 TLS issues
+      }
+    }));
+    console.log('✓ Undici global dispatcher configured (IPv4, 10s timeout)');
+  } catch (err) {
+    console.warn('⚠️  Failed to configure Undici dispatcher:', err);
+  }
+}
+
 /**
  * POST /api/import-emails/process
  *
@@ -10,24 +26,32 @@ import { processEmailItem, tryGPTParsing } from '@/lib/pipeline/email-pipeline';
  *
  * Three phases:
  * - Phase A: Enumerate emails from provider → create items (if total_messages = 0)
- * - Phase B: Process items with soft 50s time limit (10s safety buffer)
- * - Phase C: Retry failed GPT calls if time permits
+ * - Phase B: Process items (stop early to leave time for Phase C)
+ * - Phase C: Retry failed GPT calls if time permits (needs 18s minimum)
  *
  * Time budget strategy:
- * - Soft limit: 50s (allows safe processing of ~7-8 items)
- * - Hard limit: 60s (Vercel maxDuration & gateway timeout)
- * - GPT timeout: 8s first attempt, 10s retry
+ * - Hard limit: 58s (stay under 60s Vercel gateway timeout)
+ * - Soft limit: 38s (stop Phase B to guarantee 18s+ for Phase C retries)
+ * - GPT timeout: 12s first attempt, 15s retry
  * - Target: 90-95% GPT success rate with retry queue
+ *
+ * Environment variables:
+ * - NODE_OPTIONS=--dns-result-order=ipv4first (recommended for stability)
  */
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel max function duration
+export const preferredRegion = 'iad1'; // US East (close to Supabase)
 
-// Time budget constants
-const SOFT_TIME_LIMIT_MS = 50000; // 50s - stop processing new items
-const HARD_TIME_LIMIT_MS = 60000; // 60s - absolute limit (gateway timeout)
-const GPT_TIMEOUT_FIRST_MS = 12000; // 8s - first attempt
-const GPT_TIMEOUT_RETRY_MS = 15000; // 10s - retry attempt
-const MIN_TIME_FOR_RETRY_MS = 18000; // 12s - minimum time needed for retry (10s + 2s overhead)
+// Time budget constants tuned for 12s/15s/18s GPT timings
+const GPT_TIMEOUT_FIRST_MS = 12000;  // 12s - first attempt
+const GPT_TIMEOUT_RETRY_MS = 15000;  // 15s - retry attempt
+const MIN_TIME_FOR_RETRY_MS = 18000; // 18s - minimum time needed for retry (15s + 3s overhead)
+const HARD_TIME_LIMIT_MS = 58000;    // 58s - stay under 60s gateway timeout
+const SOFT_TIME_LIMIT_MS = HARD_TIME_LIMIT_MS - MIN_TIME_FOR_RETRY_MS - 2000; // 38s - stop Phase B early
+
+// Time helpers
+const since = (t: number) => Date.now() - t;
+const timeLeft = (start: number) => HARD_TIME_LIMIT_MS - since(start);
 
 interface GPTRetryItem {
   itemId: bigint;
@@ -109,13 +133,17 @@ export async function POST(req: NextRequest) {
 
     // Phase A: Enumerate emails (only if total_messages = 0)
     if (run.total_messages === 0) {
-      console.log(`📋 [RUN:${run.id}] Phase A: Starting email enumeration`);
-      console.log(`📋 [RUN:${run.id}] Phase A: Calling provider.listMessages with search="${run.search_text}", limit=${run.max_emails || 5000}`);
+      // Guard: Skip enumeration if less than 10s remaining
+      if (timeLeft(startTime) < 10_000) {
+        console.log(`⏭️  [RUN:${run.id}] Skipping Phase A enumeration this slice to stay within budget`);
+      } else {
+        console.log(`📋 [RUN:${run.id}] Phase A: Starting email enumeration`);
+        console.log(`📋 [RUN:${run.id}] Phase A: Calling provider.listMessages with search="${run.search_text}", limit=${run.max_emails || 5000}`);
 
-      const messages = await provider.listMessages({
-        jobTitle: run.search_text,
-        limit: run.max_emails || 5000
-      });
+        const messages = await provider.listMessages({
+          jobTitle: run.search_text,
+          limit: run.max_emails || 5000
+        });
 
       console.log(`📧 [RUN:${run.id}] Phase A: Provider returned ${messages.length} messages`);
 
@@ -206,6 +234,7 @@ export async function POST(req: NextRequest) {
       });
 
       console.log(`✅ [RUN:${run.id}] Phase A: Complete - ${messages.length} messages ready for processing`);
+      }
     }
 
     // Phase B: Process pending items with soft time limit
@@ -235,6 +264,20 @@ export async function POST(req: NextRequest) {
     // Process items until soft time limit or no items remain
     while (true) {
       batchNumber++;
+      const remaining = timeLeft(startTime);
+
+      // Guard: Exit if less than 3s remaining (emergency tripwire)
+      if (remaining < 3_000) {
+        console.log(`⏱️  [RUN:${run.id}] Phase B: <3s left (${remaining}ms)—exiting cleanly`);
+        break;
+      }
+
+      // Guard: Exit if not enough time for another item (12s GPT + 2s overhead)
+      if (remaining < (GPT_TIMEOUT_FIRST_MS + 2_000)) {
+        console.log(`⏱️  [RUN:${run.id}] Phase B: Not enough time for another item (${remaining}ms left)`);
+        break;
+      }
+
       const elapsed = Date.now() - startTime;
 
       // Check soft time limit BEFORE starting new item
@@ -332,12 +375,17 @@ export async function POST(req: NextRequest) {
 
     if (gptRetryQueue.length > 0) {
       for (const retryItem of gptRetryQueue) {
-        const elapsed = Date.now() - startTime;
-        const remaining = HARD_TIME_LIMIT_MS - elapsed;
+        const remaining = timeLeft(startTime);
 
-        // Check if we have enough time for retry
+        // Guard: Exit if less than MIN_TIME_FOR_RETRY_MS (18s)
         if (remaining < MIN_TIME_FOR_RETRY_MS) {
-          console.log(`⏱️  [RUN:${run.id}] Phase C: Not enough time for retry (${remaining}ms left), leaving ${gptRetryQueue.length - retriedCount} items for batch API`);
+          console.log(`⏱️  [RUN:${run.id}] Phase C: Not enough time for retry (${remaining}ms left), leaving ${gptRetryQueue.length - retriedCount} items for next slice`);
+          break;
+        }
+
+        // Guard: Emergency tripwire
+        if (remaining < 3_000) {
+          console.log(`⏱️  [RUN:${run.id}] Phase C: <3s left—exiting cleanly`);
           break;
         }
 
