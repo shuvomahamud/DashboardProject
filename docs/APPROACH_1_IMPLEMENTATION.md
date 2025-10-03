@@ -31,9 +31,9 @@ This document describes the "Smart Time Budget with GPT Retry Queue" implementat
 ```typescript
 const SOFT_TIME_LIMIT_MS = 50000;      // 50s - stop processing new items
 const HARD_TIME_LIMIT_MS = 60000;      // 60s - Vercel timeout (never reached)
-const GPT_TIMEOUT_FIRST_MS = 8000;     // 8s - first attempt
-const GPT_TIMEOUT_RETRY_MS = 10000;    // 10s - retry attempt
-const MIN_TIME_FOR_RETRY_MS = 12000;   // 12s - minimum time for retry
+const GPT_TIMEOUT_FIRST_MS = 12000;     // 8s - first attempt
+const GPT_TIMEOUT_RETRY_MS = 15000;    // 10s - retry attempt
+const MIN_TIME_FOR_RETRY_MS = 18000;   // 12s - minimum time for retry
 ```
 
 ## Processing Flow

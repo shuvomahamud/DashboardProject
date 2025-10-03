@@ -25,9 +25,9 @@ export const maxDuration = 60; // Vercel max function duration
 // Time budget constants
 const SOFT_TIME_LIMIT_MS = 50000; // 50s - stop processing new items
 const HARD_TIME_LIMIT_MS = 60000; // 60s - absolute limit (gateway timeout)
-const GPT_TIMEOUT_FIRST_MS = 8000; // 8s - first attempt
-const GPT_TIMEOUT_RETRY_MS = 10000; // 10s - retry attempt
-const MIN_TIME_FOR_RETRY_MS = 12000; // 12s - minimum time needed for retry (10s + 2s overhead)
+const GPT_TIMEOUT_FIRST_MS = 12000; // 8s - first attempt
+const GPT_TIMEOUT_RETRY_MS = 15000; // 10s - retry attempt
+const MIN_TIME_FOR_RETRY_MS = 18000; // 12s - minimum time needed for retry (10s + 2s overhead)
 
 interface GPTRetryItem {
   itemId: bigint;
