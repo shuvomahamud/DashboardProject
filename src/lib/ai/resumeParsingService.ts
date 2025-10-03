@@ -1,9 +1,8 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import OpenAI from 'openai';
 import * as crypto from 'crypto';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
+import prisma, { withRetry } from '../prisma';
 
 let openai: OpenAI | null = null;
 
@@ -92,19 +91,79 @@ interface ParseSummary {
 // Privacy redaction function for sensitive data
 function redactSensitiveData(text: string): string {
   if (!text) return text;
-  
+
   let redacted = text;
-  
+
   // SSN-like patterns
   redacted = redacted.replace(/\b\d{3}-\d{2}-\d{4}\b/g, '***-**-****');
-  
+
   // Credit card-like patterns
   redacted = redacted.replace(/\b(?:\d[ -]?){13,16}\b/g, '************');
-  
+
   // Optional DOB patterns (MM/DD/YYYY or similar)
   redacted = redacted.replace(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g, '**/**/****');
-  
+
   return redacted;
+}
+
+// Truncate text intelligently to fit within token budget
+function truncateResumeText(text: string, maxChars: number = 12000): string {
+  if (!text || text.length <= maxChars) {
+    return text;
+  }
+
+  // Try to preserve sections by finding common resume section markers
+  const sectionMarkers = [
+    'EXPERIENCE',
+    'EDUCATION',
+    'SKILLS',
+    'SUMMARY',
+    'OBJECTIVE',
+    'PROJECTS',
+    'CERTIFICATIONS',
+    'EMPLOYMENT',
+    'WORK HISTORY'
+  ];
+
+  // Find last complete section within budget
+  let truncated = text.slice(0, maxChars);
+
+  // Try to end at a section boundary to maintain context
+  for (const marker of sectionMarkers) {
+    const lastMarkerPos = truncated.lastIndexOf(marker);
+    if (lastMarkerPos > maxChars * 0.7) { // At least 70% of content
+      // Find end of this section (next marker or end)
+      const remainingText = text.slice(lastMarkerPos);
+      let sectionEnd = remainingText.length;
+
+      for (const nextMarker of sectionMarkers) {
+        const nextPos = remainingText.indexOf(nextMarker, marker.length);
+        if (nextPos > 0 && nextPos < sectionEnd) {
+          sectionEnd = nextPos;
+        }
+      }
+
+      const candidateEnd = lastMarkerPos + Math.min(sectionEnd, maxChars - lastMarkerPos);
+      if (candidateEnd <= maxChars) {
+        truncated = text.slice(0, candidateEnd);
+        break;
+      }
+    }
+  }
+
+  // If no good section boundary found, try to end at paragraph or sentence
+  if (truncated.length >= maxChars - 100) {
+    const lastParagraph = truncated.lastIndexOf('\n\n');
+    const lastSentence = truncated.lastIndexOf('. ');
+
+    if (lastParagraph > maxChars * 0.85) {
+      truncated = truncated.slice(0, lastParagraph);
+    } else if (lastSentence > maxChars * 0.85) {
+      truncated = truncated.slice(0, lastSentence + 1);
+    }
+  }
+
+  return truncated.trim();
 }
 
 // Generate text hash for idempotency
@@ -485,18 +544,20 @@ function toResumeDbFields(data: EnhancedParsedResume): Record<string, any> {
 // Check if resume needs parsing (idempotency)
 async function needsParsing(resumeId: number, textHash: string): Promise<boolean> {
   try {
-    const resume = await prisma.resume.findUnique({
-      where: { id: resumeId },
-      select: {
-        textHash: true,
-        promptVersion: true,
-        parseModel: true,
-        parsedAt: true
-      }
-    });
-    
+    const resume = await withRetry(() =>
+      prisma.resume.findUnique({
+        where: { id: resumeId },
+        select: {
+          textHash: true,
+          promptVersion: true,
+          parseModel: true,
+          parsedAt: true
+        }
+      })
+    );
+
     if (!resume) return true;
-    
+
     // Parse if any of these changed or if never parsed
     return (
       !resume.parsedAt ||
@@ -525,18 +586,20 @@ export async function parseAndScoreResume(
       };
     }
 
-    // Fetch resume
-    const resume = await prisma.resume.findUnique({
-      where: { id: resumeId },
-      select: {
-        id: true,
-        rawText: true,
-        fileName: true,
-        applications: {
-          select: { jobId: true }
+    // Fetch resume with retry logic
+    const resume = await withRetry(() =>
+      prisma.resume.findUnique({
+        where: { id: resumeId },
+        select: {
+          id: true,
+          rawText: true,
+          fileName: true,
+          applications: {
+            select: { jobId: true }
+          }
         }
-      }
-    });
+      })
+    );
 
     if (!resume) {
       return {
@@ -557,22 +620,26 @@ export async function parseAndScoreResume(
     
     // Check if parsing is needed (unless forced)
     if (!force && !(await needsParsing(resumeId, textHash))) {
-      // Return existing data
-      const existingResume = await prisma.resume.findUnique({
-        where: { id: resumeId },
-        select: {
-          candidateName: true,
-          email: true,
-          skills: true,
-          companyScore: true,
-          fakeScore: true
-        }
-      });
+      // Return existing data with retry logic
+      const existingResume = await withRetry(() =>
+        prisma.resume.findUnique({
+          where: { id: resumeId },
+          select: {
+            candidateName: true,
+            email: true,
+            skills: true,
+            companyScore: true,
+            fakeScore: true
+          }
+        })
+      );
 
-      const existingApplication = await prisma.jobApplication.findFirst({
-        where: { resumeId },
-        select: { matchScore: true }
-      });
+      const existingApplication = await withRetry(() =>
+        prisma.jobApplication.findFirst({
+          where: { resumeId },
+          select: { matchScore: true }
+        })
+      );
 
       return {
         success: true,
@@ -591,23 +658,31 @@ export async function parseAndScoreResume(
 
     console.log(`Parsing resume ${resumeId} (${resume.fileName})`);
 
-    // Redact sensitive data
+    // Redact sensitive data and truncate to prevent timeouts
     const redactedText = redactSensitiveData(resume.rawText);
+    const maxResumeChars = parseInt(process.env.MAX_RESUME_CHARS || '12000', 10);
+    const processedText = truncateResumeText(redactedText, maxResumeChars);
+
+    if (processedText.length < redactedText.length) {
+      console.log(`Truncated resume from ${redactedText.length} to ${processedText.length} chars to prevent timeout`);
+    }
 
     // Call OpenAI for parsing
-    const parseResult = await callOpenAIForParsing(jobContext, redactedText);
+    const parseResult = await callOpenAIForParsing(jobContext, processedText);
 
     if (!parseResult.success) {
-      // Mark parse failure
-      await prisma.resume.update({
-        where: { id: resumeId },
-        data: {
-          parseError: parseResult.error,
-          textHash,
-          promptVersion: process.env.PROMPT_VERSION || 'v1',
-          parseModel: process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini'
-        }
-      });
+      // Mark parse failure with retry logic
+      await withRetry(() =>
+        prisma.resume.update({
+          where: { id: resumeId },
+          data: {
+            parseError: parseResult.error,
+            textHash,
+            promptVersion: process.env.PROMPT_VERSION || 'v1',
+            parseModel: process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini'
+          }
+        })
+      );
 
       console.error(`parse_fail resumeId=${resumeId} reason=${parseResult.error}`);
       return {
@@ -620,16 +695,18 @@ export async function parseAndScoreResume(
     const validation = validateAndProcess(parseResult.data!);
     
     if (!validation.valid) {
-      // Mark schema validation failure
-      await prisma.resume.update({
-        where: { id: resumeId },
-        data: {
-          parseError: `schema: ${validation.error}`,
-          textHash,
-          promptVersion: process.env.PROMPT_VERSION || 'v1',
-          parseModel: process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini'
-        }
-      });
+      // Mark schema validation failure with retry logic
+      await withRetry(() =>
+        prisma.resume.update({
+          where: { id: resumeId },
+          data: {
+            parseError: `schema: ${validation.error}`,
+            textHash,
+            promptVersion: process.env.PROMPT_VERSION || 'v1',
+            parseModel: process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini'
+          }
+        })
+      );
 
       console.error(`parse_fail resumeId=${resumeId} reason=schema`);
       return {
@@ -644,46 +721,52 @@ export async function parseAndScoreResume(
     const resumeFields = toResumeDbFields(validatedData);
     resumeFields.textHash = textHash;
 
-    // Update Resume table
-    await prisma.resume.update({
-      where: { id: resumeId },
-      data: resumeFields
-    });
+    // Update Resume table with retry logic
+    await withRetry(() =>
+      prisma.resume.update({
+        where: { id: resumeId },
+        data: resumeFields
+      })
+    );
 
     // Update JobApplication with matchScore and aiExtractJson (for all applications of this resume)
-    const jobApplications = await prisma.jobApplication.findMany({
-      where: { resumeId },
-      select: {
-        id: true,
-        jobId: true,
-        resumeId: true,
-        status: true,
-        appliedDate: true,
-        updatedAt: true
-      }
-    });
+    const jobApplications = await withRetry(() =>
+      prisma.jobApplication.findMany({
+        where: { resumeId },
+        select: {
+          id: true,
+          jobId: true,
+          resumeId: true,
+          status: true,
+          appliedDate: true,
+          updatedAt: true
+        }
+      })
+    );
 
     if (jobApplications.length > 0) {
-      // Pull resume-side values once
-      const resumeAfter = await prisma.resume.findUnique({
-        where: { id: resumeId },
-        select: {
-          candidateName: true,
-          email: true,
-          phone: true,
-          skills: true,
-          totalExperienceY: true,
-          companyScore: true,
-          fakeScore: true,
-          originalName: true,
-          sourceFrom: true
-        }
-      });
+      // Pull resume-side values once with retry logic
+      const resumeAfter = await withRetry(() =>
+        prisma.resume.findUnique({
+          where: { id: resumeId },
+          select: {
+            candidateName: true,
+            email: true,
+            phone: true,
+            skills: true,
+            totalExperienceY: true,
+            companyScore: true,
+            fakeScore: true,
+            originalName: true,
+            sourceFrom: true
+          }
+        })
+      );
 
       // Helper to cast Decimals to numbers
       const toNumber = (x: any) => (x == null ? null : Number(x));
 
-      // Update each application with matchScore and snapshot
+      // Update each application with matchScore and snapshot with retry logic
       await Promise.all(
         jobApplications.map(async app => {
           const snapshot = buildApplicationSnapshot(
@@ -702,14 +785,16 @@ export async function parseAndScoreResume(
             validatedData.scores.matchScore
           );
 
-          await prisma.jobApplication.update({
-            where: { id: app.id },
-            data: {
-              matchScore: validatedData.scores.matchScore,
-              aiCompanyScore: validatedData.scores.companyScore,
-              aiExtractJson: validatedData as unknown as Prisma.InputJsonValue  // Store the full OpenAI response
-            }
-          });
+          await withRetry(() =>
+            prisma.jobApplication.update({
+              where: { id: app.id },
+              data: {
+                matchScore: validatedData.scores.matchScore,
+                aiCompanyScore: validatedData.scores.companyScore,
+                aiExtractJson: validatedData as unknown as Prisma.InputJsonValue  // Store the full OpenAI response
+              }
+            })
+          );
         })
       );
     }

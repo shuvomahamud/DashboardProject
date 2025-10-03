@@ -44,6 +44,9 @@ export async function extractPdfText(
       isEvalSupported: false,
       useWorkerFetch: false,
       verbosity: 0, // Suppress warnings
+      // CRITICAL: Disable worker in serverless environment to avoid module resolution errors
+      disableWorker: true,
+      isOffscreenCanvasSupported: false,
     });
 
     pdfDoc = await Promise.race([

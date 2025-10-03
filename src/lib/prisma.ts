@@ -66,4 +66,64 @@ export async function ensureConnection(retries = 3) {
   return false;
 }
 
+// Retry wrapper for database operations with exponential backoff
+export async function withRetry<T>(
+  operation: () => Promise<T>,
+  options: {
+    maxRetries?: number;
+    initialDelayMs?: number;
+    maxDelayMs?: number;
+    shouldRetry?: (error: any) => boolean;
+  } = {}
+): Promise<T> {
+  const {
+    maxRetries = 3,
+    initialDelayMs = 100,
+    maxDelayMs = 5000,
+    shouldRetry = (error: any) => {
+      // Retry on connection errors, timeouts, or database unavailability
+      const message = error?.message?.toLowerCase() || '';
+      return (
+        message.includes('can\'t reach database') ||
+        message.includes('connection') ||
+        message.includes('timeout') ||
+        message.includes('ECONNREFUSED') ||
+        message.includes('ETIMEDOUT') ||
+        error?.code === 'P1001' || // Can't reach database server
+        error?.code === 'P1008' || // Operations timed out
+        error?.code === 'P1017'    // Server closed the connection
+      );
+    }
+  } = options;
+
+  let lastError: any;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      lastError = error;
+
+      // Don't retry if this is the last attempt or error shouldn't be retried
+      if (attempt === maxRetries || !shouldRetry(error)) {
+        throw error;
+      }
+
+      // Calculate delay with exponential backoff and jitter
+      const baseDelay = Math.min(initialDelayMs * Math.pow(2, attempt), maxDelayMs);
+      const jitter = Math.random() * baseDelay * 0.3; // Add up to 30% jitter
+      const delay = Math.floor(baseDelay + jitter);
+
+      console.warn(
+        `Database operation failed (attempt ${attempt + 1}/${maxRetries + 1}), ` +
+        `retrying in ${delay}ms: ${error.message}`
+      );
+
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
+
 export default prisma 
