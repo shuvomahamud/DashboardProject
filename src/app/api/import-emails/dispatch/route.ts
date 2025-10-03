@@ -29,11 +29,8 @@ export async function POST(req: NextRequest) {
       // Continue processing the running run
       console.log(`🔄 [RUN:${running.id}] Continuing existing running import`);
 
-      const processorUrl = new URL('/api/import-emails/process', req.url);
-      fetch(processorUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      }).catch(err => {
+      // Call processor directly instead of HTTP to avoid connection errors
+      processImport(req).catch(err => {
         console.error(`❌ [RUN:${running.id}] Processor trigger failed:`, err);
       });
 
@@ -83,18 +80,13 @@ export async function POST(req: NextRequest) {
 
     console.log(`✅ [RUN:${enqueued.id}] Promoted to running`);
 
-    // Trigger processor via separate HTTP call to avoid timeout
+    // Trigger processor directly to avoid HTTP connection errors
     // This allows dispatcher to return quickly while processor works independently
-    console.log(`🔄 [RUN:${enqueued.id}] Triggering processor via HTTP`);
-
-    const processorUrl = new URL('/api/import-emails/process', req.url);
+    console.log(`🔄 [RUN:${enqueued.id}] Triggering processor directly`);
 
     // Fire off processor asynchronously - don't await
     // The processor will call dispatcher again when it needs more time
-    fetch(processorUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    }).catch(err => {
+    processImport(req).catch(err => {
       console.error(`❌ [RUN:${enqueued.id}] Processor trigger failed:`, err);
       // Error is logged but not thrown - cron will retry on next cycle
     });
