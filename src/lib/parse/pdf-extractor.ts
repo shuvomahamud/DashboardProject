@@ -6,9 +6,10 @@
 // CRITICAL: Load polyfills BEFORE importing pdfjs-dist
 import './pdf-polyfills';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
-import path from 'path';
-import { existsSync, readFileSync } from 'fs';
 import { pathToFileURL } from 'url';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 let workerConfigured = false;
 let resolvedWorkerSrc: string | null = null;
@@ -18,26 +19,21 @@ function configurePdfWorker() {
     return;
   }
 
-  const candidatePaths = [
-    path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.mjs'),
-    path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'),
-    path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.js'),
-    path.join(process.cwd(), '.next', 'server', 'chunks', 'pdf.worker.mjs'),
-    path.join(process.cwd(), '.next', 'server', 'chunks', 'pdf.worker.min.mjs'),
+  const moduleCandidates = [
+    'pdfjs-dist/legacy/build/pdf.worker.mjs',
+    'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
+    'pdfjs-dist/build/pdf.worker.js',
   ];
 
-  for (const candidate of candidatePaths) {
-    if (existsSync(candidate)) {
-      resolvedWorkerSrc = pathToFileURL(candidate).href;
-      break;
-    }
-  }
-
-  if (!resolvedWorkerSrc) {
-    const fallbackPath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs');
-    if (existsSync(fallbackPath)) {
-      const workerCode = readFileSync(fallbackPath, 'utf8');
-      resolvedWorkerSrc = `data:application/javascript;base64,${Buffer.from(workerCode).toString('base64')}`;
+  for (const moduleId of moduleCandidates) {
+    try {
+      const resolvedPath = require.resolve(moduleId);
+      if (resolvedPath) {
+        resolvedWorkerSrc = pathToFileURL(resolvedPath).href;
+        break;
+      }
+    } catch {
+      // continue to next candidate
     }
   }
 
