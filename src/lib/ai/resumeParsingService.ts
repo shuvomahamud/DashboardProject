@@ -282,7 +282,7 @@ const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified 
 6. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0–100**. NEVER omit the scores object.
 7. **Summary:** \`summary\` must be a **single string** at the root, ≤140 chars. Never null/array/object. If unsure, use \`""\`.
 8. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
-9. **Length budget:** Keep values concise; avoid repeating large text.
+9. **BE CONCISE:** Limit employment history to last 10 jobs max. Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
 
 **WRONG examples (do not do):**
 
@@ -389,7 +389,7 @@ async function callOpenAIForParsing(
         ],
         response_format: { type: 'json_object' },
         temperature,
-        max_tokens: 4096  // Ensure enough space for complete response (resume + scores + summary)
+        max_tokens: 8192  // Increased to handle long resumes (was 4096, caused truncation)
       },
       { signal: AbortSignal.timeout(timeoutMs) }  // Enforce timeout client-side
     );
