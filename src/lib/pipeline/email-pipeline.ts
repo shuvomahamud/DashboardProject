@@ -45,6 +45,7 @@ export async function processEmailItem(
   try {
     console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Starting pipeline at step: ${currentStep}`);
     let step = currentStep;
+    let jobApplicationLinked = false;
 
     // Step 1: Fetch message and attachments
     if (step === 'none') {
@@ -97,6 +98,7 @@ export async function processEmailItem(
       if (existing) {
         console.log(`⚠️  [RUN:${runId}] [ITEM:${itemId}] Step 2: Duplicate detected - linking to existing resume ${existing.id}`);
         await linkJobApplication(jobId, existing.id, externalMessageId);
+        jobApplicationLinked = true;
         await updateItemStatus(itemId, 'completed', 'saved');
         return { success: true, step: 'saved' };
       }
@@ -264,6 +266,11 @@ export async function processEmailItem(
         resumeId = resume!.id;
       }
 
+      if (!jobApplicationLinked) {
+        await linkJobApplication(jobId, resumeId, externalMessageId);
+        jobApplicationLinked = true;
+      }
+
       // Get job context
       const job = await prisma.job.findUnique({
         where: { id: jobId },
@@ -313,7 +320,10 @@ export async function processEmailItem(
         resumeId = resume!.id;
       }
 
-      await linkJobApplication(jobId, resumeId, externalMessageId);
+      if (!jobApplicationLinked) {
+        await linkJobApplication(jobId, resumeId, externalMessageId);
+        jobApplicationLinked = true;
+      }
 
       step = 'persisted';
       await updateItemStatus(itemId, 'completed', step);
