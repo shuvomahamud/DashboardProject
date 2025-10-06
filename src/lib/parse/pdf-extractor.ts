@@ -7,6 +7,12 @@
 import './pdf-polyfills';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
+// Disable worker in serverless environment (Vercel)
+// Workers don't work reliably in bundled serverless functions
+if (typeof (pdfjsLib as any).GlobalWorkerOptions !== 'undefined') {
+  (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '';
+}
+
 export interface PdfExtractionOptions {
   maxPages?: number;      // Hard cap on pages to extract (default: 15)
   timeoutMs?: number;     // Timeout for extraction (default: 3000ms)
