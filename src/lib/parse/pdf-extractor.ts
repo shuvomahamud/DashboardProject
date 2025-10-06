@@ -8,6 +8,8 @@ import './pdf-polyfills';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { pathToFileURL } from 'url';
 import { createRequire } from 'module';
+import path from 'path';
+import { existsSync } from 'fs';
 
 const require = createRequire(import.meta.url);
 
@@ -19,21 +21,28 @@ function configurePdfWorker() {
     return;
   }
 
-  const moduleCandidates = [
-    'pdfjs-dist/legacy/build/pdf.worker.mjs',
-    'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
-    'pdfjs-dist/build/pdf.worker.js',
-  ];
+  const publicWorkerPath = path.resolve(process.cwd(), 'public', 'pdf.worker.mjs');
+  if (existsSync(publicWorkerPath)) {
+    resolvedWorkerSrc = pathToFileURL(publicWorkerPath).href;
+  }
 
-  for (const moduleId of moduleCandidates) {
-    try {
-      const resolvedPath = require.resolve(moduleId);
-      if (resolvedPath) {
-        resolvedWorkerSrc = pathToFileURL(resolvedPath).href;
-        break;
+  if (!resolvedWorkerSrc) {
+    const moduleCandidates = [
+      'pdfjs-dist/legacy/build/pdf.worker.mjs',
+      'pdfjs-dist/legacy/build/pdf.worker.min.mjs',
+      'pdfjs-dist/build/pdf.worker.js',
+    ];
+
+    for (const moduleId of moduleCandidates) {
+      try {
+        const resolvedPath = require.resolve(moduleId);
+        if (resolvedPath) {
+          resolvedWorkerSrc = pathToFileURL(resolvedPath).href;
+          break;
+        }
+      } catch {
+        // continue to next candidate
       }
-    } catch {
-      // continue to next candidate
     }
   }
 
@@ -160,6 +169,14 @@ export async function extractPdfText(
         text: '',
         pages: 0,
         error: 'PDF_EXTRACTION_TIMEOUT',
+      };
+    }
+
+    if (error.message?.includes('pdfjs worker script') || error.message?.includes('GlobalWorkerOptions.workerSrc')) {
+      return {
+        text: '',
+        pages: 0,
+        error: 'PDF_WORKER_MISSING',
       };
     }
 

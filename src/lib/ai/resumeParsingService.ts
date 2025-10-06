@@ -778,6 +778,34 @@ export async function parseAndScoreResume(
 
     const validatedData = validation.data!;
 
+    const candidateData = validatedData.resume.candidate;
+    const hasMeaningfulData =
+      Boolean(candidateData.name) ||
+      (candidateData.emails && candidateData.emails.length > 0) ||
+      (validatedData.resume.skills && validatedData.resume.skills.length > 0) ||
+      (validatedData.resume.employment && validatedData.resume.employment.length > 0);
+
+    if (!hasMeaningfulData) {
+      console.warn(`parse_fail resumeId=${resumeId} reason=empty_result`);
+
+      await withRetry(() =>
+        prisma.resume.update({
+          where: { id: resumeId },
+          data: {
+            parseError: 'EMPTY_PARSE_RESULT',
+            textHash,
+            promptVersion: process.env.PROMPT_VERSION || 'v1',
+            parseModel: process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini'
+          }
+        })
+      );
+
+      return {
+        success: false,
+        error: 'Parsed resume contains no meaningful data'
+      };
+    }
+
     // Prepare database updates
     const resumeFields = toResumeDbFields(validatedData);
     resumeFields.textHash = textHash;
