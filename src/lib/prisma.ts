@@ -18,8 +18,9 @@ const getDatabaseUrl = () => {
   // Ultra-minimal pool: 2 connections per instance
   // With 100 concurrent functions: 2×100 = 200 connections (at Supabase limit)
   // Previously: 5×100 = 500 connections (way over limit)
+  // Increased connect_timeout from 5s to 10s for better cold start handling
   const separator = baseUrl.includes('?') ? '&' : '?';
-  return `${baseUrl}${separator}connection_limit=2&pool_timeout=10&connect_timeout=5&pgbouncer=true`;
+  return `${baseUrl}${separator}connection_limit=2&pool_timeout=15&connect_timeout=10&pgbouncer=true`;
 };
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({
@@ -29,11 +30,11 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient({
     }
   },
   log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  // Aggressive timeouts for serverless environment
+  // Increased timeouts for better cold start handling
   __internal: {
     engine: {
-      connection_timeout: 5,
-      pool_timeout: 10,
+      connection_timeout: 10,  // Increased from 5s to 10s
+      pool_timeout: 15,        // Increased from 10s to 15s
     }
   } as any
 })

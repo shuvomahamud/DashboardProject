@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
-import prisma from '@/lib/prisma';
+import prisma, { withRetry } from '@/lib/prisma';
 
 /**
  * POST /api/import-emails
@@ -41,11 +41,13 @@ export async function POST(req: NextRequest) {
 
     console.log('📥 Enqueuing import for job:', jobId, 'mailbox:', mailbox, 'search:', searchText);
 
-    // Check if job exists
-    const job = await prisma.job.findUnique({
-      where: { id: jobId },
-      select: { id: true, title: true }
-    });
+    // Check if job exists (with retry for connection issues)
+    const job = await withRetry(() =>
+      prisma.job.findUnique({
+        where: { id: jobId },
+        select: { id: true, title: true }
+      })
+    );
 
     if (!job) {
       return NextResponse.json(
@@ -54,14 +56,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if already has active/queued run
-    const existing = await prisma.import_email_runs.findFirst({
-      where: {
-        job_id: jobId,
-        status: { in: ['enqueued', 'running'] }
-      },
-      select: { id: true, status: true }
-    });
+    // Check if already has active/queued run (with retry)
+    const existing = await withRetry(() =>
+      prisma.import_email_runs.findFirst({
+        where: {
+          job_id: jobId,
+          status: { in: ['enqueued', 'running'] }
+        },
+        select: { id: true, status: true }
+      })
+    );
 
     if (existing) {
       return NextResponse.json(
@@ -74,21 +78,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create new run
-    const run = await prisma.import_email_runs.create({
-      data: {
-        job_id: jobId,
-        requested_by: userEmail,
-        mailbox,
-        search_text: searchText,
-        max_emails: maxEmails || 5000,
-        status: 'enqueued',
-        progress: 0,
-        processed_messages: 0,
-        total_messages: 0,
-        attempts: 0
-      }
-    });
+    // Create new run (with retry)
+    const run = await withRetry(() =>
+      prisma.import_email_runs.create({
+        data: {
+          job_id: jobId,
+          requested_by: userEmail,
+          mailbox,
+          search_text: searchText,
+          max_emails: maxEmails || 5000,
+          status: 'enqueued',
+          progress: 0,
+          processed_messages: 0,
+          total_messages: 0,
+          attempts: 0
+        }
+      })
+    );
 
     console.log('✅ Created run:', run.id);
 
