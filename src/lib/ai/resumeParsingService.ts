@@ -425,6 +425,19 @@ async function callOpenAIForParsing(
       }
     }
 
+    // CRITICAL: Log scores from OpenAI response
+    console.log('\n=== SCORES FROM OPENAI ===');
+    if (parsedData?.scores) {
+      console.log('✅ Scores object present');
+      console.log(`  matchScore: ${parsedData.scores.matchScore} (type: ${typeof parsedData.scores.matchScore})`);
+      console.log(`  companyScore: ${parsedData.scores.companyScore} (type: ${typeof parsedData.scores.companyScore})`);
+      console.log(`  fakeScore: ${parsedData.scores.fakeScore} (type: ${typeof parsedData.scores.fakeScore})`);
+    } else {
+      console.error('❌ NO SCORES OBJECT IN RESPONSE!');
+      console.error('Response keys:', Object.keys(parsedData || {}));
+    }
+    console.log('=== END SCORES DEBUG ===\n');
+
     return {
       success: true,
       data: parsedData,
@@ -455,10 +468,22 @@ function validateAndProcess(rawData: any): { valid: boolean; data?: EnhancedPars
     validated.scores.matchScore = Math.max(0, Math.min(100, Math.round(validated.scores.matchScore)));
     validated.scores.companyScore = Math.max(0, Math.min(100, Math.round(validated.scores.companyScore)));
     validated.scores.fakeScore = Math.max(0, Math.min(100, Math.round(validated.scores.fakeScore)));
-    
+
     // Clamp total experience years
     validated.resume.candidate.totalExperienceYears = Math.max(0, Math.min(80, validated.resume.candidate.totalExperienceYears));
-    
+
+    // Log final validated scores
+    console.log('\n=== VALIDATED SCORES (after clamping) ===');
+    console.log(`  matchScore: ${validated.scores.matchScore}`);
+    console.log(`  companyScore: ${validated.scores.companyScore}`);
+    console.log(`  fakeScore: ${validated.scores.fakeScore}`);
+    console.log('=== END VALIDATED SCORES ===\n');
+
+    // Warn if scores are suspiciously low/default
+    if (validated.scores.matchScore === 0 && validated.scores.companyScore === 0 && validated.scores.fakeScore === 0) {
+      console.warn('⚠️  WARNING: All scores are 0 - OpenAI may not be following scoring instructions!');
+    }
+
     return { valid: true, data: validated };
   } catch (error) {
     return {
@@ -796,6 +821,8 @@ export async function parseAndScoreResume(
             validatedData.scores.matchScore
           );
 
+          console.log(`💾 Saving scores to JobApplication ${app.id}: match=${validatedData.scores.matchScore}, company=${validatedData.scores.companyScore}`);
+
           await withRetry(() =>
             prisma.jobApplication.update({
               where: { id: app.id },
@@ -806,6 +833,8 @@ export async function parseAndScoreResume(
               }
             })
           );
+
+          console.log(`✅ Scores saved successfully to JobApplication ${app.id}`);
         })
       );
     }
@@ -824,6 +853,7 @@ export async function parseAndScoreResume(
     };
 
     console.log(`parse_ok resumeId=${resumeId} model=${process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini'} ms=${Date.now()}`);
+    console.log(`✅ FINAL SUMMARY: Resume ${resumeId} - Match:${summary.matchScore} Company:${summary.companyScore} Fake:${summary.fakeScore}`);
 
     return {
       success: true,
