@@ -266,17 +266,20 @@ function sanitizeModelOutput(raw: any) {
 
 // Enhanced system message with numbered hard rules
 const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified JSON** that matches the schema below.
+
+**CRITICAL: Your response MUST have exactly 3 root keys: "resume", "scores", "summary". All three are REQUIRED.**
+
 **Hard requirements (follow all):**
 
 1. **Output:** JSON only. No prose, markdown, comments, or extra keys.
-2. **Root object keys**: exactly \`resume\`, \`scores\`, \`summary\`. No others.
+2. **Root object keys**: EXACTLY \`resume\`, \`scores\`, \`summary\`. **ALL THREE REQUIRED**. No others.
 3. **Scalars policy:** For these scalar fields —
    \`resume.candidate.name\`, \`resume.candidate.linkedinUrl\`, \`resume.candidate.currentLocation\`,
    \`resume.employment[i].title\`, \`resume.employment[i].startDate\`, \`resume.employment[i].endDate\`, \`resume.employment[i].employmentType\`,
    — **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
 4. **Dates:** \`YYYY\` or \`YYYY-MM\`. Use \`"Present"\` only inside the model, but **output** \`null\` for ongoing roles.
 5. **Arrays policy:** \`emails\`, \`phones\`, \`skills\`, \`education\`, \`employment\` are arrays; if none, use \`[]\`.
-6. **Scores:** \`matchScore\`, \`companyScore\`, \`fakeScore\` are integers **0–100**.
+6. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0–100**. NEVER omit the scores object.
 7. **Summary:** \`summary\` must be a **single string** at the root, ≤140 chars. Never null/array/object. If unsure, use \`""\`.
 8. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
 9. **Length budget:** Keep values concise; avoid repeating large text.
@@ -285,8 +288,10 @@ const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified 
 
 * \`"linkedinUrl": []\` (should be \`null\`)
 * \`"summary": ["Senior .NET dev", "React"]\` (should be \`"Senior .NET dev"\`)
+* Missing the \`scores\` object (MUST be present!)
+* Missing the \`summary\` field (MUST be present!)
 
-**Return JSON only.**`;
+**Return complete JSON with resume, scores, and summary.**`;
 
 // Enhanced user message template with proper fencing and structure
 function buildUserMessage(jobContext: JobContext, resumeText: string): string {
@@ -326,7 +331,7 @@ SCHEMA (return exactly this object; no extra keys):
   "summary": "string"
 }
 
-SCORING RUBRICS
+SCORING RUBRICS (MANDATORY - MUST calculate and return in scores object!)
 - matchScore (0–100): skills(45), role/title fit(25), years(20), domain/context(10).
 - companyScore (0–100): evidence-only in resume; if unclear, ~50.
 - fakeScore (0–100): overlaps/impossibilities/ultra-short stints/contradictions/OCR artifacts → higher risk.
@@ -334,7 +339,14 @@ SCORING RUBRICS
 RESUME (redacted):
 <<<RESUME_TEXT
 ${resumeText}
-RESUME_TEXT`;
+RESUME_TEXT
+
+REMINDER: Your response MUST include:
+1. "resume" object with all candidate data
+2. "scores" object with matchScore, companyScore, fakeScore (ALL REQUIRED!)
+3. "summary" string
+
+Return complete JSON now.`;
 }
 
 // Main parsing function - single call to gpt-4o-mini with no fallback
