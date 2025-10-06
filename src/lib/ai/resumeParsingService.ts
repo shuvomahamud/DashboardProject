@@ -362,23 +362,25 @@ async function callOpenAIForParsing(
     console.log('\n=== END PROMPT DEBUG ===\n');
 
     const openaiClient = getOpenAIClient();
-    const completion = await openaiClient.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content: systemMessage
-        },
-        {
-          role: 'user',
-          content: userMessage
-        }
-      ],
-      response_format: { type: 'json_object' },
-      temperature,
-      timeout: timeoutMs  // Enforce timeout at OpenAI SDK level
-      // No max_tokens override - let the API default handle it
-    });
+    const completion = await openaiClient.chat.completions.create(
+      {
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: systemMessage
+          },
+          {
+            role: 'user',
+            content: userMessage
+          }
+        ],
+        response_format: { type: 'json_object' },
+        temperature
+        // No max_tokens override - let the API default handle it
+      },
+      { signal: AbortSignal.timeout(timeoutMs) }  // Enforce timeout client-side
+    );
 
     const response = completion.choices[0]?.message?.content;
 
@@ -429,11 +431,13 @@ async function callOpenAIForParsing(
       tokensUsed: completion.usage?.total_tokens || 0
     };
 
-  } catch (error) {
-    console.error('OpenAI API error:', error);
+  } catch (error: any) {
+    // Distinguish timeout from other API errors
+    const isAbort = error?.name === 'AbortError';
+    console.error('OpenAI API error:', isAbort ? 'timeout' : error?.message);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown OpenAI API error'
+      error: isAbort ? `OpenAI timeout after ${timeoutMs}ms` : (error instanceof Error ? error.message : 'Unknown OpenAI API error')
     };
   }
 }
