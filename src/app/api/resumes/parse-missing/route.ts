@@ -5,6 +5,7 @@ import { parseAndPersistResume, findUnparsedResumes, getParsingStats } from '@/l
 import { getBudgetStatus } from '@/lib/ai/openaiClient';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Allow up to 60s for batch parsing (up to 50 resumes)
 
 const RequestSchema = z.object({
   limit: z.number().int().min(1).max(50).optional().default(10)

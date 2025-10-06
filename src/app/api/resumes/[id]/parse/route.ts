@@ -5,6 +5,7 @@ import { parseAndPersistResume } from '@/lib/ai/parseResume';
 import { getBudgetStatus } from '@/lib/ai/openaiClient';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30; // Allow up to 30s for OpenAI parsing
 
 const RequestSchema = z.object({
   hints: z.object({

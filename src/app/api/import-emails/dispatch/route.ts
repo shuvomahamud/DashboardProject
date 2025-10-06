@@ -16,6 +16,7 @@ import { POST as processImport } from '../process/route';
  * Idempotent: Multiple calls are safe - only one will promote due to DB constraints.
  */
 export const runtime = 'nodejs';
+export const maxDuration = 60; // Allow up to 60s since it calls the processor
 
 export async function POST(req: NextRequest) {
   try {

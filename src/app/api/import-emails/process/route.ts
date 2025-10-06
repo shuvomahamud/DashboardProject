@@ -3,22 +3,6 @@ import prisma from '@/lib/prisma';
 import { createEmailProvider } from '@/lib/providers/msgraph-provider';
 import { processEmailItem, tryGPTParsing } from '@/lib/pipeline/email-pipeline';
 
-// Configure Node.js networking for stability (IPv4 preference, reasonable timeouts)
-if (typeof globalThis !== 'undefined') {
-  try {
-    const { setGlobalDispatcher, Agent } = require('undici');
-    setGlobalDispatcher(new Agent({
-      connect: {
-        timeout: 10_000,  // 10s connection timeout
-        family: 4         // Prefer IPv4 to avoid IPv6 TLS issues
-      }
-    }));
-    console.log('✓ Undici global dispatcher configured (IPv4, 10s timeout)');
-  } catch (err) {
-    console.warn('⚠️  Failed to configure Undici dispatcher:', err);
-  }
-}
-
 /**
  * POST /api/import-emails/process
  *
