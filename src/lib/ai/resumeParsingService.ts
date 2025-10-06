@@ -388,20 +388,33 @@ async function callOpenAIForParsing(
           }
         ],
         response_format: { type: 'json_object' },
-        temperature
-        // No max_tokens override - let the API default handle it
+        temperature,
+        max_tokens: 4096  // Ensure enough space for complete response (resume + scores + summary)
       },
       { signal: AbortSignal.timeout(timeoutMs) }  // Enforce timeout client-side
     );
 
     const response = completion.choices[0]?.message?.content;
+    const finishReason = completion.choices[0]?.finish_reason;
 
     // Log the OpenAI response
     console.log('\n=== OPENAI RESPONSE DEBUG ===');
     console.log('Raw Response:');
     console.log(response);
+    console.log('Finish Reason:', finishReason);
     console.log('Tokens Used:', completion.usage?.total_tokens || 0);
+    console.log('Completion Tokens:', completion.usage?.completion_tokens || 0);
     console.log('=== END RESPONSE DEBUG ===\n');
+
+    // Check for truncation
+    if (finishReason === 'length') {
+      console.error('🔴 TRUNCATION DETECTED: Response was cut off due to length limit!');
+      console.error('This will cause JSON parsing to fail. Consider increasing max_tokens.');
+      return {
+        success: false,
+        error: 'OpenAI response was truncated due to length limit. Try a shorter resume or increase max_tokens.'
+      };
+    }
 
     if (!response) {
       return {
