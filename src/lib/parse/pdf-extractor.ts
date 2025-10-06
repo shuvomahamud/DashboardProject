@@ -6,11 +6,50 @@
 // CRITICAL: Load polyfills BEFORE importing pdfjs-dist
 import './pdf-polyfills';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import path from 'path';
+import { existsSync, readFileSync } from 'fs';
+import { pathToFileURL } from 'url';
 
-// Disable worker in serverless environment (Vercel)
-// Workers don't work reliably in bundled serverless functions
-if (typeof (pdfjsLib as any).GlobalWorkerOptions !== 'undefined') {
-  (pdfjsLib as any).GlobalWorkerOptions.workerSrc = '';
+let workerConfigured = false;
+let resolvedWorkerSrc: string | null = null;
+
+function configurePdfWorker() {
+  if (workerConfigured && resolvedWorkerSrc) {
+    return;
+  }
+
+  const candidatePaths = [
+    path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.mjs'),
+    path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'),
+    path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.js'),
+    path.join(process.cwd(), '.next', 'server', 'chunks', 'pdf.worker.mjs'),
+    path.join(process.cwd(), '.next', 'server', 'chunks', 'pdf.worker.min.mjs'),
+  ];
+
+  for (const candidate of candidatePaths) {
+    if (existsSync(candidate)) {
+      resolvedWorkerSrc = pathToFileURL(candidate).href;
+      break;
+    }
+  }
+
+  if (!resolvedWorkerSrc) {
+    const fallbackPath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs');
+    if (existsSync(fallbackPath)) {
+      const workerCode = readFileSync(fallbackPath, 'utf8');
+      resolvedWorkerSrc = `data:application/javascript;base64,${Buffer.from(workerCode).toString('base64')}`;
+    }
+  }
+
+  if (!resolvedWorkerSrc) {
+    throw new Error('Failed to locate pdfjs worker script. Ensure pdfjs-dist is installed.');
+  }
+
+  if (typeof (pdfjsLib as any).GlobalWorkerOptions !== 'undefined') {
+    (pdfjsLib as any).GlobalWorkerOptions.workerSrc = resolvedWorkerSrc;
+  }
+
+  workerConfigured = true;
 }
 
 export interface PdfExtractionOptions {
@@ -43,6 +82,8 @@ export async function extractPdfText(
   let pdfDoc: any = null;
 
   try {
+    configurePdfWorker();
+
     // Load PDF document
     const loadingTask = pdfjsLib.getDocument({
       data: buffer instanceof Buffer ? new Uint8Array(buffer) : buffer,

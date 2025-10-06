@@ -13,7 +13,10 @@ function parsePaging(url: string) {
   const status = (sp.get("status") || "").trim();
   const minMatch = sp.get("minMatch") ? Number(sp.get("minMatch")) : null;
   const maxFake = sp.get("maxFake") ? Number(sp.get("maxFake")) : null;
-  return { page, pageSize, q, search, status, minMatch, maxFake };
+  const sortField = (sp.get("sortField") || "updatedAt").trim();
+  const directionParam = (sp.get("sortDirection") || "desc").toLowerCase();
+  const sortDirection = directionParam === 'asc' ? 'asc' : 'desc';
+  return { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection };
 }
 
 // GET /api/jobs/[id]/applications?q=&page=&pageSize=
@@ -27,7 +30,7 @@ async function _GET(req: NextRequest) {
   if (!Number.isFinite(jobId)) {
     return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
   }
-  const { page, pageSize, q, search, status, minMatch, maxFake } = parsePaging(req.url);
+  const { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection } = parsePaging(req.url);
 
   let whereClause: any = { jobId };
   const resumeFilters: any[] = [];
@@ -76,11 +79,51 @@ async function _GET(req: NextRequest) {
     whereClause.matchScore = { gte: minMatch };
   }
 
+  const sortDir = sortDirection === 'asc' ? 'asc' : 'desc';
+  let orderByClause: any;
+
+  switch (sortField) {
+    case 'candidateName':
+      orderByClause = { resume: { candidateName: sortDir } };
+      break;
+    case 'status':
+      orderByClause = { status: sortDir };
+      break;
+    case 'notes':
+      orderByClause = { notes: sortDir };
+      break;
+    case 'matchScore':
+      orderByClause = { matchScore: sortDir };
+      break;
+    case 'aiCompanyScore':
+      orderByClause = { aiCompanyScore: sortDir };
+      break;
+    case 'fakeScore':
+      orderByClause = { resume: { fakeScore: sortDir } };
+      break;
+    case 'skills':
+      orderByClause = { resume: { skills: sortDir } };
+      break;
+    case 'experience':
+      orderByClause = { resume: { totalExperienceY: sortDir } };
+      break;
+    case 'appliedDate':
+      orderByClause = { appliedDate: sortDir };
+      break;
+    case 'createdAt':
+      orderByClause = { resume: { createdAt: sortDir } };
+      break;
+    case 'updatedAt':
+    default:
+      orderByClause = { updatedAt: sortDir };
+      break;
+  }
+
   const [total, apps] = await Promise.all([
     prisma.jobApplication.count({ where: whereClause }),
     prisma.jobApplication.findMany({
       where: whereClause,
-      orderBy: { updatedAt: "desc" },
+      orderBy: orderByClause,
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: {

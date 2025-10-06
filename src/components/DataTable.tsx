@@ -18,6 +18,11 @@ interface DataTableProps {
   paginationTotalRows?: number;
   onChangeRowsPerPage?: (currentRowsPerPage: number, currentPage: number) => void;
   onChangePage?: (page: number, totalRows: number) => void;
+  // Server-side sorting props
+  sortServer?: boolean;
+  onSort?: (column: any, sortDirection: 'asc' | 'desc') => void;
+  sortColumn?: any;
+  sortDirection?: 'asc' | 'desc';
 }
 
 const customStyles = {
@@ -58,7 +63,12 @@ const AppDataTable: React.FC<DataTableProps> = ({
   paginationServer = false,
   paginationTotalRows,
   onChangeRowsPerPage,
-  onChangePage
+  onChangePage,
+  // Server-side sorting props
+  sortServer = false,
+  onSort,
+  sortColumn,
+  sortDirection
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredData, setFilteredData] = useState(data);
@@ -166,6 +176,10 @@ const AppDataTable: React.FC<DataTableProps> = ({
         paginationTotalRows={paginationTotalRows}
         onChangeRowsPerPage={onChangeRowsPerPage}
         onChangePage={onChangePage}
+        sortServer={sortServer}
+        onSort={onSort}
+        sortColumn={sortColumn}
+        sortDirection={sortDirection}
         title={title}
         actions={actions}
         selectableRows={selectableRows}

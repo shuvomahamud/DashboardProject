@@ -20,7 +20,7 @@ type ApplicationRow = {
   appliedDate: string;
   // Additional resume fields
   skills?: string;
-  experience?: string;
+  experience?: number | null;
   createdAt?: string;
 };
 
@@ -43,6 +43,8 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   const [total, setTotal] = useState(0);
   const [updating, setUpdating] = useState<number | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
+  const [sortField, setSortField] = useState<string>('updatedAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Search/Filter state
   const [searchTerm, setSearchTerm] = useState('');
@@ -66,6 +68,8 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
       if (minMatchScore) params.append('minMatch', minMatchScore);
       if (maxFakeScore) params.append('maxFake', maxFakeScore);
+      if (sortField) params.append('sortField', sortField);
+      if (sortDirection) params.append('sortDirection', sortDirection);
 
       const res = await fetch(`/api/jobs/${jobId}/applications?${params.toString()}`);
       if (!res.ok) {
@@ -80,7 +84,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     } finally {
       setLoading(false);
     }
-  }, [jobId, page, pageSize, searchTerm, statusFilter, minMatchScore, maxFakeScore]);
+  }, [jobId, page, pageSize, searchTerm, statusFilter, minMatchScore, maxFakeScore, sortField, sortDirection]);
 
   useEffect(() => {
     // Debounce search
@@ -98,7 +102,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     setPage(1);
   };
 
-  const updateStatus = async (resumeId: number, status: string) => {
+  const updateStatus = useCallback(async (resumeId: number, status: string) => {
     setUpdating(resumeId);
     try {
       const res = await fetch(`/api/jobs/${jobId}/applications`, {
@@ -120,9 +124,9 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     } finally {
       setUpdating(null);
     }
-  };
+  }, [jobId]);
 
-  const unlink = async (resumeId: number) => {
+  const unlink = useCallback(async (resumeId: number) => {
     if (!confirm("Unlink this application? This cannot be undone.")) return;
 
     setUpdating(resumeId);
@@ -144,7 +148,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     } finally {
       setUpdating(null);
     }
-  };
+  }, [jobId]);
 
   const deleteAllApplications = async () => {
     if (!confirm(
@@ -191,29 +195,13 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     }
   };
 
-  const getStatusBadgeVariant = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'new':
-      case 'submitted':
-        return 'primary';
-      case 'reviewed':
-        return 'info';
-      case 'shortlisted':
-        return 'success';
-      case 'rejected':
-        return 'danger';
-      case 'hired':
-        return 'success';
-      default:
-        return 'secondary';
-    }
-  };
-
-  const columns = [
+  const columns = useMemo(() => [
     {
+      id: 'candidate',
       name: 'Candidate',
       selector: (row: ApplicationRow) => row.candidateName || 'Unknown',
       sortable: true,
+      sortField: 'candidateName',
       cell: (row: ApplicationRow) => (
         <div>
           <strong>{row.candidateName || 'Unknown'}</strong>
@@ -236,9 +224,11 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       grow: 1
     },
     {
+      id: 'status',
       name: 'Status',
       selector: (row: ApplicationRow) => row.status,
       sortable: true,
+      sortField: 'status',
       cell: (row: ApplicationRow) => (
         <div className="d-flex align-items-center gap-2">
           <Form.Select
@@ -263,44 +253,54 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       width: '180px'
     },
     {
+      id: 'notes',
       name: 'Notes',
       selector: (row: ApplicationRow) => row.notes || '',
       sortable: true,
+      sortField: 'notes',
       cell: (row: ApplicationRow) => (
         <div style={{ maxWidth: '200px', wordWrap: 'break-word' }}>
-          {row.notes || '—'}
+          {row.notes || '-'}
         </div>
       ),
       width: '200px'
     },
     {
+      id: 'matchScore',
       name: 'Match Score',
-      selector: (row: ApplicationRow) => row.aiMatch || 0,
+      selector: (row: ApplicationRow) => row.aiMatch ?? 0,
       sortable: true,
-      cell: (row: ApplicationRow) => row.aiMatch != null ? Number(row.aiMatch).toFixed(0) : '—',
+      sortField: 'matchScore',
+      cell: (row: ApplicationRow) => row.aiMatch != null ? Number(row.aiMatch).toFixed(0) : '-',
       width: '120px'
     },
     {
+      id: 'companyScore',
       name: 'Company Score',
-      selector: (row: ApplicationRow) => row.aiCompany || 0,
+      selector: (row: ApplicationRow) => row.aiCompany ?? 0,
       sortable: true,
-      cell: (row: ApplicationRow) => row.aiCompany != null ? Number(row.aiCompany).toFixed(0) : '—',
+      sortField: 'aiCompanyScore',
+      cell: (row: ApplicationRow) => row.aiCompany != null ? Number(row.aiCompany).toFixed(0) : '-',
       width: '130px'
     },
     {
+      id: 'fakeScore',
       name: 'Fake Score',
-      selector: (row: ApplicationRow) => row.aiFake || 0,
+      selector: (row: ApplicationRow) => row.aiFake ?? 0,
       sortable: true,
-      cell: (row: ApplicationRow) => row.aiFake != null ? Number(row.aiFake).toFixed(0) : '—',
+      sortField: 'fakeScore',
+      cell: (row: ApplicationRow) => row.aiFake != null ? Number(row.aiFake).toFixed(0) : '-',
       width: '110px'
     },
     {
+      id: 'skills',
       name: 'Skills',
       selector: (row: ApplicationRow) => row.skills || '',
       sortable: true,
+      sortField: 'skills',
       cell: (row: ApplicationRow) => (
         <div style={{ wordWrap: 'break-word', whiteSpace: 'pre-wrap' }}>
-          {row.skills || '—'}
+          {row.skills || '-'}
         </div>
       ),
       minWidth: '200px',
@@ -308,12 +308,14 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       grow: 2
     },
     {
+      id: 'experience',
       name: 'Experience',
-      selector: (row: ApplicationRow) => row.experience || '',
+      selector: (row: ApplicationRow) => row.experience ?? '',
       sortable: true,
+      sortField: 'experience',
       cell: (row: ApplicationRow) => (
         <div style={{ wordWrap: 'break-word', whiteSpace: 'pre-wrap' }}>
-          {row.experience || '—'}
+          {row.experience != null ? row.experience : '-'}
         </div>
       ),
       minWidth: '200px',
@@ -321,16 +323,20 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       grow: 2
     },
     {
+      id: 'appliedDate',
       name: 'Applied Date',
-      selector: (row: ApplicationRow) => new Date(row.appliedDate).toLocaleDateString(),
+      selector: (row: ApplicationRow) => row.appliedDate,
       sortable: true,
+      sortField: 'appliedDate',
       cell: (row: ApplicationRow) => new Date(row.appliedDate).toLocaleDateString(),
       width: '120px'
     },
     {
+      id: 'updatedAt',
       name: 'Updated At',
-      selector: (row: ApplicationRow) => new Date(row.updatedAt).toLocaleDateString(),
+      selector: (row: ApplicationRow) => row.updatedAt,
       sortable: true,
+      sortField: 'updatedAt',
       cell: (row: ApplicationRow) => (
         <div>
           {new Date(row.updatedAt).toLocaleDateString()}
@@ -343,12 +349,14 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       width: '140px'
     },
     {
+      id: 'createdAt',
       name: 'Created At',
-      selector: (row: ApplicationRow) => row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '',
+      selector: (row: ApplicationRow) => row.createdAt || '',
       sortable: true,
+      sortField: 'createdAt',
       cell: (row: ApplicationRow) => (
         <div>
-          {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '—'}
+          {row.createdAt ? new Date(row.createdAt).toLocaleDateString() : '-'}
           {row.createdAt && (
             <>
               <br />
@@ -362,6 +370,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       width: '140px'
     },
     {
+      id: 'actions',
       name: 'Actions',
       cell: (row: ApplicationRow) => (
         <Button
@@ -379,7 +388,24 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       button: true,
       width: '80px'
     }
-  ];
+  ], [updateStatus, unlink, updating]);
+
+  const sortedColumn = useMemo(
+    () => columns.find((col: any) => col.sortField === sortField),
+    [columns, sortField]
+  );
+
+  const handleSort = useCallback(
+    (column: any, direction: 'asc' | 'desc') => {
+      if (!column?.sortField) {
+        return;
+      }
+      setSortField(column.sortField);
+      setSortDirection(direction);
+      setPage(1);
+    },
+    []
+  );
 
   if (error) {
     return (
@@ -584,6 +610,10 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
           paginationPerPage={pageSize}
           paginationServer={true}
           paginationTotalRows={total}
+          sortServer={true}
+          onSort={handleSort}
+          sortDirection={sortDirection}
+          sortColumn={sortedColumn}
           onChangePage={(page: number) => setPage(page)}
           onChangeRowsPerPage={(currentRowsPerPage: number, currentPage: number) => {
             setPageSize(currentRowsPerPage);
