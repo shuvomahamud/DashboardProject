@@ -252,7 +252,22 @@ export function isAttachmentEligible(attachment: Attachment): boolean {
   if (attachment['@odata.type'] !== '#microsoft.graph.fileAttachment') {
     return false;
   }
-  
+
+  // Filter out cover letters - common patterns
+  const coverLetterPatterns = [
+    /cover[\s_-]?letter/i,
+    /coverletter/i,
+    /\bcl\b/i,              // "CL" standalone
+    /^cl[\s_-]/i,           // "CL " or "CL_" at start
+    /[\s_-]cl[\s_-]/i,      // " CL " or "_CL_" in middle
+    /[\s_-]cl\./i,          // "_CL." at end
+  ];
+
+  if (coverLetterPatterns.some(pattern => pattern.test(fileName))) {
+    console.log(`Skipping cover letter attachment: ${attachment.name}`);
+    return false;
+  }
+
   return true;
 }
 
