@@ -341,7 +341,7 @@ RESUME_TEXT`;
 async function callOpenAIForParsing(
   jobContext: JobContext,
   redactedText: string,
-  timeoutMs: number = 12000
+  timeoutMs: number = 20000
 ): Promise<ParseResult> {
   try {
     const model = process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini';
@@ -586,7 +586,7 @@ export async function parseAndScoreResume(
   resumeId: number,
   jobContext: JobContext,
   force: boolean = false,
-  timeoutMs: number = 12000
+  timeoutMs: number = 20000
 ): Promise<{ success: boolean; summary?: ParseSummary; error?: string }> {
   try {
     // Check if PARSE_ON_IMPORT is enabled

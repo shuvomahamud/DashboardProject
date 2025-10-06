@@ -26,12 +26,12 @@ export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel max function duration
 export const preferredRegion = 'iad1'; // US East (close to Supabase)
 
-// Time budget constants tuned for 12s/15s/18s GPT timings
-const GPT_TIMEOUT_FIRST_MS = 12000;  // 12s - first attempt
-const GPT_TIMEOUT_RETRY_MS = 15000;  // 15s - retry attempt
-const MIN_TIME_FOR_RETRY_MS = 18000; // 18s - minimum time needed for retry (15s + 3s overhead)
+// Time budget constants tuned for 20s/25s/28s GPT timings (increased from 12s/15s/18s)
+const GPT_TIMEOUT_FIRST_MS = 20000;  // 20s - first attempt (increased to allow OpenAI more time)
+const GPT_TIMEOUT_RETRY_MS = 25000;  // 25s - retry attempt (increased for reliability)
+const MIN_TIME_FOR_RETRY_MS = 28000; // 28s - minimum time needed for retry (25s + 3s overhead)
 const HARD_TIME_LIMIT_MS = 58000;    // 58s - stay under 60s gateway timeout
-const SOFT_TIME_LIMIT_MS = HARD_TIME_LIMIT_MS - MIN_TIME_FOR_RETRY_MS - 2000; // 38s - stop Phase B early
+const SOFT_TIME_LIMIT_MS = HARD_TIME_LIMIT_MS - MIN_TIME_FOR_RETRY_MS - 2000; // 28s - stop Phase B early
 
 // Time helpers
 const since = (t: number) => Date.now() - t;

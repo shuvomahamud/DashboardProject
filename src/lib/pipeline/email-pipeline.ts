@@ -279,16 +279,16 @@ export async function processEmailItem(
         };
 
         try {
-          // Parse with timeout to prevent blocking
-          await Promise.race([
-            parseAndScoreResume(resumeId, jobContext),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('GPT_TIMEOUT')), 8000)
-            )
-          ]);
+          // Parse with 20s timeout (enforced via AbortSignal in parseAndScoreResume)
+          const result = await parseAndScoreResume(resumeId, jobContext, false, 20000);
 
-          console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] GPT parsing completed`);
-          gptSuccess = true;
+          if (result.success) {
+            console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] GPT parsing completed`);
+            gptSuccess = true;
+          } else {
+            console.warn(`⚠️  [RUN:${runId}] [ITEM:${itemId}] GPT parsing failed (will retry): ${result.error}`);
+            gptSuccess = false;
+          }
         } catch (error: any) {
           // Log but don't fail - parsing can be retried later
           console.warn(`⚠️  [RUN:${runId}] [ITEM:${itemId}] GPT parsing failed (will retry):`, error.message);
