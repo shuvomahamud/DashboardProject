@@ -1,7 +1,9 @@
 /**
  * Email Processing Pipeline
  *
- * Steps: fetch → save → parse → gpt → persist
+ * Steps: fetch → save → upload → extract → queue-gpt → persist
+ *
+ * Inline GPT work has been removed; resumes are queued for the background worker.
  */
 
 import { createHash } from 'crypto';
@@ -10,10 +12,11 @@ import { extractText } from '@/lib/parse/text';
 import { uploadResumeBytes } from '@/lib/supabase-server';
 import { parseAndScoreResume } from '@/lib/ai/resumeParsingService';
 import type { EmailProvider } from '@/lib/providers/email-provider';
+import { logMetric } from '@/lib/logging/metrics';
 
 export interface EmailItem {
   id: bigint;
-  external_message_id: string;  // Match Prisma snake_case
+  external_message_id: string; // Match Prisma snake_case
   status: string;
   step: string;
 }
@@ -26,14 +29,14 @@ export interface PipelineContext {
 
 export interface PipelineResult {
   success: boolean;
-  step: string; // Last completed step
+  step: string;
   error?: string;
-  gptSuccess?: boolean; // Whether GPT parsing succeeded
-  resumeId?: number; // Resume ID for retry queue
+  resumeId?: number;
+  gptStatus?: 'queued' | 'skipped' | 'succeeded';
 }
 
 /**
- * Process a single email item through the pipeline
+ * Process a single email item through the pipeline (without GPT parsing).
  */
 export async function processEmailItem(
   item: EmailItem,
@@ -42,40 +45,56 @@ export async function processEmailItem(
   const { provider, jobId, runId } = context;
   const { id: itemId, external_message_id: externalMessageId, step: currentStep } = item;
 
+  logMetric('pipeline_start', { runId, itemId: itemId.toString(), step: currentStep });
+  console.log(`?? [RUN:${runId}] [ITEM:${itemId}] Starting pipeline at step: ${currentStep}`);
+
+  let step = currentStep;
+  let jobApplicationLinked = false;
+  let resumeId: number | null = null;
+  let gptStatus: 'queued' | 'skipped' | 'succeeded' = 'skipped';
+
+  let fileBytes: Uint8Array | null = null;
+  let fileHash: string | null = null;
+  let attachmentMeta: { name: string; size: number; contentType: string } | null = null;
+  let storagePath: string | null = null;
+
   try {
-    console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Starting pipeline at step: ${currentStep}`);
-    let step = currentStep;
-    let jobApplicationLinked = false;
-
-    // Step 1: Fetch message and attachments
+    // Step 1: Fetch message metadata and confirm attachments exist
     if (step === 'none') {
-      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 1: Fetching message and attachments`);
-      const { message, attachments } = await provider.getMessage(externalMessageId);
-
-      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 1: Found ${attachments.length} eligible attachments`);
+      const fetchStart = Date.now();
+      const { attachments } = await provider.getMessage(externalMessageId);
+      logMetric('pipeline_fetch_complete', {
+        runId,
+        itemId: itemId.toString(),
+        attachments: attachments.length,
+        ms: Date.now() - fetchStart
+      });
 
       if (attachments.length === 0) {
-        console.log(`⚠️  [RUN:${runId}] [ITEM:${itemId}] Step 1: No eligible attachments - marking as completed`);
+        await prisma.import_email_items.update({
+          where: { id: itemId },
+          data: { gpt_status: 'skipped', gpt_next_retry_at: null }
+        });
         await updateItemStatus(itemId, 'completed', 'fetched');
-        return { success: true, step: 'fetched' };
+        console.log(`??  [RUN:${runId}] [ITEM:${itemId}] No eligible attachments - marking completed`);
+        logMetric('pipeline_complete', {
+          runId,
+          itemId: itemId.toString(),
+          resumeId: 'none',
+          gptStatus: 'skipped'
+        });
+        return { success: true, step: 'fetched', gptStatus: 'skipped' };
       }
 
       step = 'fetched';
       await updateItemStep(itemId, step);
-      console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] Step 1: Complete - moved to step: ${step}`);
     }
 
-    // Step 2: Download and save file bytes
-    let fileBytes: Uint8Array;
-    let fileHash: string;
-    let attachmentMeta: { name: string; size: number; contentType: string };
-
+    // Step 2: Download attachment bytes and hash for deduplication
     if (step === 'fetched') {
-      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 2: Downloading attachment bytes`);
+      const downloadStart = Date.now();
       const { attachments } = await provider.getMessage(externalMessageId);
-      const attachment = attachments[0]; // Process first eligible attachment
-
-      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 2: Processing attachment "${attachment.name}" (${attachment.size} bytes)`);
+      const attachment = attachments[0];
 
       fileBytes = await provider.getAttachmentBytes(externalMessageId, attachment.id);
       fileHash = hashFileContent(fileBytes);
@@ -85,92 +104,82 @@ export async function processEmailItem(
         contentType: attachment.contentType
       };
 
-      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 2: File hash: ${fileHash.substring(0, 16)}...`);
+      logMetric('pipeline_bytes_downloaded', {
+        runId,
+        itemId: itemId.toString(),
+        size: attachment.size,
+        ms: Date.now() - downloadStart
+      });
 
-      // Check if resume already exists (deduplication)
       const existing = await prisma.resume.findFirst({
         where: {
           fileHash,
           sourceMessageId: externalMessageId
-        }
+        },
+        select: { id: true }
       });
 
       if (existing) {
-        console.log(`⚠️  [RUN:${runId}] [ITEM:${itemId}] Step 2: Duplicate detected - linking to existing resume ${existing.id}`);
         await linkJobApplication(jobId, existing.id, externalMessageId);
-        jobApplicationLinked = true;
+        await enqueueResumeForAI(existing.id, jobId, runId, itemId);
+        await prisma.import_email_items.update({
+          where: { id: itemId },
+          data: {
+            resume_id: existing.id,
+            gpt_status: 'queued',
+            gpt_next_retry_at: new Date(),
+            gpt_last_error: null
+          }
+        });
+
+        logMetric('pipeline_duplicate_linked', {
+          runId,
+          itemId: itemId.toString(),
+          resumeId: existing.id
+        });
+
         await updateItemStatus(itemId, 'completed', 'saved');
-        return { success: true, step: 'saved' };
+        return { success: true, step: 'saved', resumeId: existing.id, gptStatus: 'queued' };
       }
 
       step = 'saved';
       await updateItemStep(itemId, step);
-      console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] Step 2: Complete - moved to step: ${step}`);
     }
 
-    // Step 3: Upload to storage
+    // Step 3: Upload resume bytes to storage
     if (step === 'saved') {
-      console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 3: Uploading to Supabase storage`);
-
-      // Re-fetch if not in memory
-      if (!fileBytes!) {
-        console.log(`🔧 [RUN:${runId}] [ITEM:${itemId}] Step 3: Re-fetching attachment (not in memory)`);
-        const { attachments } = await provider.getMessage(externalMessageId);
-        const attachment = attachments[0];
-        fileBytes = await provider.getAttachmentBytes(externalMessageId, attachment.id);
-        fileHash = hashFileContent(fileBytes);
-        attachmentMeta = {
-          name: attachment.name,
-          size: attachment.size,
-          contentType: attachment.contentType
-        };
+      if (!fileBytes || !fileHash || !attachmentMeta) {
+        ({ fileBytes, fileHash, attachmentMeta } = await refetchAttachment(provider, externalMessageId));
       }
 
-      // Upload to Supabase
+      const uploadStart = Date.now();
       const uploadResult = await uploadToSupabase(
-        fileBytes,
+        fileBytes!,
         fileHash!,
         attachmentMeta!.name,
         jobId,
         attachmentMeta!.contentType
       );
+      storagePath = uploadResult.path;
 
-      console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] Step 3: Uploaded to ${uploadResult.path}`);
+      logMetric('pipeline_upload_complete', {
+        runId,
+        itemId: itemId.toString(),
+        ms: Date.now() - uploadStart
+      });
 
       step = 'uploaded';
       await updateItemStep(itemId, step);
-      console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] Step 3: Complete - moved to step: ${step}`);
     }
 
-    // Step 4: Parse text
-    let resumeId: number;
-
+    // Step 4: Create resume record & extract text
     if (step === 'uploaded') {
-      // Re-fetch if needed
-      if (!fileBytes!) {
-        const { attachments } = await provider.getMessage(externalMessageId);
-        const attachment = attachments[0];
-        fileBytes = await provider.getAttachmentBytes(externalMessageId, attachment.id);
-        fileHash = hashFileContent(fileBytes);
-        attachmentMeta = {
-          name: attachment.name,
-          size: attachment.size,
-          contentType: attachment.contentType
-        };
+      if (!fileBytes || !fileHash || !attachmentMeta) {
+        ({ fileBytes, fileHash, attachmentMeta } = await refetchAttachment(provider, externalMessageId));
       }
 
-      // Get message details
       const { message, attachments } = await provider.getMessage(externalMessageId);
       const attachment = attachments[0];
-
-      // Create resume record
-      const uploadResult = await uploadToSupabase(
-        fileBytes,
-        fileHash!,
-        attachmentMeta!.name,
-        jobId,
-        attachmentMeta!.contentType
-      );
 
       const safeName = attachment.name
         .toLowerCase()
@@ -185,8 +194,8 @@ export async function processEmailItem(
           fileSize: attachment.size,
           fileSizeBytes: attachment.size,
           mimeType: attachment.contentType,
-          storagePath: uploadResult.path,
-          fileStorageUrl: uploadResult.path,
+          storagePath: storagePath || buildStoragePath(jobId, fileHash!, attachmentMeta!.name),
+          fileStorageUrl: storagePath || buildStoragePath(jobId, fileHash!, attachmentMeta!.name),
           fileHash: fileHash!,
           sourceType: 'email',
           sourceMessageId: externalMessageId,
@@ -206,14 +215,19 @@ export async function processEmailItem(
 
       resumeId = resume.id;
 
-      // Extract text
+      await prisma.import_email_items.update({
+        where: { id: itemId },
+        data: { resume_id: resume.id }
+      });
+
       try {
-        const extractedText = await extractText(fileBytes, safeName, attachment.contentType);
+        const extractStart = Date.now();
+        const extractedText = await extractText(fileBytes!, safeName, attachment.contentType);
 
         if (extractedText !== 'UNSUPPORTED_DOC_LEGACY') {
-          const maxLength = 2 * 1024 * 1024; // 2MB
+          const maxLength = 2 * 1024 * 1024;
           const finalText = extractedText.length > maxLength
-            ? extractedText.substring(0, maxLength) + '\n\n[Text truncated]'
+            ? `${extractedText.substring(0, maxLength)}\n\n[Text truncated]`
             : extractedText;
 
           await prisma.resume.update({
@@ -223,8 +237,15 @@ export async function processEmailItem(
               parsedAt: new Date()
             }
           });
+
+          logMetric('pipeline_extract_complete', {
+            runId,
+            itemId: itemId.toString(),
+            resumeId: resume.id,
+            ms: Date.now() - extractStart,
+            chars: finalText.length
+          });
         } else {
-          // Legacy .doc format not supported
           await prisma.resume.update({
             where: { id: resume.id },
             data: {
@@ -232,16 +253,27 @@ export async function processEmailItem(
               parsedAt: new Date()
             }
           });
+
+          logMetric('pipeline_extract_legacy', {
+            runId,
+            itemId: itemId.toString(),
+            resumeId: resume.id
+          });
         }
       } catch (extractError: any) {
-        // Log error but don't fail the entire import
-        console.error(`⚠️  [RUN:${runId}] [ITEM:${itemId}] Text extraction failed:`, extractError.message);
+        const message = extractError.message ?? 'unknown';
+        console.error(`??  [RUN:${runId}] [ITEM:${itemId}] Text extraction failed:`, message);
+        logMetric('pipeline_extract_failed', {
+          runId,
+          itemId: itemId.toString(),
+          resumeId,
+          error: message
+        });
 
-        // Mark resume with extraction error
         await prisma.resume.update({
           where: { id: resume.id },
           data: {
-            rawText: `[TEXT_EXTRACTION_FAILED: ${extractError.message}]`,
+            rawText: `[TEXT_EXTRACTION_FAILED: ${message}]`,
             parsedAt: new Date()
           }
         });
@@ -251,76 +283,27 @@ export async function processEmailItem(
       await updateItemStep(itemId, step);
     }
 
-    // Step 5: AI processing (optional)
-    let gptSuccess = false;
-
-    if (step === 'parsed' && process.env.PARSE_ON_IMPORT === 'true') {
-      // Get resume ID if not in memory
-      if (!resumeId!) {
+    // Step 5: Queue GPT work & link application
+    if (step === 'parsed') {
+      if (!resumeId) {
         const resume = await prisma.resume.findFirst({
-          where: {
-            sourceMessageId: externalMessageId
-          },
+          where: { sourceMessageId: externalMessageId },
           select: { id: true }
         });
-        resumeId = resume!.id;
+        resumeId = resume?.id ?? null;
       }
 
-      if (!jobApplicationLinked) {
-        await linkJobApplication(jobId, resumeId, externalMessageId);
-        jobApplicationLinked = true;
-      }
-
-      // Get job context
-      const job = await prisma.job.findUnique({
-        where: { id: jobId },
-        select: { title: true, description: true }
-      });
-
-      if (job) {
-        const jobContext = {
-          jobTitle: job.title,
-          jobDescriptionShort: job.description.length > 500
-            ? job.description.substring(0, 500) + '...'
-            : job.description
-        };
-
-        try {
-          // Parse with 20s timeout (enforced via AbortSignal in parseAndScoreResume)
-          const result = await parseAndScoreResume(resumeId, jobContext, false, 20000);
-
-          if (result.success) {
-            console.log(`✅ [RUN:${runId}] [ITEM:${itemId}] GPT parsing completed`);
-            gptSuccess = true;
-          } else {
-            console.warn(`⚠️  [RUN:${runId}] [ITEM:${itemId}] GPT parsing failed (will retry): ${result.error}`);
-            gptSuccess = false;
-          }
-        } catch (error: any) {
-          // Log but don't fail - parsing can be retried later
-          console.warn(`⚠️  [RUN:${runId}] [ITEM:${itemId}] GPT parsing failed (will retry):`, error.message);
-          gptSuccess = false;
-        }
-      }
-
-      step = 'gpt';
-      await updateItemStep(itemId, step);
-    }
-
-    // Step 6: Link to job application (final step)
-    if (step === 'parsed' || step === 'gpt') {
-      // Get resume ID if not in memory
-      if (!resumeId!) {
-        const resume = await prisma.resume.findFirst({
-          where: {
-            sourceMessageId: externalMessageId
-          },
-          select: { id: true }
+      if (resumeId) {
+        await enqueueResumeForAI(resumeId, jobId, runId, itemId);
+        gptStatus = 'queued';
+        logMetric('pipeline_gpt_enqueued', {
+          runId,
+          itemId: itemId.toString(),
+          resumeId
         });
-        resumeId = resume!.id;
       }
 
-      if (!jobApplicationLinked) {
+      if (resumeId && !jobApplicationLinked) {
         await linkJobApplication(jobId, resumeId, externalMessageId);
         jobApplicationLinked = true;
       }
@@ -329,59 +312,57 @@ export async function processEmailItem(
       await updateItemStatus(itemId, 'completed', step);
     }
 
+    logMetric('pipeline_complete', {
+      runId,
+      itemId: itemId.toString(),
+      resumeId: resumeId ?? 'none',
+      gptStatus
+    });
+
     return {
       success: true,
       step,
-      gptSuccess,
-      resumeId
+      resumeId: resumeId ?? undefined,
+      gptStatus
     };
-
   } catch (error: any) {
-    console.error(`❌ [RUN:${runId}] [ITEM:${itemId}] Pipeline error:`, error);
+    const message = error.message?.substring(0, 500) || 'Unknown error';
+    console.error(`? [RUN:${runId}] [ITEM:${itemId}] Pipeline error:`, message);
+    logMetric('pipeline_failed', { runId, itemId: itemId.toString(), error: message });
 
-    // Truncate error message to 500 characters to avoid database issues
-    const errorMessage = error.message?.substring(0, 500) || 'Unknown error';
-
-    // Update item with error
     await prisma.import_email_items.update({
       where: { id: itemId },
       data: {
         status: 'failed',
-        last_error: errorMessage,
-        attempts: { increment: 1 }
+        last_error: message,
+        attempts: { increment: 1 },
+        gpt_status: 'error',
+        gpt_last_error: message
       }
     });
 
-    return { success: false, step: currentStep, error: errorMessage };
+    return { success: false, step: currentStep, error: message };
   }
 }
 
 // Helper functions
 
-/**
- * Try GPT parsing with configurable timeout
- * Returns true if successful, false if timeout/error
- */
-export async function tryGPTParsing(
-  resumeId: number,
-  jobContext: { jobTitle: string; jobDescriptionShort: string },
-  timeoutMs: number,
-  runId: string
-): Promise<boolean> {
-  try {
-    // Pass timeout to parseAndScoreResume, which enforces it at the OpenAI SDK level
-    await parseAndScoreResume(resumeId, jobContext, false, timeoutMs);
-
-    console.log(`✅ [RUN:${runId}] GPT parsing completed for resume ${resumeId} (${timeoutMs}ms timeout)`);
-    return true;
-  } catch (error: any) {
-    console.warn(`⚠️  [RUN:${runId}] GPT parsing failed for resume ${resumeId}: ${error.message}`);
-    return false;
-  }
-}
-
 function hashFileContent(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+async function refetchAttachment(provider: EmailProvider, externalMessageId: string) {
+  const { attachments } = await provider.getMessage(externalMessageId);
+  const attachment = attachments[0];
+  const fileBytes = await provider.getAttachmentBytes(externalMessageId, attachment.id);
+  const fileHash = hashFileContent(fileBytes);
+  const attachmentMeta = {
+    name: attachment.name,
+    size: attachment.size,
+    contentType: attachment.contentType
+  };
+
+  return { fileBytes, fileHash, attachmentMeta };
 }
 
 async function uploadToSupabase(
@@ -400,7 +381,7 @@ async function uploadToSupabase(
   const storagePath = `jobs/${jobId}/${fileHash}-${safeName}`;
   const bucketName = process.env.SUPABASE_RESUMES_BUCKET || 'resumes';
 
-  const maxSize = 10 * 1024 * 1024; // 10MB
+  const maxSize = 10 * 1024 * 1024;
   if (fileBytes.length > maxSize) {
     throw new Error(`File too large: ${fileBytes.length} bytes (max ${maxSize})`);
   }
@@ -417,7 +398,6 @@ async function uploadToSupabase(
       bucket: bucketName
     };
   } catch (error: any) {
-    // Treat 409 conflicts as success
     if (error.message?.includes('409') || error.message?.includes('already exists')) {
       return {
         path: storagePath,
@@ -426,6 +406,15 @@ async function uploadToSupabase(
     }
     throw error;
   }
+}
+
+function buildStoragePath(jobId: number, fileHash: string, fileName: string): string {
+  const safeName = fileName
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]/g, '-')
+    .replace(/-+/g, '-')
+    .substring(0, 120);
+  return `jobs/${jobId}/${fileHash}-${safeName}`;
 }
 
 async function linkJobApplication(
@@ -447,7 +436,6 @@ async function linkJobApplication(
 
     await prisma.jobApplication.create({ data });
   } catch (error: any) {
-    // Ignore unique constraint violations (already linked)
     if (error.code !== 'P2002') {
       throw error;
     }
@@ -466,4 +454,70 @@ async function updateItemStatus(itemId: bigint, status: string, step: string): P
     where: { id: itemId },
     data: { status, step, updated_at: new Date() }
   });
+}
+
+async function enqueueResumeForAI(
+  resumeId: number,
+  jobId: number,
+  runId: string,
+  itemId: bigint
+): Promise<void> {
+  const now = new Date();
+
+  await prisma.$transaction([
+    prisma.import_email_items.update({
+      where: { id: itemId },
+      data: {
+        resume_id: resumeId,
+        gpt_status: 'queued',
+        gpt_attempts: 0,
+        gpt_last_error: null,
+        gpt_next_retry_at: now
+      }
+    }),
+    prisma.resume_ai_jobs.upsert({
+      where: {
+        resumeId_jobId: {
+          resumeId,
+          jobId
+        }
+      },
+      update: {
+        status: 'pending',
+        runId,
+        lastError: null,
+        nextRetryAt: now,
+        updatedAt: new Date()
+      },
+      create: {
+        resumeId,
+        jobId,
+        runId,
+        status: 'pending',
+        nextRetryAt: now
+      }
+    })
+  ]);
+}
+
+/**
+ * Try GPT parsing with configurable timeout (used by the worker).
+ */
+export async function tryGPTParsing(
+  resumeId: number,
+  jobContext: { jobTitle: string; jobDescriptionShort: string },
+  timeoutMs: number,
+  runId: string
+): Promise<boolean> {
+  try {
+    await parseAndScoreResume(resumeId, jobContext, false, timeoutMs);
+    console.log(`? [RUN:${runId}] GPT parsing completed for resume ${resumeId} (${timeoutMs}ms timeout)`);
+    logMetric('gpt_worker_success', { runId, resumeId, timeoutMs });
+    return true;
+  } catch (error: any) {
+    const message = error.message || 'Unknown error';
+    console.warn(`??  [RUN:${runId}] GPT parsing failed for resume ${resumeId}: ${message}`);
+    logMetric('gpt_worker_failure', { runId, resumeId, error: message });
+    return false;
+  }
 }

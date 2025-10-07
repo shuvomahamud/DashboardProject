@@ -312,6 +312,7 @@ model Job {
   job_embeddings     job_embeddings[]
   import_email_runs  import_email_runs[]
   import_email_items import_email_items[]
+  resume_ai_jobs     resume_ai_jobs[]
 }
 
 model Resume {
@@ -355,6 +356,8 @@ model Resume {
   parsedText            String?
   applications          JobApplication[]
   resume_embeddings     resume_embeddings[]
+  importItems           import_email_items[]
+  resume_ai_jobs        resume_ai_jobs[]
 
   @@index([fileHash])
   @@index([sourceMessageId])
@@ -472,10 +475,39 @@ model import_email_items {
   last_error          String?
   created_at          DateTime          @default(now()) @db.Timestamptz(6)
   updated_at          DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
+  resume_id           Int?
+  gpt_status          String            @default("not_started")
+  gpt_attempts        Int               @default(0)
+  gpt_last_error      String?
+  gpt_next_retry_at   DateTime?         @db.Timestamptz(6)
+  gpt_last_started_at DateTime?         @db.Timestamptz(6)
+  gpt_last_finished_at DateTime?        @db.Timestamptz(6)
   run                 import_email_runs @relation(fields: [run_id], references: [id], onDelete: Cascade)
   Job                 Job               @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  Resume              Resume?           @relation(fields: [resume_id], references: [id], onDelete: SetNull)
 
   @@unique([run_id, external_message_id])
   @@index([run_id, status, id])
   @@index([job_id])
+  @@index([resume_id])
+}
+
+model resume_ai_jobs {
+  id             Int       @id @default(autoincrement())
+  resumeId       Int
+  jobId          Int
+  runId          String?   @db.Uuid
+  status         String    @default("pending")
+  attempts       Int       @default(0)
+  lastError      String?
+  nextRetryAt    DateTime? @db.Timestamptz(6)
+  lastStartedAt  DateTime? @db.Timestamptz(6)
+  lastFinishedAt DateTime? @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(6)
+  resume         Resume    @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  job            Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([resumeId, jobId])
+  @@index([status, nextRetryAt])
 }
