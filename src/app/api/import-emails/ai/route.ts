@@ -27,9 +27,43 @@ const computeBackoffMs = (attempts: number) => {
 
 export async function POST(req: NextRequest) {
   const start = Date.now();
-  const concurrency = Math.max(1, DEFAULT_CONCURRENCY);
-  const timeoutMs = Math.max(5_000, DEFAULT_TIMEOUT_MS);
-  logMetric('gpt_worker_slice_start', { concurrency, timeoutMs });
+
+  const searchParams = req.nextUrl?.searchParams;
+  const queryConcurrency = searchParams?.get('concurrency');
+  const queryMaxJobs = searchParams?.get('maxJobs');
+  const queryTimeout = searchParams?.get('timeoutMs');
+  const queryTrigger = searchParams?.get('trigger');
+
+  let overridePayload: Record<string, any> = {};
+  const contentType = req.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    overridePayload = await req.json().catch(() => ({}));
+  }
+
+  const trigger = typeof overridePayload.trigger === 'string'
+    ? overridePayload.trigger
+    : (queryTrigger || 'manual');
+
+  const requestedConcurrency = Number(overridePayload.concurrency ?? queryConcurrency);
+  const requestedMaxJobs = Number(overridePayload.maxJobs ?? queryMaxJobs);
+  const requestedTimeout = Number(overridePayload.timeoutMs ?? queryTimeout);
+
+  const baseConcurrency = Math.max(1, DEFAULT_CONCURRENCY);
+  const concurrency = Math.max(1, isNaN(requestedConcurrency) ? baseConcurrency : requestedConcurrency);
+  const maxJobsTarget = Math.max(1, isNaN(requestedMaxJobs) ? concurrency : requestedMaxJobs);
+  const effectiveConcurrency = Math.min(concurrency, maxJobsTarget);
+
+  const timeoutMs = Math.max(
+    5_000,
+    isNaN(requestedTimeout) ? DEFAULT_TIMEOUT_MS : requestedTimeout
+  );
+
+  logMetric('gpt_worker_slice_start', {
+    concurrency: effectiveConcurrency,
+    timeoutMs,
+    trigger,
+    maxJobs: maxJobsTarget
+  });
 
   try {
     const now = new Date();
@@ -45,7 +79,7 @@ export async function POST(req: NextRequest) {
         { nextRetryAt: 'asc' },
         { createdAt: 'asc' }
       ],
-      take: concurrency * 3,
+      take: Math.max(effectiveConcurrency * 3, maxJobsTarget * 3),
       include: {
         job: {
           select: {
@@ -66,7 +100,7 @@ export async function POST(req: NextRequest) {
 
     logMetric('gpt_worker_candidates', {
       count: candidates.length,
-      concurrency
+      concurrency: effectiveConcurrency
     });
 
     const claimed: ClaimedJob[] = [];
@@ -105,7 +139,7 @@ export async function POST(req: NextRequest) {
       });
 
       claimed.push({ job, attempts });
-      if (claimed.length >= concurrency) {
+      if (claimed.length >= maxJobsTarget) {
         break;
       }
     }
@@ -124,7 +158,7 @@ export async function POST(req: NextRequest) {
       retried: 0
     };
 
-    await runWithConcurrency(claimed, concurrency, async ({ job, attempts }) => {
+    await runWithConcurrency(claimed, effectiveConcurrency, async ({ job, attempts }) => {
       const jobContext = buildJobContext(job);
       const resumeId = job.resumeId;
       const runId = job.runId || 'worker';
@@ -211,12 +245,14 @@ export async function POST(req: NextRequest) {
     });
 
     const elapsed = Date.now() - start;
-    logMetric('gpt_worker_slice_end', { ...results, elapsedMs: elapsed });
+    logMetric('gpt_worker_slice_end', { ...results, elapsedMs: elapsed, trigger });
 
     return NextResponse.json({
       status: 'ok',
       elapsed,
-      concurrency,
+      concurrency: effectiveConcurrency,
+      maxJobs: maxJobsTarget,
+      trigger,
       processed: claimed.length,
       ...results
     });

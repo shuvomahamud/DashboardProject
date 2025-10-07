@@ -30,6 +30,7 @@ const HARD_TIME_LIMIT_MS = 58000;    // stay under 60s gateway timeout
 const SOFT_EXIT_MARGIN_MS = 8000;    // leave 8s for wrap-up
 const ITEM_BUDGET_MS = 8000;         // conservative budget per item
 const SOFT_TIME_LIMIT_MS = HARD_TIME_LIMIT_MS - SOFT_EXIT_MARGIN_MS;
+const DEFAULT_WORKER_CONCURRENCY = parseInt(process.env.GPT_WORKER_CONCURRENCY || '3', 10);
 
 // Time helpers
 const since = (t: number) => Date.now() - t;
@@ -38,6 +39,7 @@ const timeLeft = (start: number) => HARD_TIME_LIMIT_MS - since(start);
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   logMetric('processor_slice_start', { startedAt: new Date(startTime).toISOString() });
+  const requestOrigin = req.nextUrl?.origin || null;
 
   try {
     console.log('⚙️  Processor invoked');
@@ -225,6 +227,7 @@ export async function POST(req: NextRequest) {
     let processedCount = 0;
     let batchNumber = 0;
     let gracefulStop = false;
+    let gptQueuedThisSlice = 0;
 
     while (!gracefulStop) {
       batchNumber++;
@@ -289,6 +292,10 @@ export async function POST(req: NextRequest) {
           gptStatus: result.gptStatus || 'unknown'
         });
 
+        if (result.gptStatus === 'queued') {
+          gptQueuedThisSlice++;
+        }
+
         if (!result.success) {
           console.warn(`??  [RUN:${run.id}] Phase B: Item ${item.id} failed: ${result.error}`);
         }
@@ -333,6 +340,16 @@ export async function POST(req: NextRequest) {
         logMetric('processor_progress_skipped', { runId: run.id, remainingMs: timeLeft(startTime) });
       }
     }
+
+    const remainingAfterPhaseB = timeLeft(startTime);
+    if (gptQueuedThisSlice > 0 && remainingAfterPhaseB > SOFT_EXIT_MARGIN_MS + 3000) {
+      await triggerAIWorker(requestOrigin, {
+        runId: run.id,
+        queued: gptQueuedThisSlice,
+        remainingMs: remainingAfterPhaseB
+      });
+    }
+
 // Check if all items completed (with retry for connection issues)
     let pendingCount = 0;
     let completedCount = 0;
@@ -558,5 +575,71 @@ export async function POST(req: NextRequest) {
       },
       { status: 500 }
     );
+  }
+}
+
+interface TriggerAIWorkerOptions {
+  runId: string;
+  queued: number;
+  remainingMs: number;
+}
+
+async function triggerAIWorker(origin: string | null, options: TriggerAIWorkerOptions): Promise<void> {
+  const { runId, queued, remainingMs } = options;
+
+  if (!origin) {
+    logMetric('processor_ai_worker_trigger_skipped', { runId, reason: 'no_origin', queued });
+    return;
+  }
+
+  if (queued <= 0) {
+    return;
+  }
+
+  const defaultAuto = DEFAULT_WORKER_CONCURRENCY.toString();
+  const autoConcurrency = Math.max(3, Number(process.env.GPT_WORKER_AUTORUN_CONCURRENCY || defaultAuto));
+  const autoMaxJobsEnv = Number(process.env.GPT_WORKER_AUTORUN_MAX_JOBS || autoConcurrency);
+  const autoTimeoutEnv = Number(process.env.GPT_WORKER_AUTORUN_TIMEOUT_MS || '15000');
+
+  const maxJobs = Math.max(1, Math.min(queued, isNaN(autoMaxJobsEnv) ? autoConcurrency : autoMaxJobsEnv));
+  const concurrency = Math.min(autoConcurrency, maxJobs);
+  const safeRemaining = Math.max(0, remainingMs - SOFT_EXIT_MARGIN_MS);
+  const timeoutMs = Math.max(3000, Math.min(isNaN(autoTimeoutEnv) ? 15000 : autoTimeoutEnv, safeRemaining));
+
+  if (timeoutMs <= 1000) {
+    logMetric('processor_ai_worker_trigger_skipped', { runId, reason: 'insufficient_time', queued, remainingMs });
+    return;
+  }
+
+  const body = {
+    trigger: 'processor',
+    concurrency,
+    maxJobs,
+    timeoutMs
+  };
+
+  try {
+    const response = await fetch(new URL('/api/import-emails/ai', origin), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    logMetric('processor_ai_worker_trigger', {
+      runId,
+      queued,
+      concurrency,
+      maxJobs,
+      timeoutMs,
+      status: response.status
+    });
+  } catch (error: any) {
+    logMetric('processor_ai_worker_trigger_failed', {
+      runId,
+      queued,
+      error: error?.message || 'unknown error'
+    });
   }
 }
