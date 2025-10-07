@@ -17,8 +17,7 @@
     },
     {
       "path": "/api/import-emails/ai",
-      "schedule": "* * * * *",
-      "method": "POST"
+      "schedule": "* * * * *"
     }
   ]
 }
