@@ -907,6 +907,7 @@ export async function parseAndScoreResume(
 
     console.log(`parse_ok resumeId=${resumeId} model=${process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini'} ms=${Date.now()}`);
     console.log(`✅ FINAL SUMMARY: Resume ${resumeId} - Match:${summary.matchScore} Company:${summary.companyScore} Fake:${summary.fakeScore}`);
+    console.log(`[GPT] resumeId=${resumeId} matchScore=${summary.matchScore} companyScore=${summary.companyScore} fakeScore=${summary.fakeScore} tokens=${summary.tokensUsed ?? 'n/a'}`);
 
     return {
       success: true,
