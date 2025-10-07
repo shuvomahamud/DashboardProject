@@ -13,7 +13,7 @@ type ApplicationRow = {
   phone: string | null;
   status: string;
   notes: string | null;
-  aiMatch: number | null;
+  matchScore: number | null;
   aiCompany: number | null;
   aiFake: number | null;
   updatedAt: string;
@@ -268,10 +268,10 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     {
       id: 'matchScore',
       name: 'Match Score',
-      selector: (row: ApplicationRow) => row.aiMatch ?? 0,
+      selector: (row: ApplicationRow) => row.matchScore ?? 0,
       sortable: true,
       sortField: 'matchScore',
-      cell: (row: ApplicationRow) => row.aiMatch != null ? Number(row.aiMatch).toFixed(0) : '-',
+      cell: (row: ApplicationRow) => row.matchScore != null ? Number(row.matchScore).toFixed(0) : '-',
       width: '120px'
     },
     {

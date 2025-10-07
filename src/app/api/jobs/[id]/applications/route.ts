@@ -211,7 +211,7 @@ async function _GET(req: NextRequest) {
       email,
       phone,
       // AI scores from database (with fallbacks to Resume table)
-      aiMatch: toNumber(a.matchScore),
+      matchScore: toNumber(a.matchScore),
       aiCompany: toNumber(a.aiCompanyScore) ?? toNumber(a.resume?.companyScore),
       aiFake: toNumber(a.resume?.fakeScore),
       // Additional resume fields
