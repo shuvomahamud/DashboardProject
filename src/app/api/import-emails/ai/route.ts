@@ -11,6 +11,8 @@ const DEFAULT_TIMEOUT_MS = parseInt(process.env.GPT_TIMEOUT_MS || '25000', 10);
 const MAX_ATTEMPTS = parseInt(process.env.GPT_MAX_ATTEMPTS || '5', 10);
 const BASE_BACKOFF_MS = parseInt(process.env.GPT_BASE_BACKOFF_MS || '15000', 10);
 const MAX_BACKOFF_MS = parseInt(process.env.GPT_MAX_BACKOFF_MS || '300000', 10);
+const SLICE_TOTAL_BUDGET_MS = 58_000;
+const SAFETY_BUFFER_MS = 3_000;
 
 type ResumeJob = Awaited<ReturnType<typeof prisma.resume_ai_jobs.findMany>>[number];
 
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
   const effectiveConcurrency = Math.min(concurrency, maxJobsTarget);
 
   const timeoutMs = Math.max(
-    5_000,
+    15_000,
     isNaN(requestedTimeout) ? DEFAULT_TIMEOUT_MS : requestedTimeout
   );
 
@@ -103,6 +105,53 @@ export async function POST(req: NextRequest) {
       concurrency: effectiveConcurrency
     });
 
+    const elapsedAfterCandidates = Date.now() - start;
+    const remainingMs = SLICE_TOTAL_BUDGET_MS - elapsedAfterCandidates;
+    if (remainingMs <= SAFETY_BUFFER_MS) {
+      logMetric('gpt_worker_insufficient_time', {
+        reason: 'no_time_remaining',
+        remainingMs,
+        timeoutMs,
+        concurrency: effectiveConcurrency
+      });
+      return NextResponse.json({
+        status: 'time_exhausted',
+        reason: 'no_time_remaining',
+        elapsed: elapsedAfterCandidates
+      });
+    }
+
+    const timeBudget = remainingMs - SAFETY_BUFFER_MS;
+    const maxBatchesByTime = Math.floor(timeBudget / timeoutMs);
+    const maxJobsByTime = maxBatchesByTime * effectiveConcurrency;
+    const claimLimit = Math.min(
+      maxJobsTarget,
+      candidates.length,
+      Math.max(0, maxJobsByTime)
+    );
+
+    if (claimLimit <= 0) {
+      logMetric('gpt_worker_insufficient_time', {
+        reason: 'insufficient_for_single_batch',
+        remainingMs,
+        timeoutMs,
+        concurrency: effectiveConcurrency
+      });
+      return NextResponse.json({
+        status: 'time_exhausted',
+        reason: 'insufficient_for_single_batch',
+        elapsed: elapsedAfterCandidates
+      });
+    }
+
+    logMetric('gpt_worker_time_budget', {
+      remainingMs,
+      timeoutMs,
+      concurrency: effectiveConcurrency,
+      claimLimit,
+      maxJobsTarget
+    });
+
     const claimed: ClaimedJob[] = [];
     for (const job of candidates) {
       const claimResult = await prisma.resume_ai_jobs.updateMany({
@@ -139,7 +188,7 @@ export async function POST(req: NextRequest) {
       });
 
       claimed.push({ job, attempts });
-      if (claimed.length >= maxJobsTarget) {
+      if (claimed.length >= claimLimit) {
         break;
       }
     }
