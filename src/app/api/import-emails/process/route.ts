@@ -279,7 +279,7 @@ export async function POST(req: NextRequest) {
     logInfo('phase_b start', { runId: run.id, softLimitMs: SOFT_TIME_LIMIT_MS });
     logMetric('processor_phase_b_start', { runId: run.id, softLimitMs: SOFT_TIME_LIMIT_MS });
 
-    const concurrency = parseInt(process.env.ITEM_CONCURRENCY || '1', 10);
+    const concurrency = Math.max(3, parseInt(process.env.ITEM_CONCURRENCY || '3', 10));
     logInfo('phase_b concurrency', { runId: run.id, concurrency });
 
     let processedCount = 0;
@@ -289,6 +289,7 @@ export async function POST(req: NextRequest) {
     let gptQueuedThisSlice = 0;
     let slowItemCount = 0;
     let failedItemsInSlice = 0;
+    let previousBatchEnd: number | null = null;
 
     while (!gracefulStop) {
       batchNumber++;
@@ -306,6 +307,9 @@ export async function POST(req: NextRequest) {
         logMetric('processor_phase_b_exit_soft_limit', { runId: run.id, elapsedMs: elapsed });
         break;
       }
+
+      const batchStart = Date.now();
+      const gapSinceLastBatch = previousBatchEnd ? batchStart - previousBatchEnd : 0;
 
       const pendingItems = await prisma.import_email_items.findMany({
         where: {
@@ -327,8 +331,13 @@ export async function POST(req: NextRequest) {
         runId: run.id,
         batch: batchNumber,
         count: pendingItems.length,
-        remainingMs: remaining
+        remainingMs: remaining,
+        gapSinceLastBatchMs: gapSinceLastBatch
       });
+
+      let batchProcessed = 0;
+      let batchSlowItems = 0;
+      let batchFailedItems = 0;
 
       for (const item of pendingItems) {
         const remainingForItem = timeLeft(startTime);
@@ -348,6 +357,7 @@ export async function POST(req: NextRequest) {
 
         const itemDuration = Date.now() - itemStart;
         processedCount++;
+        batchProcessed++;
 
         logMetric('processor_item_complete', {
           runId: run.id,
@@ -359,6 +369,7 @@ export async function POST(req: NextRequest) {
 
         if (itemDuration > ITEM_SLOW_THRESHOLD_MS) {
           slowItemCount++;
+          batchSlowItems++;
           logInfo('phase_b item slow', {
             runId: run.id,
             itemId: item.id.toString(),
@@ -373,6 +384,7 @@ export async function POST(req: NextRequest) {
 
         if (!result.success) {
           failedItemsInSlice++;
+          batchFailedItems++;
           logWarn('phase_b item failed', {
             runId: run.id,
             itemId: item.id.toString(),
@@ -419,6 +431,18 @@ export async function POST(req: NextRequest) {
       } else {
         logMetric('processor_progress_skipped', { runId: run.id, remainingMs: timeLeft(startTime) });
       }
+
+      const batchEnd = Date.now();
+      previousBatchEnd = batchEnd;
+      logInfo('phase_b batch complete', {
+        runId: run.id,
+        batch: batchNumber,
+        durationMs: batchEnd - batchStart,
+        processedInBatch: batchProcessed,
+        slowItemsInBatch: batchSlowItems,
+        failedItemsInBatch: batchFailedItems,
+        remainingMs: timeLeft(startTime)
+      });
     }
 
     logInfo('phase_b slice summary', {
@@ -526,6 +550,10 @@ export async function POST(req: NextRequest) {
         });
 
         const elapsed = Date.now() - startTime;
+        logInfo('cleanup deferred due to low remaining time', {
+          runId: run.id,
+          remainingMs: timeLeft(startTime)
+        });
         logMetric('processor_cleanup_deferred', {
           runId: run.id,
           reason: 'low_time_after_completion',

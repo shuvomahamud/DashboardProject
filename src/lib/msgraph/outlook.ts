@@ -32,6 +32,18 @@ export interface AttachmentsResponse {
   attachments: Attachment[];
 }
 
+const GRAPH_DEBUG_ENABLED = process.env.MS_GRAPH_DEBUG === 'true';
+const graphDebug = (message: string, context?: Record<string, unknown>) => {
+  if (!GRAPH_DEBUG_ENABLED) {
+    return;
+  }
+  if (context) {
+    console.info(`[msgraph] ${message}`, context);
+  } else {
+    console.info(`[msgraph] ${message}`);
+  }
+};
+
 export async function searchMessages(
   searchText: string,
   limit: number = 5000,
@@ -57,7 +69,7 @@ export async function searchMessages(
 
   // ---------- TEXT SEARCH MODE (Outlook-like full-text search across ALL folders) ----------
   if (isTextSearch) {
-    console.log(`📧 MS Graph: Searching for "${searchText}"`);
+    graphDebug('MS Graph: searching', { searchText });
 
     // Escape quotes in search phrase and encode for URL
     const phrase = searchText.replace(/"/g, '\\"').trim();
@@ -104,7 +116,7 @@ export async function searchMessages(
     // Sort by receivedDateTime desc (newest first)
     results.sort((a, b) => +new Date(b.receivedDateTime) - +new Date(a.receivedDateTime));
 
-    console.log(`📧 MS Graph: Found ${results.length} messages (${pageCount} pages)`);
+    graphDebug('MS Graph: search complete', { count: results.length, pages: pageCount });
 
     return {
       messages: results.slice(0, limit),
@@ -113,7 +125,7 @@ export async function searchMessages(
   }
 
   // ---------- BULK MODE (NO TEXT) — Inbox scan with filters ----------
-  console.log(`📧 MS Graph: Bulk import from Inbox`);
+  graphDebug('MS Graph: bulk inbox scan starting', { mailbox, lookbackDays, limit });
 
   const pageSize = 1000;
   let url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
@@ -129,7 +141,7 @@ export async function searchMessages(
 
       // Fallback: Remove hasAttachments filter if we get InefficientFilter error
       if (response.status === 400 && error.includes('InefficientFilter')) {
-        console.log('📧 MS Graph: InefficientFilter detected, removing hasAttachments filter');
+        graphDebug('MS Graph: InefficientFilter detected, removing hasAttachments filter');
         url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart}&$top=${pageSize}`;
         nextUrl = undefined;
         continue;
@@ -151,7 +163,7 @@ export async function searchMessages(
     pageCount++;
   }
 
-  console.log(`📧 MS Graph: Found ${allMessages.length} messages (${pageCount} pages)`);
+  graphDebug('MS Graph: bulk inbox scan complete', { count: allMessages.length, pages: pageCount });
 
   return {
     messages: allMessages.slice(0, limit),
@@ -169,14 +181,17 @@ export async function listAttachments(messageId: string, mailboxUserId?: string)
   // URL-encode messageId to handle special characters
   const url = `/v1.0/users/${mailbox}/messages/${encodeURIComponent(messageId)}/attachments?$top=50`;
 
-  console.log(`📎 MS Graph: listAttachments - messageId: ${messageId.substring(0, 30)}... (length: ${messageId.length})`);
-  console.log(`📎 MS Graph: listAttachments - encoded URL: ${url.substring(0, 120)}...`);
+  graphDebug('MS Graph: listAttachments request', {
+    messageIdLength: messageId.length,
+    messageIdPreview: `${messageId.substring(0, 30)}...`,
+    urlPreview: `${url.substring(0, 120)}...`
+  });
 
   const response = await graphFetch(url);
 
   if (!response.ok) {
     const error = await response.text();
-    console.error(`📎 MS Graph: listAttachments failed - Status: ${response.status}, Error: ${error}`);
+    console.error('[msgraph] listAttachments failed', { status: response.status, error });
     throw new Error(`Failed to list attachments: ${response.status} ${error}`);
   }
 

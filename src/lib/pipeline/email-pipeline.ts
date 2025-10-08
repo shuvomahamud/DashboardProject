@@ -11,7 +11,7 @@ import prisma from '@/lib/prisma';
 import { extractText } from '@/lib/parse/text';
 import { uploadResumeBytes } from '@/lib/supabase-server';
 import { parseAndScoreResume } from '@/lib/ai/resumeParsingService';
-import type { EmailProvider } from '@/lib/providers/email-provider';
+import type { EmailAttachment, EmailMessage, EmailProvider } from '@/lib/providers/email-provider';
 import { logMetric } from '@/lib/logging/metrics';
 
 type PipelineLogContext = Record<string, unknown>;
@@ -48,6 +48,7 @@ const STEP_SLOW_THRESHOLDS_MS = {
   upload: 2000,
   extract: 2500
 } as const;
+const MAX_ITEM_ATTEMPTS = parseInt(process.env.IMPORT_ITEM_MAX_ATTEMPTS || '5', 10);
 
 export interface EmailItem {
   id: bigint;
@@ -96,12 +97,20 @@ export async function processEmailItem(
   let fileHash: string | null = null;
   let attachmentMeta: { name: string; size: number; contentType: string } | null = null;
   let storagePath: string | null = null;
+  let cachedMessage: { message: EmailMessage; attachments: EmailAttachment[] } | null = null;
+
+  const fetchMessage = async () => {
+    if (!cachedMessage) {
+      cachedMessage = await provider.getMessage(externalMessageId);
+    }
+    return cachedMessage;
+  };
 
   try {
     // Step 1: Fetch message metadata and confirm attachments exist
     if (step === 'none') {
       const fetchStart = Date.now();
-      const { attachments } = await provider.getMessage(externalMessageId);
+      const { attachments } = await fetchMessage();
       const fetchDuration = Date.now() - fetchStart;
       logMetric('pipeline_fetch_complete', {
         runId,
@@ -145,7 +154,7 @@ export async function processEmailItem(
     // Step 2: Download attachment bytes and hash for deduplication
     if (step === 'fetched') {
       const downloadStart = Date.now();
-      const { attachments } = await provider.getMessage(externalMessageId);
+      const { attachments } = await fetchMessage();
       const attachment = attachments[0];
 
       fileBytes = await provider.getAttachmentBytes(externalMessageId, attachment.id);
@@ -256,7 +265,7 @@ export async function processEmailItem(
         ({ fileBytes, fileHash, attachmentMeta } = await refetchAttachment(provider, externalMessageId));
       }
 
-      const { message, attachments } = await provider.getMessage(externalMessageId);
+      const { message, attachments } = await fetchMessage();
       const attachment = attachments[0];
 
       const safeName = attachment.name
@@ -433,15 +442,31 @@ export async function processEmailItem(
     pipelineError('pipeline error', { runId, itemId: itemId.toString(), error: message });
     logMetric('pipeline_failed', { runId, itemId: itemId.toString(), error: message });
 
+    const itemUpdateData: Record<string, unknown> = {
+      status: 'failed',
+      last_error: message,
+      attempts: { increment: 1 },
+      gpt_status: 'error',
+      gpt_last_error: message
+    };
+
+    const isScannedPdf =
+      message.includes('SCANNED_PDF_NO_TEXT_LAYER') || message.toLowerCase().includes('pdf has no text layer');
+
+    if (isScannedPdf) {
+      pipelineWarn('scanned pdf detected, marking item as terminal', {
+        runId,
+        itemId: itemId.toString()
+      });
+      itemUpdateData.attempts = { set: MAX_ITEM_ATTEMPTS };
+      itemUpdateData.step = 'failed_extract';
+      itemUpdateData.gpt_status = 'skipped';
+      itemUpdateData.gpt_next_retry_at = null;
+    }
+
     await prisma.import_email_items.update({
       where: { id: itemId },
-      data: {
-        status: 'failed',
-        last_error: message,
-        attempts: { increment: 1 },
-        gpt_status: 'error',
-        gpt_last_error: message
-      }
+      data: itemUpdateData
     });
 
     return { success: false, step: currentStep, error: message };
