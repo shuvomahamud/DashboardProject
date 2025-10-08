@@ -242,7 +242,8 @@ export async function POST(req: NextRequest) {
           jobId: job.id,
           resumeId,
           attempts,
-          elapsedMs: Date.now() - start
+          elapsedMs: Date.now() - start,
+          status: 'succeeded'
         });
         return;
       }
@@ -251,7 +252,7 @@ export async function POST(req: NextRequest) {
       const shouldFail = nextAttempts >= MAX_ATTEMPTS;
       const backoff = computeBackoffMs(nextAttempts);
       const nextRetryAt = shouldFail ? null : new Date(Date.now() + backoff);
-      const status = shouldFail ? 'failed' : 'retry';
+      const status = shouldFail ? 'parse_failed' : 'retry';
 
       await prisma.resume_ai_jobs.update({
         where: { id: job.id },
@@ -279,7 +280,8 @@ export async function POST(req: NextRequest) {
         logMetric('gpt_worker_job_failed', {
           jobId: job.id,
           resumeId,
-          attempts: nextAttempts
+          attempts: nextAttempts,
+          status
         });
       } else {
         results.retried += 1;
@@ -288,7 +290,8 @@ export async function POST(req: NextRequest) {
           resumeId,
           attempts: nextAttempts,
           backoffMs: backoff,
-          nextRetryAt: nextRetryAt?.toISOString() ?? null
+          nextRetryAt: nextRetryAt?.toISOString() ?? null,
+          status
         });
       }
     });
@@ -357,3 +360,4 @@ async function runWithConcurrency<T>(
 
   await Promise.all(active);
 }
+

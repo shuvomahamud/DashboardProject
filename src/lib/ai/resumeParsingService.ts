@@ -135,66 +135,6 @@ function redactSensitiveData(text: string): string {
   return redacted;
 }
 
-// Truncate text intelligently to fit within token budget
-function truncateResumeText(text: string, maxChars: number = 12000): string {
-  if (!text || text.length <= maxChars) {
-    return text;
-  }
-
-  // Try to preserve sections by finding common resume section markers
-  const sectionMarkers = [
-    'EXPERIENCE',
-    'EDUCATION',
-    'SKILLS',
-    'SUMMARY',
-    'OBJECTIVE',
-    'PROJECTS',
-    'CERTIFICATIONS',
-    'EMPLOYMENT',
-    'WORK HISTORY'
-  ];
-
-  // Find last complete section within budget
-  let truncated = text.slice(0, maxChars);
-
-  // Try to end at a section boundary to maintain context
-  for (const marker of sectionMarkers) {
-    const lastMarkerPos = truncated.lastIndexOf(marker);
-    if (lastMarkerPos > maxChars * 0.7) { // At least 70% of content
-      // Find end of this section (next marker or end)
-      const remainingText = text.slice(lastMarkerPos);
-      let sectionEnd = remainingText.length;
-
-      for (const nextMarker of sectionMarkers) {
-        const nextPos = remainingText.indexOf(nextMarker, marker.length);
-        if (nextPos > 0 && nextPos < sectionEnd) {
-          sectionEnd = nextPos;
-        }
-      }
-
-      const candidateEnd = lastMarkerPos + Math.min(sectionEnd, maxChars - lastMarkerPos);
-      if (candidateEnd <= maxChars) {
-        truncated = text.slice(0, candidateEnd);
-        break;
-      }
-    }
-  }
-
-  // If no good section boundary found, try to end at paragraph or sentence
-  if (truncated.length >= maxChars - 100) {
-    const lastParagraph = truncated.lastIndexOf('\n\n');
-    const lastSentence = truncated.lastIndexOf('. ');
-
-    if (lastParagraph > maxChars * 0.85) {
-      truncated = truncated.slice(0, lastParagraph);
-    } else if (lastSentence > maxChars * 0.85) {
-      truncated = truncated.slice(0, lastSentence + 1);
-    }
-  }
-
-  return truncated.trim();
-}
-
 // Generate text hash for idempotency
 function generateTextHash(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -734,16 +674,7 @@ export async function parseAndScoreResume(
 
     // Redact sensitive data and truncate to prevent timeouts
     const redactedText = redactSensitiveData(resume.rawText);
-    const maxResumeChars = parseInt(process.env.MAX_RESUME_CHARS || '12000', 10);
-    const processedText = truncateResumeText(redactedText, maxResumeChars);
-
-    if (processedText.length < redactedText.length) {
-      resumeLogWarn('resume text truncated', {
-        resumeId,
-        originalChars: redactedText.length,
-        truncatedChars: processedText.length
-      });
-    }
+    const processedText = redactedText;
 
     // Call OpenAI for parsing with timeout
     const parseResult = await callOpenAIForParsing(jobContext, processedText, timeoutMs);
@@ -997,3 +928,4 @@ export async function getEnhancedParsingStats(): Promise<{
     return { total: 0, parsed: 0, unparsed: 0, withScores: 0, failed: 0 };
   }
 }
+

@@ -464,6 +464,19 @@ export async function processEmailItem(
       itemUpdateData.gpt_next_retry_at = null;
     }
 
+    const jobStatus = isScannedPdf ? 'scan_failed' : 'ingest_failed';
+    if (resumeId) {
+      await prisma.resume_ai_jobs.updateMany({
+        where: { resumeId },
+        data: {
+          status: jobStatus,
+          lastFinishedAt: new Date(),
+          lastError: message,
+          nextRetryAt: null
+        }
+      });
+    }
+
     await prisma.import_email_items.update({
       where: { id: itemId },
       data: itemUpdateData
@@ -664,3 +677,4 @@ export async function tryGPTParsing(
     return false;
   }
 }
+
