@@ -13,6 +13,8 @@ const BASE_BACKOFF_MS = parseInt(process.env.GPT_BASE_BACKOFF_MS || '15000', 10)
 const MAX_BACKOFF_MS = parseInt(process.env.GPT_MAX_BACKOFF_MS || '300000', 10);
 const SLICE_SOFT_LIMIT_MS = 50_000;
 const MIN_REMAINING_MS_FOR_NEW_TASK = 25_000;
+const PRISMA_MAX_RETRIES = 3;
+const PRISMA_RETRY_BASE_DELAY_MS = 500;
 
 type ResumeJob = Awaited<ReturnType<typeof prisma.resume_ai_jobs.findMany>>[number];
 
@@ -70,13 +72,44 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const runWithPrismaRetry = async <T>(stage: string, operation: () => Promise<T>): Promise<T> => {
+      for (let attempt = 1; attempt <= PRISMA_MAX_RETRIES; attempt++) {
+        try {
+          return await operation();
+        } catch (error: any) {
+          const code = error?.code ?? 'unknown';
+          logMetric('gpt_worker_prisma_failure', {
+            stage,
+            code,
+            attempt,
+            remainingMs: timeLeftMs()
+          });
+
+          if (code !== 'P1001' || attempt === PRISMA_MAX_RETRIES) {
+            throw error;
+          }
+
+          const delayMs = PRISMA_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          logMetric('gpt_worker_prisma_retry', {
+            stage,
+            attempt,
+            delayMs,
+            remainingMs: timeLeftMs()
+          });
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+      throw new Error('Prisma retry loop exhausted');
+    };
+
     const claimNextJob = async (): Promise<ClaimedJob | null> => {
+
       while (true) {
         if (!shouldStartAnother()) {
           return null;
         }
 
-        const candidate = await prisma.resume_ai_jobs.findFirst({
+        const candidate = await runWithPrismaRetry('claim.findFirst', () => prisma.resume_ai_jobs.findFirst({
           where: {
             status: { in: ['pending', 'retry'] },
             OR: [
@@ -96,14 +129,14 @@ export async function POST(req: NextRequest) {
               }
             }
           }
-        });
+        }));
 
         if (!candidate) {
           return null;
         }
 
         const claimStartedAt = new Date();
-        const claimResult = await prisma.resume_ai_jobs.updateMany({
+        const claimResult = await runWithPrismaRetry('claim.lock', () => prisma.resume_ai_jobs.updateMany({
           where: {
             id: candidate.id,
             status: candidate.status
@@ -113,21 +146,21 @@ export async function POST(req: NextRequest) {
             lastStartedAt: claimStartedAt,
             attempts: candidate.attempts + 1
           }
-        });
+        }));
 
         if (claimResult.count === 0) {
           continue; // Contended, try another record
         }
 
         const attempts = candidate.attempts + 1;
-        await prisma.import_email_items.updateMany({
+        await runWithPrismaRetry('claim.mark_items', () => prisma.import_email_items.updateMany({
           where: { resume_id: candidate.resumeId },
           data: {
             gpt_status: 'in_progress',
             gpt_attempts: attempts,
             gpt_last_started_at: claimStartedAt
           }
-        });
+        }));
 
         logMetric('gpt_worker_job_claimed', {
           jobId: candidate.id,
@@ -156,7 +189,7 @@ export async function POST(req: NextRequest) {
       const finishedAt = new Date();
 
       if (success) {
-        await prisma.resume_ai_jobs.update({
+        await runWithPrismaRetry('job.mark_success', () => prisma.resume_ai_jobs.update({
           where: { id: job.id },
           data: {
             status: 'succeeded',
@@ -167,7 +200,7 @@ export async function POST(req: NextRequest) {
           }
         });
 
-        await prisma.import_email_items.updateMany({
+        await runWithPrismaRetry('items.mark_success', () => prisma.import_email_items.updateMany({
           where: { resume_id: resumeId },
           data: {
             gpt_status: 'succeeded',
@@ -175,7 +208,7 @@ export async function POST(req: NextRequest) {
             gpt_last_error: null,
             gpt_next_retry_at: null
           }
-        });
+        }));
 
         results.succeeded += 1;
         logMetric('gpt_worker_job_succeeded', {
@@ -194,7 +227,7 @@ export async function POST(req: NextRequest) {
       const nextRetryAt = shouldFail ? null : new Date(Date.now() + backoff);
       const status = shouldFail ? 'parse_failed' : 'retry';
 
-      await prisma.resume_ai_jobs.update({
+      await runWithPrismaRetry('job.mark_failure', () => prisma.resume_ai_jobs.update({
         where: { id: job.id },
         data: {
           status,
@@ -203,9 +236,9 @@ export async function POST(req: NextRequest) {
           nextRetryAt,
           attempts
         }
-      });
+      }));
 
-      await prisma.import_email_items.updateMany({
+      await runWithPrismaRetry('items.mark_failure', () => prisma.import_email_items.updateMany({
         where: { resume_id: resumeId },
         data: {
           gpt_status: shouldFail ? 'failed' : 'queued',
@@ -213,7 +246,7 @@ export async function POST(req: NextRequest) {
           gpt_last_error: 'GPT parsing failed',
           gpt_next_retry_at: nextRetryAt
         }
-      });
+      }));
 
       if (shouldFail) {
         results.failed += 1;
