@@ -31,9 +31,6 @@ export async function POST(req: NextRequest) {
   const start = Date.now();
 
   const searchParams = req.nextUrl?.searchParams;
-  const queryConcurrency = searchParams?.get('concurrency');
-  const queryMaxJobs = searchParams?.get('maxJobs');
-  const queryTimeout = searchParams?.get('timeoutMs');
   const queryTrigger = searchParams?.get('trigger');
 
   let overridePayload: Record<string, any> = {};
@@ -46,161 +43,103 @@ export async function POST(req: NextRequest) {
     ? overridePayload.trigger
     : (queryTrigger || 'manual');
 
-  const requestedConcurrency = Number(overridePayload.concurrency ?? queryConcurrency);
-  const requestedMaxJobs = Number(overridePayload.maxJobs ?? queryMaxJobs);
-  const requestedTimeout = Number(overridePayload.timeoutMs ?? queryTimeout);
-
-  const baseConcurrency = Math.max(1, DEFAULT_CONCURRENCY);
-  const concurrency = Math.max(1, isNaN(requestedConcurrency) ? baseConcurrency : requestedConcurrency);
-  const maxJobsTarget = Math.max(1, isNaN(requestedMaxJobs) ? concurrency : requestedMaxJobs);
-  const effectiveConcurrency = Math.min(concurrency, maxJobsTarget);
-
+  const concurrency = Math.max(1, DEFAULT_CONCURRENCY);
   const timeoutMs = 20_000;
 
   logMetric('gpt_worker_slice_start', {
-    concurrency: effectiveConcurrency,
+    concurrency,
     timeoutMs,
-    trigger,
-    maxJobs: maxJobsTarget
+    trigger
   });
 
   try {
-    const now = new Date();
-    const candidates = await prisma.resume_ai_jobs.findMany({
-      where: {
-        status: { in: ['pending', 'retry'] },
-        OR: [
-          { nextRetryAt: null },
-          { nextRetryAt: { lte: now } }
-        ]
-      },
-      orderBy: [
-        { nextRetryAt: 'asc' },
-        { createdAt: 'asc' }
-      ],
-      take: Math.max(effectiveConcurrency * 3, maxJobsTarget * 3),
-      include: {
-        job: {
-          select: {
-            title: true,
-            description: true
+    const timeLeftMs = () => SLICE_SOFT_LIMIT_MS - (Date.now() - start);
+    const shouldStartAnother = () => timeLeftMs() > MIN_REMAINING_MS_FOR_NEW_TASK;
+
+    if (!shouldStartAnother()) {
+      logMetric('gpt_worker_insufficient_time', {
+        reason: 'no_time_remaining',
+        remainingMs: timeLeftMs(),
+        timeoutMs,
+        concurrency
+      });
+      return NextResponse.json({
+        status: 'time_exhausted',
+        reason: 'no_time_remaining',
+        elapsed: Date.now() - start
+      });
+    }
+
+    const claimNextJob = async (): Promise<ClaimedJob | null> => {
+      while (true) {
+        if (!shouldStartAnother()) {
+          return null;
+        }
+
+        const candidate = await prisma.resume_ai_jobs.findFirst({
+          where: {
+            status: { in: ['pending', 'retry'] },
+            OR: [
+              { nextRetryAt: null },
+              { nextRetryAt: { lte: new Date() } }
+            ]
+          },
+          orderBy: [
+            { nextRetryAt: 'asc' },
+            { createdAt: 'asc' }
+          ],
+          include: {
+            job: {
+              select: {
+                title: true,
+                description: true
+              }
+            }
           }
+        });
+
+        if (!candidate) {
+          return null;
         }
-      }
-    });
 
-    if (candidates.length === 0) {
-      logMetric('gpt_worker_no_candidates', { elapsedMs: Date.now() - start });
-      return NextResponse.json({
-        status: 'no_work',
-        elapsed: Date.now() - start
-      });
-    }
+        const claimStartedAt = new Date();
+        const claimResult = await prisma.resume_ai_jobs.updateMany({
+          where: {
+            id: candidate.id,
+            status: candidate.status
+          },
+          data: {
+            status: 'processing',
+            lastStartedAt: claimStartedAt,
+            attempts: candidate.attempts + 1
+          }
+        });
 
-    logMetric('gpt_worker_candidates', {
-      count: candidates.length,
-      concurrency: effectiveConcurrency
-    });
-
-    const elapsedAfterCandidates = Date.now() - start;
-    const remainingMs = SLICE_SOFT_LIMIT_MS - elapsedAfterCandidates;
-    if (remainingMs <= MIN_REMAINING_MS_FOR_NEW_TASK) {
-      logMetric('gpt_worker_insufficient_time', {
-        reason: 'no_time_remaining',
-        remainingMs,
-        timeoutMs,
-        concurrency: effectiveConcurrency
-      });
-      return NextResponse.json({
-        status: 'time_exhausted',
-        reason: 'no_time_remaining',
-        elapsed: elapsedAfterCandidates
-      });
-    }
-
-    const availableForAdditionalBatches = Math.max(0, remainingMs - MIN_REMAINING_MS_FOR_NEW_TASK);
-    const maxBatchesByTime = Math.max(1, Math.floor(availableForAdditionalBatches / timeoutMs) + 1);
-    const maxJobsByTime = maxBatchesByTime * effectiveConcurrency;
-    const claimLimit = Math.min(
-      maxJobsTarget,
-      candidates.length,
-      maxJobsByTime
-    );
-
-    if (claimLimit <= 0) {
-      logMetric('gpt_worker_insufficient_time', {
-        reason: 'no_candidates_within_budget',
-        remainingMs,
-        timeoutMs,
-        concurrency: effectiveConcurrency
-      });
-      return NextResponse.json({
-        status: 'time_exhausted',
-        reason: 'no_candidates_within_budget',
-        elapsed: elapsedAfterCandidates
-      });
-    }
-
-    logMetric('gpt_worker_time_budget', {
-      remainingMs,
-      timeoutMs,
-      concurrency: effectiveConcurrency,
-      claimLimit,
-      maxJobsTarget,
-      maxJobsByTime,
-      maxBatchesByTime,
-      softLimitMs: SLICE_SOFT_LIMIT_MS,
-      minRemainingMs: MIN_REMAINING_MS_FOR_NEW_TASK
-    });
-
-    const claimed: ClaimedJob[] = [];
-    for (const job of candidates) {
-      const claimResult = await prisma.resume_ai_jobs.updateMany({
-        where: {
-          id: job.id,
-          status: job.status
-        },
-        data: {
-          status: 'processing',
-          lastStartedAt: now,
-          attempts: job.attempts + 1
+        if (claimResult.count === 0) {
+          continue; // Contended, try another record
         }
-      });
 
-      if (claimResult.count === 0) {
-        continue;
+        const attempts = candidate.attempts + 1;
+        await prisma.import_email_items.updateMany({
+          where: { resume_id: candidate.resumeId },
+          data: {
+            gpt_status: 'in_progress',
+            gpt_attempts: attempts,
+            gpt_last_started_at: claimStartedAt
+          }
+        });
+
+        logMetric('gpt_worker_job_claimed', {
+          jobId: candidate.id,
+          resumeId: candidate.resumeId,
+          attempts,
+          timeoutMs,
+          remainingMs: timeLeftMs()
+        });
+
+        return { job: candidate, attempts };
       }
-
-      const attempts = job.attempts + 1;
-      await prisma.import_email_items.updateMany({
-        where: { resume_id: job.resumeId },
-        data: {
-          gpt_status: 'in_progress',
-          gpt_attempts: attempts,
-          gpt_last_started_at: now
-        }
-      });
-
-      logMetric('gpt_worker_job_claimed', {
-        jobId: job.id,
-        resumeId: job.resumeId,
-        attempts,
-        timeoutMs
-      });
-
-      claimed.push({ job, attempts });
-      if (claimed.length >= claimLimit) {
-        break;
-      }
-    }
-
-    if (claimed.length === 0) {
-      logMetric('gpt_worker_no_claimed', { elapsedMs: Date.now() - start });
-      return NextResponse.json({
-        status: 'contended',
-        elapsed: Date.now() - start
-      });
-    }
+    };
 
     const results = {
       succeeded: 0,
@@ -208,9 +147,7 @@ export async function POST(req: NextRequest) {
       retried: 0
     };
 
-    const shouldStartAnother = () => (SLICE_SOFT_LIMIT_MS - (Date.now() - start)) >= MIN_REMAINING_MS_FOR_NEW_TASK;
-
-    await runWithConcurrency(claimed, effectiveConcurrency, async ({ job, attempts }) => {
+    const processClaimedJob = async ({ job, attempts }: ClaimedJob) => {
       const jobContext = buildJobContext(job);
       const resumeId = job.resumeId;
       const runId = job.runId || 'worker';
@@ -297,7 +234,61 @@ export async function POST(req: NextRequest) {
           status
         });
       }
-    }, shouldStartAnother);
+    };
+
+    const active: Promise<void>[] = [];
+    let totalClaimed = 0;
+
+    const launchJob = (claimed: ClaimedJob) => {
+      totalClaimed += 1;
+      const task = processClaimedJob(claimed).finally(() => {
+        const index = active.indexOf(task);
+        if (index >= 0) {
+          active.splice(index, 1);
+        }
+      });
+      active.push(task);
+    };
+
+    const fillPool = async () => {
+      while (active.length < concurrency && shouldStartAnother()) {
+        const claimed = await claimNextJob();
+        if (!claimed) {
+          break;
+        }
+        launchJob(claimed);
+      }
+    };
+
+    await fillPool();
+
+    if (active.length === 0) {
+      const remaining = timeLeftMs();
+      if (remaining <= MIN_REMAINING_MS_FOR_NEW_TASK) {
+        logMetric('gpt_worker_insufficient_time', {
+          reason: 'no_time_remaining',
+          remainingMs: remaining,
+          timeoutMs,
+          concurrency
+        });
+        return NextResponse.json({
+          status: 'time_exhausted',
+          reason: 'no_time_remaining',
+          elapsed: Date.now() - start
+        });
+      }
+
+      logMetric('gpt_worker_no_candidates', { elapsedMs: Date.now() - start });
+      return NextResponse.json({
+        status: 'no_work',
+        elapsed: Date.now() - start
+      });
+    }
+
+    while (active.length > 0) {
+      await Promise.race(active);
+      await fillPool();
+    }
 
     const elapsed = Date.now() - start;
     logMetric('gpt_worker_slice_end', { ...results, elapsedMs: elapsed, trigger });
@@ -305,10 +296,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       status: 'ok',
       elapsed,
-      concurrency: effectiveConcurrency,
-      maxJobs: maxJobsTarget,
+      concurrency,
       trigger,
-      processed: claimed.length,
+      processed: totalClaimed,
       ...results
     });
   } catch (error: any) {
@@ -341,31 +331,4 @@ function buildJobContext(job: ResumeJob) {
   };
 }
 
-async function runWithConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  handler: (item: T) => Promise<void>,
-  shouldStart?: () => boolean
-) {
-  const active: Promise<void>[] = [];
-
-  for (const item of items) {
-    if (shouldStart && !shouldStart()) {
-      break;
-    }
-
-    const task = handler(item).finally(() => {
-      const index = active.indexOf(task);
-      if (index >= 0) {
-        active.splice(index, 1);
-      }
-    });
-    active.push(task);
-    if (active.length >= concurrency) {
-      await Promise.race(active);
-    }
-  }
-
-  await Promise.all(active);
-}
 
