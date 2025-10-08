@@ -4,6 +4,35 @@ import * as crypto from 'crypto';
 import { z } from 'zod';
 import prisma, { withRetry } from '../prisma';
 
+type ResumeLogContext = Record<string, unknown>;
+
+const RESUME_LOG_PREFIX = '[resume-parsing]';
+const OPENAI_SLOW_THRESHOLD_MS = 12000;
+
+const resumeLogInfo = (message: string, context?: ResumeLogContext) => {
+  if (context) {
+    console.info(`${RESUME_LOG_PREFIX} ${message}`, context);
+  } else {
+    console.info(`${RESUME_LOG_PREFIX} ${message}`);
+  }
+};
+
+const resumeLogWarn = (message: string, context?: ResumeLogContext) => {
+  if (context) {
+    console.warn(`${RESUME_LOG_PREFIX} ${message}`, context);
+  } else {
+    console.warn(`${RESUME_LOG_PREFIX} ${message}`);
+  }
+};
+
+const resumeLogError = (message: string, context?: ResumeLogContext) => {
+  if (context) {
+    console.error(`${RESUME_LOG_PREFIX} ${message}`, context);
+  } else {
+    console.error(`${RESUME_LOG_PREFIX} ${message}`);
+  }
+};
+
 let openai: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI {
@@ -210,7 +239,7 @@ function coerceSummary(raw: any) {
     const name = c.name || 'Candidate';
     const years = typeof c.totalExperienceYears === 'number' ? `${c.totalExperienceYears}y` : '';
     const skills = Array.isArray(raw?.resume?.skills) ? raw.resume.skills.slice(0,3).join('/') : '';
-    raw.summary = [name, '—', title, years ? `(${years})` : '', skills ? `, ${skills}` : '']
+    raw.summary = [name, '-', title, years ? `(${years})` : '', skills ? `, ${skills}` : '']
       .join(' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -273,14 +302,14 @@ const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified 
 
 1. **Output:** JSON only. No prose, markdown, comments, or extra keys.
 2. **Root object keys**: EXACTLY \`resume\`, \`scores\`, \`summary\`. **ALL THREE REQUIRED**. No others.
-3. **Scalars policy:** For these scalar fields —
+3. **Scalars policy:** For these scalar fields -
    \`resume.candidate.name\`, \`resume.candidate.linkedinUrl\`, \`resume.candidate.currentLocation\`,
    \`resume.employment[i].title\`, \`resume.employment[i].startDate\`, \`resume.employment[i].endDate\`, \`resume.employment[i].employmentType\`,
-   — **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
+   - **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
 4. **Dates:** \`YYYY\` or \`YYYY-MM\`. Use \`"Present"\` only inside the model, but **output** \`null\` for ongoing roles.
 5. **Arrays policy:** \`emails\`, \`phones\`, \`skills\`, \`education\`, \`employment\` are arrays; if none, use \`[]\`.
-6. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0–100**. NEVER omit the scores object.
-7. **Summary:** \`summary\` must be a **single string** at the root, ≤140 chars. Never null/array/object. If unsure, use \`""\`.
+6. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0-100**. NEVER omit the scores object.
+7. **Summary:** \`summary\` must be a **single string** at the root, <=140 chars. Never null/array/object. If unsure, use \`""\`.
 8. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
 9. **BE CONCISE:** Limit employment history to last 10 jobs max. Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
 
@@ -332,9 +361,9 @@ SCHEMA (return exactly this object; no extra keys):
 }
 
 SCORING RUBRICS (MANDATORY - MUST calculate and return in scores object!)
-- matchScore (0–100): skills(45), role/title fit(25), years(20), domain/context(10).
-- companyScore (0–100): evidence-only in resume; if unclear, ~50.
-- fakeScore (0–100): overlaps/impossibilities/ultra-short stints/contradictions/OCR artifacts → higher risk.
+- matchScore (0-100): skills(45), role/title fit(25), years(20), domain/context(10).
+- companyScore (0-100): evidence-only in resume; if unclear, ~50.
+- fakeScore (0-100): overlaps/impossibilities/ultra-short stints/contradictions/OCR artifacts -> higher risk.
 
 RESUME (redacted):
 <<<RESUME_TEXT
@@ -362,18 +391,15 @@ async function callOpenAIForParsing(
     const systemMessage = SYSTEM_MESSAGE;
     const userMessage = buildUserMessage(jobContext, redactedText);
 
-    // Log the complete prompt being sent to OpenAI
-    console.log('\n=== OPENAI PROMPT DEBUG ===');
-    console.log('Model:', model);
-    console.log('Temperature:', temperature);
-    console.log('Timeout:', timeoutMs, 'ms');
-    console.log('\n--- SYSTEM MESSAGE ---');
-    console.log(systemMessage);
-    console.log('\n--- USER MESSAGE ---');
-    console.log(userMessage);
-    console.log('\n=== END PROMPT DEBUG ===\n');
+    resumeLogInfo('openai request start', {
+      model,
+      temperature,
+      timeoutMs,
+      textLength: redactedText.length
+    });
 
     const openaiClient = getOpenAIClient();
+    const apiStart = Date.now();
     const completion = await openaiClient.chat.completions.create(
       {
         model,
@@ -389,27 +415,29 @@ async function callOpenAIForParsing(
         ],
         response_format: { type: 'json_object' },
         temperature,
-        max_tokens: 8192  // Increased to handle long resumes (was 4096, caused truncation)
+        max_tokens: 8192
       },
-      { signal: AbortSignal.timeout(timeoutMs) }  // Enforce timeout client-side
+      { signal: AbortSignal.timeout(timeoutMs) }
     );
+    const apiDuration = Date.now() - apiStart;
 
     const response = completion.choices[0]?.message?.content;
     const finishReason = completion.choices[0]?.finish_reason;
+    const tokensUsed = completion.usage?.total_tokens || 0;
 
-    // Log the OpenAI response
-    console.log('\n=== OPENAI RESPONSE DEBUG ===');
-    console.log('Raw Response:');
-    console.log(response);
-    console.log('Finish Reason:', finishReason);
-    console.log('Tokens Used:', completion.usage?.total_tokens || 0);
-    console.log('Completion Tokens:', completion.usage?.completion_tokens || 0);
-    console.log('=== END RESPONSE DEBUG ===\n');
+    resumeLogInfo('openai call complete', {
+      model,
+      durationMs: apiDuration,
+      tokensUsed,
+      finishReason
+    });
 
-    // Check for truncation
+    if (apiDuration > OPENAI_SLOW_THRESHOLD_MS) {
+      resumeLogWarn('openai call slow', { model, durationMs: apiDuration, timeoutMs });
+    }
+
     if (finishReason === 'length') {
-      console.error('🔴 TRUNCATION DETECTED: Response was cut off due to length limit!');
-      console.error('This will cause JSON parsing to fail. Consider increasing max_tokens.');
+      resumeLogWarn('openai response truncated', { model, tokensUsed });
       return {
         success: false,
         error: 'OpenAI response was truncated due to length limit. Try a shorter resume or increase max_tokens.'
@@ -423,56 +451,38 @@ async function callOpenAIForParsing(
       };
     }
 
-    // Parse JSON response
     let parsedData;
     try {
       parsedData = JSON.parse(response);
-      console.log('\n=== PARSED DATA DEBUG ===');
-      console.log('Parsed JSON:', JSON.stringify(parsedData, null, 2));
-      console.log('=== END PARSED DATA DEBUG ===\n');
     } catch (parseError) {
-      console.error('\n=== JSON PARSE ERROR ===');
-      console.error('Parse Error:', parseError);
-      console.error('Response that failed to parse:', response);
-      console.error('=== END PARSE ERROR ===\n');
+      resumeLogError('openai response parse error', {
+        error: parseError instanceof Error ? parseError.message : 'unknown parse error',
+        responsePreview: response.slice(0, 500)
+      });
       return {
         success: false,
         error: 'Invalid JSON response from OpenAI'
       };
     }
 
-    // Debug logging for summary field type (dev only)
-    if (process.env.NODE_ENV !== 'production') {
-      const t = typeof parsedData?.summary;
-      console.log('LLM summary typeof:', t, 'isArray:', Array.isArray(parsedData?.summary));
-      if (parsedData?.resume?.summary !== undefined) {
-        console.log('Found nested summary under resume.summary:', typeof parsedData.resume.summary);
-      }
+    if (!parsedData?.scores) {
+      resumeLogError('openai response missing scores', {
+        keys: Object.keys(parsedData || {})
+      });
     }
-
-    // CRITICAL: Log scores from OpenAI response
-    console.log('\n=== SCORES FROM OPENAI ===');
-    if (parsedData?.scores) {
-      console.log('✅ Scores object present');
-      console.log(`  matchScore: ${parsedData.scores.matchScore} (type: ${typeof parsedData.scores.matchScore})`);
-      console.log(`  companyScore: ${parsedData.scores.companyScore} (type: ${typeof parsedData.scores.companyScore})`);
-      console.log(`  fakeScore: ${parsedData.scores.fakeScore} (type: ${typeof parsedData.scores.fakeScore})`);
-    } else {
-      console.error('❌ NO SCORES OBJECT IN RESPONSE!');
-      console.error('Response keys:', Object.keys(parsedData || {}));
-    }
-    console.log('=== END SCORES DEBUG ===\n');
 
     return {
       success: true,
       data: parsedData,
-      tokensUsed: completion.usage?.total_tokens || 0
+      tokensUsed
     };
 
   } catch (error: any) {
-    // Distinguish timeout from other API errors
     const isAbort = error?.name === 'AbortError';
-    console.error('OpenAI API error:', isAbort ? 'timeout' : error?.message);
+    resumeLogError('openai api error', {
+      timeoutMs,
+      error: isAbort ? 'timeout' : error?.message
+    });
     return {
       success: false,
       error: isAbort ? `OpenAI timeout after ${timeoutMs}ms` : (error instanceof Error ? error.message : 'Unknown OpenAI API error')
@@ -498,15 +508,15 @@ function validateAndProcess(rawData: any): { valid: boolean; data?: EnhancedPars
     validated.resume.candidate.totalExperienceYears = Math.max(0, Math.min(80, validated.resume.candidate.totalExperienceYears));
 
     // Log final validated scores
-    console.log('\n=== VALIDATED SCORES (after clamping) ===');
-    console.log(`  matchScore: ${validated.scores.matchScore}`);
-    console.log(`  companyScore: ${validated.scores.companyScore}`);
-    console.log(`  fakeScore: ${validated.scores.fakeScore}`);
-    console.log('=== END VALIDATED SCORES ===\n');
+    resumeLogInfo('scores validated', {
+      matchScore: validated.scores.matchScore,
+      companyScore: validated.scores.companyScore,
+      fakeScore: validated.scores.fakeScore
+    });
 
     // Warn if scores are suspiciously low/default
     if (validated.scores.matchScore === 0 && validated.scores.companyScore === 0 && validated.scores.fakeScore === 0) {
-      console.warn('⚠️  WARNING: All scores are 0 - OpenAI may not be following scoring instructions!');
+      resumeLogWarn('openai scores all zero', {});
     }
 
     return { valid: true, data: validated };
@@ -626,7 +636,9 @@ async function needsParsing(resumeId: number, textHash: string): Promise<boolean
       resume.parseModel !== (process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini')
     );
   } catch (error) {
-    console.error('Error checking if resume needs parsing:', error);
+    resumeLogError('needs_parsing_check_failed', {
+      error: error instanceof Error ? error.message : String(error)
+    });
     return true; // Default to parsing on error
   }
 }
@@ -638,6 +650,7 @@ export async function parseAndScoreResume(
   force: boolean = false,
   timeoutMs: number = 20000
 ): Promise<{ success: boolean; summary?: ParseSummary; error?: string }> {
+  const parseStart = Date.now();
   try {
     // Check if PARSE_ON_IMPORT is enabled
     if (!force && process.env.PARSE_ON_IMPORT !== 'true') {
@@ -717,7 +730,7 @@ export async function parseAndScoreResume(
       };
     }
 
-    console.log(`Parsing resume ${resumeId} (${resume.fileName})`);
+    resumeLogInfo('parse resume start', { resumeId, fileName: resume.fileName });
 
     // Redact sensitive data and truncate to prevent timeouts
     const redactedText = redactSensitiveData(resume.rawText);
@@ -725,7 +738,11 @@ export async function parseAndScoreResume(
     const processedText = truncateResumeText(redactedText, maxResumeChars);
 
     if (processedText.length < redactedText.length) {
-      console.log(`Truncated resume from ${redactedText.length} to ${processedText.length} chars to prevent timeout`);
+      resumeLogWarn('resume text truncated', {
+        resumeId,
+        originalChars: redactedText.length,
+        truncatedChars: processedText.length
+      });
     }
 
     // Call OpenAI for parsing with timeout
@@ -745,7 +762,7 @@ export async function parseAndScoreResume(
         })
       );
 
-      console.error(`parse_fail resumeId=${resumeId} reason=${parseResult.error}`);
+      resumeLogError('parse_fail', { resumeId, reason: parseResult.error });
       return {
         success: false,
         error: parseResult.error
@@ -769,7 +786,7 @@ export async function parseAndScoreResume(
         })
       );
 
-      console.error(`parse_fail resumeId=${resumeId} reason=schema`);
+      resumeLogError('parse_fail_schema', { resumeId, error: validation.error });
       return {
         success: false,
         error: `Schema validation failed: ${validation.error}`
@@ -786,7 +803,7 @@ export async function parseAndScoreResume(
       (validatedData.resume.employment && validatedData.resume.employment.length > 0);
 
     if (!hasMeaningfulData) {
-      console.warn(`parse_fail resumeId=${resumeId} reason=empty_result`);
+      resumeLogWarn('parse result empty', { resumeId });
 
       await withRetry(() =>
         prisma.resume.update({
@@ -874,8 +891,6 @@ export async function parseAndScoreResume(
             validatedData.scores.matchScore
           );
 
-          console.log(`💾 Saving scores to JobApplication ${app.id}: match=${validatedData.scores.matchScore}, company=${validatedData.scores.companyScore}`);
-
           await withRetry(() =>
             prisma.jobApplication.update({
               where: { id: app.id },
@@ -886,10 +901,13 @@ export async function parseAndScoreResume(
               }
             })
           );
-
-          console.log(`✅ Scores saved successfully to JobApplication ${app.id}`);
         })
       );
+
+      resumeLogInfo('job applications updated with scores', {
+        resumeId,
+        applications: jobApplications.length
+      });
     }
 
     // Build and return summary
@@ -905,9 +923,16 @@ export async function parseAndScoreResume(
       tokensUsed: parseResult.tokensUsed
     };
 
-    console.log(`parse_ok resumeId=${resumeId} model=${process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini'} ms=${Date.now()}`);
-    console.log(`✅ FINAL SUMMARY: Resume ${resumeId} - Match:${summary.matchScore} Company:${summary.companyScore} Fake:${summary.fakeScore}`);
-    console.log(`[GPT] resumeId=${resumeId} matchScore=${summary.matchScore} companyScore=${summary.companyScore} fakeScore=${summary.fakeScore} tokens=${summary.tokensUsed ?? 'n/a'}`);
+    const totalDuration = Date.now() - parseStart;
+    resumeLogInfo('parse resume success', {
+      resumeId,
+      model: process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini',
+      durationMs: totalDuration,
+      matchScore: summary.matchScore,
+      companyScore: summary.companyScore,
+      fakeScore: summary.fakeScore,
+      tokensUsed: summary.tokensUsed ?? null
+    });
 
     return {
       success: true,
@@ -915,7 +940,12 @@ export async function parseAndScoreResume(
     };
 
   } catch (error) {
-    console.error('Unexpected error in parseAndScoreResume:', error);
+    const failureDuration = Date.now() - parseStart;
+    resumeLogError('parse resume error', {
+      resumeId,
+      durationMs: failureDuration,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
@@ -961,7 +991,9 @@ export async function getEnhancedParsingStats(): Promise<{
       failed
     };
   } catch (error) {
-    console.error('Error getting enhanced parsing stats:', error);
+    resumeLogError('get_parsing_stats_error', {
+      error: error instanceof Error ? error.message : String(error)
+    });
     return { total: 0, parsed: 0, unparsed: 0, withScores: 0, failed: 0 };
   }
 }

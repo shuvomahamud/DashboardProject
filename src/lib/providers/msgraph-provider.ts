@@ -43,10 +43,6 @@ export class MSGraphEmailProvider implements EmailProvider {
     message: EmailMessage;
     attachments: EmailAttachment[];
   }> {
-    console.log(`🔍 Provider: getMessage called with externalId: "${externalId}" (length: ${externalId.length})`);
-    console.log(`🔍 Provider: First 50 chars: "${externalId.substring(0, 50)}"`);
-    console.log(`🔍 Provider: Last 10 chars: "${externalId.substring(externalId.length - 10)}"`);
-
     // Get attachments
     const attachmentsResult = await listAttachments(externalId, this.mailboxUserId);
 

@@ -1,7 +1,7 @@
 /**
  * Email Processing Pipeline
  *
- * Steps: fetch → save → upload → extract → queue-gpt → persist
+ * Steps: fetch -> save -> upload -> extract -> queue-gpt -> persist
  *
  * Inline GPT work has been removed; resumes are queued for the background worker.
  */
@@ -13,6 +13,41 @@ import { uploadResumeBytes } from '@/lib/supabase-server';
 import { parseAndScoreResume } from '@/lib/ai/resumeParsingService';
 import type { EmailProvider } from '@/lib/providers/email-provider';
 import { logMetric } from '@/lib/logging/metrics';
+
+type PipelineLogContext = Record<string, unknown>;
+
+const PIPELINE_LOG_PREFIX = '[email-pipeline]';
+
+const pipelineInfo = (message: string, context?: PipelineLogContext) => {
+  if (context) {
+    console.info(`${PIPELINE_LOG_PREFIX} ${message}`, context);
+  } else {
+    console.info(`${PIPELINE_LOG_PREFIX} ${message}`);
+  }
+};
+
+const pipelineWarn = (message: string, context?: PipelineLogContext) => {
+  if (context) {
+    console.warn(`${PIPELINE_LOG_PREFIX} ${message}`, context);
+  } else {
+    console.warn(`${PIPELINE_LOG_PREFIX} ${message}`);
+  }
+};
+
+const pipelineError = (message: string, context?: PipelineLogContext) => {
+  if (context) {
+    console.error(`${PIPELINE_LOG_PREFIX} ${message}`, context);
+  } else {
+    console.error(`${PIPELINE_LOG_PREFIX} ${message}`);
+  }
+};
+
+const STEP_SLOW_THRESHOLDS_MS = {
+  fetch: 1500,
+  download: 1500,
+  upload: 2000,
+  extract: 2500
+} as const;
 
 export interface EmailItem {
   id: bigint;
@@ -46,7 +81,11 @@ export async function processEmailItem(
   const { id: itemId, external_message_id: externalMessageId, step: currentStep } = item;
 
   logMetric('pipeline_start', { runId, itemId: itemId.toString(), step: currentStep });
-  console.log(`?? [RUN:${runId}] [ITEM:${itemId}] Starting pipeline at step: ${currentStep}`);
+  pipelineInfo('pipeline start', {
+    runId,
+    itemId: itemId.toString(),
+    step: currentStep
+  });
 
   let step = currentStep;
   let jobApplicationLinked = false;
@@ -63,12 +102,22 @@ export async function processEmailItem(
     if (step === 'none') {
       const fetchStart = Date.now();
       const { attachments } = await provider.getMessage(externalMessageId);
+      const fetchDuration = Date.now() - fetchStart;
       logMetric('pipeline_fetch_complete', {
         runId,
         itemId: itemId.toString(),
         attachments: attachments.length,
-        ms: Date.now() - fetchStart
+        ms: fetchDuration
       });
+
+      if (fetchDuration > STEP_SLOW_THRESHOLDS_MS.fetch) {
+        pipelineInfo('slow step fetch_message', {
+          runId,
+          itemId: itemId.toString(),
+          durationMs: fetchDuration,
+          attachments: attachments.length
+        });
+      }
 
       if (attachments.length === 0) {
         await prisma.import_email_items.update({
@@ -76,7 +125,10 @@ export async function processEmailItem(
           data: { gpt_status: 'skipped', gpt_next_retry_at: null }
         });
         await updateItemStatus(itemId, 'completed', 'fetched');
-        console.log(`??  [RUN:${runId}] [ITEM:${itemId}] No eligible attachments - marking completed`);
+        pipelineInfo('no eligible attachments', {
+          runId,
+          itemId: itemId.toString()
+        });
         logMetric('pipeline_complete', {
           runId,
           itemId: itemId.toString(),
@@ -104,12 +156,22 @@ export async function processEmailItem(
         contentType: attachment.contentType
       };
 
+      const downloadDuration = Date.now() - downloadStart;
       logMetric('pipeline_bytes_downloaded', {
         runId,
         itemId: itemId.toString(),
         size: attachment.size,
-        ms: Date.now() - downloadStart
+        ms: downloadDuration
       });
+
+      if (downloadDuration > STEP_SLOW_THRESHOLDS_MS.download) {
+        pipelineInfo('slow step download_attachment', {
+          runId,
+          itemId: itemId.toString(),
+          durationMs: downloadDuration,
+          size: attachment.size
+        });
+      }
 
       const existing = await prisma.resume.findFirst({
         where: {
@@ -130,6 +192,12 @@ export async function processEmailItem(
             gpt_next_retry_at: new Date(),
             gpt_last_error: null
           }
+        });
+
+        pipelineInfo('duplicate resume linked', {
+          runId,
+          itemId: itemId.toString(),
+          resumeId: existing.id
         });
 
         logMetric('pipeline_duplicate_linked', {
@@ -162,11 +230,21 @@ export async function processEmailItem(
       );
       storagePath = uploadResult.path;
 
+      const uploadDuration = Date.now() - uploadStart;
       logMetric('pipeline_upload_complete', {
         runId,
         itemId: itemId.toString(),
-        ms: Date.now() - uploadStart
+        ms: uploadDuration
       });
+
+      if (uploadDuration > STEP_SLOW_THRESHOLDS_MS.upload) {
+        pipelineInfo('slow step upload_resume', {
+          runId,
+          itemId: itemId.toString(),
+          durationMs: uploadDuration,
+          size: attachmentMeta!.size
+        });
+      }
 
       step = 'uploaded';
       await updateItemStep(itemId, step);
@@ -223,6 +301,7 @@ export async function processEmailItem(
       try {
         const extractStart = Date.now();
         const extractedText = await extractText(fileBytes!, safeName, attachment.contentType);
+        const extractDuration = Date.now() - extractStart;
 
         if (extractedText !== 'UNSUPPORTED_DOC_LEGACY') {
           const maxLength = 2 * 1024 * 1024;
@@ -242,9 +321,19 @@ export async function processEmailItem(
             runId,
             itemId: itemId.toString(),
             resumeId: resume.id,
-            ms: Date.now() - extractStart,
+            ms: extractDuration,
             chars: finalText.length
           });
+
+          if (extractDuration > STEP_SLOW_THRESHOLDS_MS.extract) {
+            pipelineInfo('slow step extract_text', {
+              runId,
+              itemId: itemId.toString(),
+              resumeId: resume.id,
+              durationMs: extractDuration,
+              chars: finalText.length
+            });
+          }
         } else {
           await prisma.resume.update({
             where: { id: resume.id },
@@ -257,12 +346,26 @@ export async function processEmailItem(
           logMetric('pipeline_extract_legacy', {
             runId,
             itemId: itemId.toString(),
-            resumeId: resume.id
+            resumeId: resume.id,
+            ms: extractDuration
           });
+
+          if (extractDuration > STEP_SLOW_THRESHOLDS_MS.extract) {
+            pipelineInfo('slow step extract_legacy', {
+              runId,
+              itemId: itemId.toString(),
+              resumeId: resume.id,
+              durationMs: extractDuration
+            });
+          }
         }
       } catch (extractError: any) {
         const message = extractError.message ?? 'unknown';
-        console.error(`??  [RUN:${runId}] [ITEM:${itemId}] Text extraction failed:`, message);
+        pipelineError('text extraction failed', {
+          runId,
+          itemId: itemId.toString(),
+          error: message
+        });
         logMetric('pipeline_extract_failed', {
           runId,
           itemId: itemId.toString(),
@@ -327,7 +430,7 @@ export async function processEmailItem(
     };
   } catch (error: any) {
     const message = error.message?.substring(0, 500) || 'Unknown error';
-    console.error(`? [RUN:${runId}] [ITEM:${itemId}] Pipeline error:`, message);
+    pipelineError('pipeline error', { runId, itemId: itemId.toString(), error: message });
     logMetric('pipeline_failed', { runId, itemId: itemId.toString(), error: message });
 
     await prisma.import_email_items.update({
@@ -498,6 +601,13 @@ async function enqueueResumeForAI(
       }
     })
   ]);
+
+  pipelineInfo('resume queued for ai worker', {
+    runId,
+    itemId: itemId.toString(),
+    resumeId,
+    jobId
+  });
 }
 
 /**
@@ -511,12 +621,20 @@ export async function tryGPTParsing(
 ): Promise<boolean> {
   try {
     await parseAndScoreResume(resumeId, jobContext, false, timeoutMs);
-    console.log(`? [RUN:${runId}] GPT parsing completed for resume ${resumeId} (${timeoutMs}ms timeout)`);
+    pipelineInfo('gpt parsing completed', {
+      runId,
+      resumeId,
+      timeoutMs
+    });
     logMetric('gpt_worker_success', { runId, resumeId, timeoutMs });
     return true;
   } catch (error: any) {
     const message = error.message || 'Unknown error';
-    console.warn(`??  [RUN:${runId}] GPT parsing failed for resume ${resumeId}: ${message}`);
+    pipelineWarn('gpt parsing failed', {
+      runId,
+      resumeId,
+      error: message
+    });
     logMetric('gpt_worker_failure', { runId, resumeId, error: message });
     return false;
   }
