@@ -11,8 +11,8 @@ const DEFAULT_TIMEOUT_MS = parseInt(process.env.GPT_TIMEOUT_MS || '25000', 10);
 const MAX_ATTEMPTS = parseInt(process.env.GPT_MAX_ATTEMPTS || '5', 10);
 const BASE_BACKOFF_MS = parseInt(process.env.GPT_BASE_BACKOFF_MS || '15000', 10);
 const MAX_BACKOFF_MS = parseInt(process.env.GPT_MAX_BACKOFF_MS || '300000', 10);
-const SLICE_TOTAL_BUDGET_MS = 58_000;
-const SAFETY_BUFFER_MS = 3_000;
+const SLICE_SOFT_LIMIT_MS = 50_000;
+const MIN_REMAINING_MS_FOR_NEW_TASK = 25_000;
 
 type ResumeJob = Awaited<ReturnType<typeof prisma.resume_ai_jobs.findMany>>[number];
 
@@ -55,10 +55,7 @@ export async function POST(req: NextRequest) {
   const maxJobsTarget = Math.max(1, isNaN(requestedMaxJobs) ? concurrency : requestedMaxJobs);
   const effectiveConcurrency = Math.min(concurrency, maxJobsTarget);
 
-  const timeoutMs = Math.max(
-    15_000,
-    isNaN(requestedTimeout) ? DEFAULT_TIMEOUT_MS : requestedTimeout
-  );
+  const timeoutMs = 20_000;
 
   logMetric('gpt_worker_slice_start', {
     concurrency: effectiveConcurrency,
@@ -106,8 +103,8 @@ export async function POST(req: NextRequest) {
     });
 
     const elapsedAfterCandidates = Date.now() - start;
-    const remainingMs = SLICE_TOTAL_BUDGET_MS - elapsedAfterCandidates;
-    if (remainingMs <= SAFETY_BUFFER_MS) {
+    const remainingMs = SLICE_SOFT_LIMIT_MS - elapsedAfterCandidates;
+    if (remainingMs <= MIN_REMAINING_MS_FOR_NEW_TASK) {
       logMetric('gpt_worker_insufficient_time', {
         reason: 'no_time_remaining',
         remainingMs,
@@ -121,25 +118,25 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const timeBudget = remainingMs - SAFETY_BUFFER_MS;
-    const maxBatchesByTime = Math.floor(timeBudget / timeoutMs);
+    const availableForAdditionalBatches = Math.max(0, remainingMs - MIN_REMAINING_MS_FOR_NEW_TASK);
+    const maxBatchesByTime = Math.max(1, Math.floor(availableForAdditionalBatches / timeoutMs) + 1);
     const maxJobsByTime = maxBatchesByTime * effectiveConcurrency;
     const claimLimit = Math.min(
       maxJobsTarget,
       candidates.length,
-      Math.max(0, maxJobsByTime)
+      maxJobsByTime
     );
 
     if (claimLimit <= 0) {
       logMetric('gpt_worker_insufficient_time', {
-        reason: 'insufficient_for_single_batch',
+        reason: 'no_candidates_within_budget',
         remainingMs,
         timeoutMs,
         concurrency: effectiveConcurrency
       });
       return NextResponse.json({
         status: 'time_exhausted',
-        reason: 'insufficient_for_single_batch',
+        reason: 'no_candidates_within_budget',
         elapsed: elapsedAfterCandidates
       });
     }
@@ -149,7 +146,11 @@ export async function POST(req: NextRequest) {
       timeoutMs,
       concurrency: effectiveConcurrency,
       claimLimit,
-      maxJobsTarget
+      maxJobsTarget,
+      maxJobsByTime,
+      maxBatchesByTime,
+      softLimitMs: SLICE_SOFT_LIMIT_MS,
+      minRemainingMs: MIN_REMAINING_MS_FOR_NEW_TASK
     });
 
     const claimed: ClaimedJob[] = [];
@@ -206,6 +207,8 @@ export async function POST(req: NextRequest) {
       failed: 0,
       retried: 0
     };
+
+    const shouldStartAnother = () => (SLICE_SOFT_LIMIT_MS - (Date.now() - start)) >= MIN_REMAINING_MS_FOR_NEW_TASK;
 
     await runWithConcurrency(claimed, effectiveConcurrency, async ({ job, attempts }) => {
       const jobContext = buildJobContext(job);
@@ -294,7 +297,7 @@ export async function POST(req: NextRequest) {
           status
         });
       }
-    });
+    }, shouldStartAnother);
 
     const elapsed = Date.now() - start;
     logMetric('gpt_worker_slice_end', { ...results, elapsedMs: elapsed, trigger });
@@ -341,11 +344,16 @@ function buildJobContext(job: ResumeJob) {
 async function runWithConcurrency<T>(
   items: T[],
   concurrency: number,
-  handler: (item: T) => Promise<void>
+  handler: (item: T) => Promise<void>,
+  shouldStart?: () => boolean
 ) {
   const active: Promise<void>[] = [];
 
   for (const item of items) {
+    if (shouldStart && !shouldStart()) {
+      break;
+    }
+
     const task = handler(item).finally(() => {
       const index = active.indexOf(task);
       if (index >= 0) {
