@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
             nextRetryAt: null,
             attempts
           }
-        });
+        }));
 
         await runWithPrismaRetry('items.mark_success', () => prisma.import_email_items.updateMany({
           where: { resume_id: resumeId },
