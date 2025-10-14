@@ -23,6 +23,7 @@ export const importEmailSchema = z.object({
     .max(5000)
     .optional()
     .default(5000),
+  mode: z.enum(['bulk', 'graph-search']).optional()
 });
 
 export type ImportEmailInput = z.infer<typeof importEmailSchema>;

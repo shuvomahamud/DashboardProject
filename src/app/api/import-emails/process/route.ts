@@ -111,6 +111,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'no_work' });
     }
 
+    const runMeta = (run.meta && typeof run.meta === 'object' && !Array.isArray(run.meta))
+      ? run.meta as Record<string, any>
+      : {};
+    const rawSearchMode = typeof runMeta.searchMode === 'string' ? runMeta.searchMode : undefined;
+    const lookbackOverride = typeof runMeta.lookbackDays === 'number' ? runMeta.lookbackDays : undefined;
+    const trimmedSearchText = run.search_text?.trim() ?? '';
+    const searchMode = rawSearchMode === 'bulk' || rawSearchMode === 'graph-search'
+      ? rawSearchMode
+      : (trimmedSearchText.length > 0 ? 'graph-search' : 'bulk');
+
     logInfo('run loaded', {
       runId: run.id,
       jobId: run.job_id,
@@ -118,7 +128,8 @@ export async function POST(req: NextRequest) {
       totalMessages: run.total_messages ?? 0,
       mailbox: run.mailbox,
       search: run.search_text,
-      maxEmails: run.max_emails
+      maxEmails: run.max_emails,
+      searchMode
     });
     logMetric('processor_run_active', { runId: run.id, jobId: run.job_id, totalMessages: run.total_messages ?? 0 });
 
@@ -160,8 +171,10 @@ export async function POST(req: NextRequest) {
         });
 
         const messages = await provider.listMessages({
-          jobTitle: run.search_text,
-          limit: enumerationLimit
+          jobTitle: run.search_text ?? '',
+          limit: enumerationLimit,
+          mode: searchMode,
+          lookbackDays: lookbackOverride
         });
 
         const phaseADuration = Date.now() - phaseAStart;

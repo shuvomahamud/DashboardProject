@@ -26,8 +26,9 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
   const [mailbox, setMailbox] = useState("");
   const [text, setText] = useState("");
   const [top, setTop] = useState(5000);
+  const [mode, setMode] = useState<'bulk' | 'graph-search'>('graph-search');
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState<{ mailbox?: string; text?: string; top?: string }>({});
+  const [errors, setErrors] = useState<{ mailbox?: string; text?: string; top?: string; mode?: string }>({});
   const [realTimeErrors, setRealTimeErrors] = useState<{ mailbox?: string }>({});
 
   // reset form when opened
@@ -40,6 +41,7 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
         .catch(() => setMailbox(""));
       setText("");
       setTop(5000);
+      setMode('graph-search');
       setErrors({});
       setRealTimeErrors({});
       setSubmitting(false);
@@ -84,6 +86,7 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
       mailbox,
       text,
       top: Number.isFinite(top) ? top : 25,
+      mode,
     });
     if (!parse.success) {
       const fieldErrs: Record<string, string> = {};
@@ -105,8 +108,9 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
         body: JSON.stringify({
           jobId,
           mailbox,
-          searchText: text,
-          maxEmails: top
+          searchText: text.trim(),
+          maxEmails: top,
+          mode,
         }),
       });
 
@@ -199,11 +203,25 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
           </Form.Group>
 
           <Form.Group className="mb-3">
+            <Form.Check
+              type="switch"
+              id="bulk-mode-toggle"
+              label="High-volume bulk scan (subject match only)"
+              checked={mode === 'bulk'}
+              onChange={(e) => setMode(e.target.checked ? 'bulk' : 'graph-search')}
+              disabled={submitting}
+            />
+            <Form.Text className="text-muted">
+              Bulk scan pages through up to 5,000 inbox emails using Graph pagination and filters subjects locally.
+            </Form.Text>
+          </Form.Group>
+
+          <Form.Group className="mb-3">
             <Form.Label>Max emails to scan (optional)</Form.Label>
             <Form.Control
               type="number"
               min={1}
-              max={200}
+              max={5000}
               value={top}
               onChange={(e) => setTop(Number(e.target.value))}
               style={{ width: '150px' }}
