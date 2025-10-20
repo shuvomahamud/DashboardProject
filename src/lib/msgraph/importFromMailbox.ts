@@ -102,7 +102,7 @@ async function linkJobApplication(
       data: {
         jobId,
         resumeId,
-        status: 'submitted',
+        status: 'new',
         appliedDate: new Date(),
       }
     });

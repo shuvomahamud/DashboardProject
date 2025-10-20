@@ -241,6 +241,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
             <option value="new">New</option>
             <option value="submitted">Submitted</option>
             <option value="reviewed">Reviewed</option>
+            <option value="communicated">Communicated</option>
             <option value="shortlisted">Shortlisted</option>
             <option value="rejected">Rejected</option>
             <option value="hired">Hired</option>
@@ -506,6 +507,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
                 <option value="new">New</option>
                 <option value="submitted">Submitted</option>
                 <option value="reviewed">Reviewed</option>
+                <option value="communicated">Communicated</option>
                 <option value="shortlisted">Shortlisted</option>
                 <option value="rejected">Rejected</option>
                 <option value="hired">Hired</option>

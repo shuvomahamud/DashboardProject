@@ -68,7 +68,7 @@ async function backfillApplicationSnapshots() {
           id: app.id,
           jobId: app.jobId,
           resumeId: app.resumeId,
-          status: app.status ?? "submitted",
+          status: app.status ?? "new",
           notes: null,
           updatedAt: app.updatedAt?.toISOString() ?? null,
           appliedDate: app.appliedDate?.toISOString() ?? null,

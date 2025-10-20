@@ -369,7 +369,7 @@ model JobApplication {
   jobId               Int
   resumeId            Int
   external_message_id String?
-  status              String   @default("submitted")
+  status              String   @default("new")
   appliedDate         DateTime @default(now()) @db.Timestamptz(6)
   notes               String?
   createdAt           DateTime @default(now()) @db.Timestamptz(6)

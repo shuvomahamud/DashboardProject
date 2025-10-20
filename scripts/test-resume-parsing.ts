@@ -94,7 +94,7 @@ async function createTestApplication(jobId: number, resumeId: number): Promise<v
     data: {
       jobId,
       resumeId,
-      status: 'submitted'
+      status: 'new'
     }
   });
   

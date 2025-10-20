@@ -491,7 +491,7 @@ function buildApplicationSnapshot(app: {
     id: app.id,
     jobId: app.jobId,
     resumeId: app.resumeId,
-    status: app.status ?? "submitted",
+    status: app.status ?? "new",
     notes: null,                // keep as null, user can edit separately
     updatedAt: app.updatedAt?.toISOString() ?? null,
     appliedDate: app.appliedDate?.toISOString() ?? null,

@@ -567,7 +567,7 @@ async function linkJobApplication(
     const data: any = {
       jobId,
       resumeId,
-      status: 'submitted',
+      status: 'new',
       appliedDate: new Date()
     };
 
