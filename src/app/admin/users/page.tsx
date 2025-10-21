@@ -277,7 +277,8 @@ export default function AdminUsersPage() {
     { key: 'interviews', label: 'Interviews', description: 'Interview scheduling and tracking' },
     { key: 'onboarding', label: 'Onboarding', description: 'Employee onboarding process' },
     { key: 'todo_list', label: 'Todo List', description: 'Task management and tracking' },
-    { key: 'jobs', label: 'Jobs', description: 'Job postings and applications management' }
+    { key: 'jobs', label: 'Jobs', description: 'Job postings and applications management' },
+    { key: 'resumes', label: 'Resumes', description: 'Candidate resume access and management' }
   ];
 
   const getTableBadgeVariant = (table: string) => {
@@ -288,6 +289,7 @@ export default function AdminUsersPage() {
       case 'interviews': return 'info';
       case 'onboarding': return 'warning';
       case 'jobs': return 'dark';
+      case 'resumes': return 'secondary';
       default: return 'secondary';
     }
   };
@@ -300,6 +302,7 @@ export default function AdminUsersPage() {
       case 'interviews': return 'Interviews';
       case 'onboarding': return 'Onboarding';
       case 'jobs': return 'Jobs';
+      case 'resumes': return 'Resumes';
       case 'interview_information': return 'Interview Information';
       default: return table;
     }
@@ -313,6 +316,7 @@ export default function AdminUsersPage() {
       case 'Interviews_RW': return 'Interviews';
       case 'Onboarding_RW': return 'Onboarding';
       case 'Jobs_RW': return 'Jobs';
+      case 'Resumes_RW': return 'Resumes';
       default: return roleName;
     }
   };
