@@ -55,20 +55,45 @@ async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
     }
 
     const body = await req.json();
-    
+
+    const updateData: any = {};
+    const scalarFields = [
+      'fileName',
+      'originalName',
+      'parsedText',
+      'skills',
+      'experience',
+      'education',
+      'contactInfo',
+      'aiExtractJson',
+      'aiSummary',
+      'candidateName',
+      'email',
+      'phone',
+      'companies',
+      'employmentHistoryJson',
+      'sourceFrom'
+    ];
+
+    scalarFields.forEach(field => {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        updateData[field] = body[field];
+      }
+    });
+
+    if (Object.prototype.hasOwnProperty.call(body, 'totalExperienceY')) {
+      const val = body.totalExperienceY;
+      updateData.totalExperienceY =
+        val === null || val === '' ? null : Number(val);
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No valid fields provided' }, { status: 400 });
+    }
+
     const resume = await prisma.resume.update({
       where: { id: resumeId },
-      data: {
-        fileName: body.fileName,
-        originalName: body.originalName,
-        parsedText: body.parsedText,
-        skills: body.skills,
-        experience: body.experience,
-        education: body.education,
-        contactInfo: body.contactInfo,
-        aiExtractJson: body.aiExtractJson,
-        aiSummary: body.aiSummary
-      }
+      data: updateData
     });
 
     return NextResponse.json(resume);

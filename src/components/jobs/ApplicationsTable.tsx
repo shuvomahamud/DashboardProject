@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState, useMemo } from "react";
-import { Badge, Button, Form, Spinner, Alert, InputGroup } from "react-bootstrap";
+import Link from "next/link";
+import { Badge, Button, Form, Spinner, Alert, InputGroup, Modal } from "react-bootstrap";
 import DataTable from '@/components/DataTable';
 
 type ApplicationRow = {
@@ -22,6 +23,8 @@ type ApplicationRow = {
   skills?: string;
   experience?: number | null;
   createdAt?: string;
+  originalName?: string | null;
+  sourceFrom?: string | null;
 };
 
 type ApiResp = {
@@ -52,6 +55,19 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   const [minMatchScore, setMinMatchScore] = useState('');
   const [maxFakeScore, setMaxFakeScore] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [previewModal, setPreviewModal] = useState<{
+    resumeId: number | null;
+    url: string | null;
+    loading: boolean;
+    error: string | null;
+    fileName: string | null;
+  }>({
+    resumeId: null,
+    url: null,
+    loading: false,
+    error: null,
+    fileName: null
+  });
 
 
   const load = useCallback(async () => {
@@ -150,6 +166,69 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     }
   }, [jobId]);
 
+  const fetchResumeFile = useCallback(async (resumeId: number) => {
+    const response = await fetch(`/api/resumes/${resumeId}/file`);
+    let data: any = null;
+    try {
+      data = await response.json();
+    } catch {
+      // Ignore JSON parse failure; will throw below
+    }
+    if (!response.ok || !data?.url) {
+      throw new Error(data?.error || 'Failed to load resume file');
+    }
+    return data as { url: string; fileName?: string | null };
+  }, []);
+
+  const handleOpenPreview = useCallback(async (resumeId: number) => {
+    setPreviewModal({
+      resumeId,
+      url: null,
+      loading: true,
+      error: null,
+      fileName: null
+    });
+    try {
+      const fileData = await fetchResumeFile(resumeId);
+      setPreviewModal({
+        resumeId,
+        url: fileData.url,
+        loading: false,
+        error: null,
+        fileName: fileData.fileName || null
+      });
+    } catch (err) {
+      setPreviewModal({
+        resumeId,
+        url: null,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Failed to load resume file',
+        fileName: null
+      });
+    }
+  }, [fetchResumeFile]);
+
+  const handleClosePreview = useCallback(() => {
+    setPreviewModal({
+      resumeId: null,
+      url: null,
+      loading: false,
+      error: null,
+      fileName: null
+    });
+  }, []);
+
+  const handleDownloadResume = useCallback(async (resumeId: number) => {
+    try {
+      const fileData = await fetchResumeFile(resumeId);
+      if (typeof window !== 'undefined') {
+        window.open(fileData.url, '_blank', 'noopener');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download resume');
+    }
+  }, [fetchResumeFile]);
+
   const deleteAllApplications = async () => {
     if (!confirm(
       `Are you sure you want to delete ALL ${total} applications and their resumes for this job?\n\nThis action CANNOT be undone!`
@@ -204,7 +283,12 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       sortField: 'candidateName',
       cell: (row: ApplicationRow) => (
         <div>
-          <strong>{row.candidateName || 'Unknown'}</strong>
+          <Link
+            href={`/resumes/${row.resumeId}`}
+            className="fw-semibold text-decoration-none"
+          >
+            {row.candidateName || 'Unknown'}
+          </Link>
           {row.email && (
             <>
               <br />
@@ -215,6 +299,12 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
             <>
               <br />
               <small className="text-muted">{row.phone}</small>
+            </>
+          )}
+          {row.originalName && (
+            <>
+              <br />
+              <small className="text-muted">Resume: {row.originalName}</small>
             </>
           )}
         </div>
@@ -292,6 +382,32 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       sortField: 'fakeScore',
       cell: (row: ApplicationRow) => row.aiFake != null ? Number(row.aiFake).toFixed(0) : '-',
       width: '110px'
+    },
+    {
+      id: 'resumeFile',
+      name: 'Resume',
+      cell: (row: ApplicationRow) => (
+        <div className="d-flex flex-column gap-2">
+          <Button
+            variant="outline-primary"
+            size="sm"
+            onClick={() => handleOpenPreview(row.resumeId)}
+          >
+            View
+          </Button>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={() => handleDownloadResume(row.resumeId)}
+          >
+            Download
+          </Button>
+        </div>
+      ),
+      ignoreRowClick: true,
+      allowOverflow: true,
+      button: true,
+      width: '160px'
     },
     {
       id: 'skills',
@@ -389,7 +505,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       button: true,
       width: '80px'
     }
-  ], [updateStatus, unlink, updating]);
+  ], [updateStatus, unlink, updating, handleOpenPreview, handleDownloadResume]);
 
   const sortedColumn = useMemo(
     () => columns.find((col: any) => col.sortField === sortField),
@@ -623,6 +739,56 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
           }}
         />
       )}
+
+      <Modal
+        size="xl"
+        show={previewModal.resumeId !== null}
+        onHide={handleClosePreview}
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            Resume Preview
+            {previewModal.fileName ? ` — ${previewModal.fileName}` : ''}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ minHeight: '60vh' }}>
+          {previewModal.loading && (
+            <div className="d-flex flex-column align-items-center justify-content-center py-5">
+              <Spinner animation="border" />
+              <p className="mt-3 mb-0 text-muted">Loading resume...</p>
+            </div>
+          )}
+          {!previewModal.loading && previewModal.error && (
+            <Alert variant="danger" className="mb-0">
+              {previewModal.error}
+            </Alert>
+          )}
+          {!previewModal.loading && !previewModal.error && previewModal.url && (
+            <iframe
+              src={previewModal.url}
+              title="Resume preview"
+              style={{ width: '100%', height: '70vh', border: 'none' }}
+            />
+          )}
+          {!previewModal.loading && !previewModal.error && !previewModal.url && (
+            <p className="text-muted mb-0">Resume preview not available.</p>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          {previewModal.resumeId && (
+            <Button
+              variant="primary"
+              onClick={() => handleDownloadResume(previewModal.resumeId!)}
+            >
+              Download
+            </Button>
+          )}
+          <Button variant="secondary" onClick={handleClosePreview}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }
