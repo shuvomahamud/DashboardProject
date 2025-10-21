@@ -304,6 +304,9 @@ model Job {
   updatedAt          DateTime             @updatedAt @db.Timestamptz(6)
   aiExtractJson      String?
   aiSummary          String?
+  aiJobProfileJson   String?
+  aiJobProfileUpdatedAt DateTime?         @db.Timestamptz(6)
+  aiJobProfileVersion String?
   applicationQuery   String?
   companyName        String?
   last_email_sync_at DateTime?            @db.Timestamptz(6)

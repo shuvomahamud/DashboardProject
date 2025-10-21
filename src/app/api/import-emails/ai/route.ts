@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { tryGPTParsing } from '@/lib/pipeline/email-pipeline';
 import { logMetric } from '@/lib/logging/metrics';
+import { buildJobContext as buildJobContextFromData } from '@/lib/ai/jobContext';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -125,7 +126,10 @@ export async function POST(req: NextRequest) {
             job: {
               select: {
                 title: true,
-                description: true
+                description: true,
+                requirements: true,
+                aiSummary: true,
+                aiJobProfileJson: true
               }
             }
           }
@@ -181,7 +185,13 @@ export async function POST(req: NextRequest) {
     };
 
     const processClaimedJob = async ({ job, attempts }: ClaimedJob) => {
-      const jobContext = buildJobContext(job);
+      const jobRecord = job.job;
+      const jobContext = buildJobContextFromData({
+        title: jobRecord?.title ?? 'Unknown Role',
+        description: jobRecord?.description ?? '',
+        aiJobProfileJson: jobRecord?.aiJobProfileJson ?? null,
+        fallbackSummary: jobRecord?.aiSummary ?? jobRecord?.requirements ?? ''
+      });
       const resumeId = job.resumeId;
       const runId = job.runId || 'worker';
 
@@ -346,22 +356,8 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
 export async function GET(req: NextRequest) {
   return POST(req);
-}
-
-function buildJobContext(job: ResumeJob) {
-  const title = job.job?.title ?? 'Unknown Role';
-  const description = job.job?.description ?? '';
-  const trimmedDescription = description.length > 500
-    ? `${description.substring(0, 500)}...`
-    : description;
-
-  return {
-    jobTitle: title,
-    jobDescriptionShort: trimmedDescription
-  };
 }
 
 

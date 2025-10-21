@@ -1,8 +1,9 @@
 import { Prisma } from '@prisma/client';
-import OpenAI from 'openai';
 import * as crypto from 'crypto';
 import { z } from 'zod';
 import prisma, { withRetry } from '../prisma';
+import { getOpenAIClient } from './openaiClient';
+import type { JobContext } from './jobContext';
 
 type ResumeLogContext = Record<string, unknown>;
 
@@ -32,20 +33,6 @@ const resumeLogError = (message: string, context?: ResumeLogContext) => {
     console.error(`${RESUME_LOG_PREFIX} ${message}`);
   }
 };
-
-let openai: OpenAI | null = null;
-
-function getOpenAIClient(): OpenAI {
-  if (!openai) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is missing or empty');
-    }
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
-  return openai;
-}
 
 // Helpers for hardened schema
 const stringOrNull = z.union([z.string(), z.null()]).optional();
@@ -92,11 +79,6 @@ export const EnhancedResumeParseSchema = z.object({
 });
 
 export type EnhancedParsedResume = z.infer<typeof EnhancedResumeParseSchema>;
-
-interface JobContext {
-  jobTitle: string;
-  jobDescriptionShort: string;
-}
 
 interface ParseResult {
   success: boolean;
@@ -262,14 +244,55 @@ const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified 
 
 **Return complete JSON with resume, scores, and summary.**`;
 
+const formatList = (items: string[], max = 8) => {
+  if (!items || items.length === 0) {
+    return 'none';
+  }
+  const sliced = items.slice(0, max);
+  let text = sliced.join(', ');
+  if (items.length > sliced.length) {
+    text += ', ...';
+  }
+  return text;
+};
+
+const formatYears = (value: number | null | undefined) => {
+  if (value === null || value === undefined) {
+    return 'unspecified';
+  }
+  return `${value} years`;
+};
+
 // Enhanced user message template with proper fencing and structure
 function buildUserMessage(jobContext: JobContext, resumeText: string): string {
+  const profile = jobContext.jobProfile;
+  const profileSection = profile
+    ? `PROFILE SNAPSHOT (AI extracted):
+- Must-have skills: ${formatList(profile.mustHaveSkills)}
+- Nice-to-have skills: ${formatList(profile.niceToHaveSkills)}
+- Soft skills: ${formatList(profile.softSkills)}
+- Target titles: ${formatList(profile.targetTitles)}
+- Responsibilities: ${formatList(profile.responsibilities)}
+- Tools & tech: ${formatList(profile.toolsAndTech)}
+- Domain keywords: ${formatList(profile.domainKeywords)}
+- Certifications: ${formatList(profile.certifications)}
+- Disqualifiers: ${formatList(profile.disqualifiers)}
+- Required experience: ${formatYears(profile.requiredExperienceYears)}
+- Preferred experience: ${formatYears(profile.preferredExperienceYears)}
+- Location constraints: ${profile.locationConstraints ?? 'unspecified'}`
+    : 'PROFILE SNAPSHOT: No structured profile available. Use job summary and description snippet.';
+
   return `JOB CONTEXT
 Title: ${jobContext.jobTitle}
 
-Description:
-<<<JOB_DESCRIPTION
+Summary:
 ${jobContext.jobDescriptionShort}
+
+${profileSection}
+
+RAW DESCRIPTION SNIPPET:
+<<<JOB_DESCRIPTION
+${jobContext.jobDescriptionExcerpt}
 JOB_DESCRIPTION
 
 SCHEMA (return exactly this object; no extra keys):
@@ -335,7 +358,9 @@ async function callOpenAIForParsing(
       model,
       temperature,
       timeoutMs,
-      textLength: redactedText.length
+      textLength: redactedText.length,
+      jobProfileVersion: jobContext.jobProfile?.version ?? null,
+      jobProfilePresent: Boolean(jobContext.jobProfile)
     });
 
     const openaiClient = getOpenAIClient();
@@ -859,6 +884,7 @@ export async function parseAndScoreResume(
       resumeId,
       model: process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini',
       durationMs: totalDuration,
+      jobProfileVersion: jobContext.jobProfile?.version ?? null,
       matchScore: summary.matchScore,
       companyScore: summary.companyScore,
       fakeScore: summary.fakeScore,

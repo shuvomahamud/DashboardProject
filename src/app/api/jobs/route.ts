@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
+import { refreshJobProfile } from '@/lib/ai/jobProfileService';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,6 +110,16 @@ async function POST(req: NextRequest) {
         aiSummary: body.aiSummary
       }
     });
+
+    const profilePromise = refreshJobProfile(job.id).catch(profileError => {
+      console.warn(`Job profile generation failed for job ${job.id}`, profileError);
+    });
+
+    if (typeof req.waitUntil === 'function') {
+      req.waitUntil(profilePromise);
+    } else {
+      void profilePromise;
+    }
 
     // Trigger job embedding generation (fire-and-forget, non-blocking)
     if (process.env.OPENAI_API_KEY) {

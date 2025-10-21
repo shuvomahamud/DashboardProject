@@ -11,6 +11,7 @@ import prisma from '@/lib/prisma';
 import { extractText } from '@/lib/parse/text';
 import { uploadResumeBytes } from '@/lib/supabase-server';
 import { parseAndScoreResume } from '@/lib/ai/resumeParsingService';
+import type { JobContext } from '@/lib/ai/jobContext';
 import type { EmailAttachment, EmailMessage, EmailProvider } from '@/lib/providers/email-provider';
 import { logMetric } from '@/lib/logging/metrics';
 
@@ -653,7 +654,7 @@ async function enqueueResumeForAI(
  */
 export async function tryGPTParsing(
   resumeId: number,
-  jobContext: { jobTitle: string; jobDescriptionShort: string },
+  jobContext: JobContext,
   timeoutMs: number,
   runId: string
 ): Promise<boolean> {

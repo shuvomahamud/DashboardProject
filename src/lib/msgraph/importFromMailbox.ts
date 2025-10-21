@@ -5,6 +5,7 @@ import { Message, Attachment } from './outlook';
 import { extractText } from '@/lib/parse/text';
 import { uploadResumeBytes } from '@/lib/supabase-server';
 import { parseAndScoreResume } from '@/lib/ai/resumeParsingService';
+import { buildJobContext as buildJobContextFromData } from '@/lib/ai/jobContext';
 
 export interface ImportSummary {
   createdResumes: number;
@@ -381,16 +382,22 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
                 // Get job details for context
                 const job = await prisma.job.findUnique({
                   where: { id: jobId },
-                  select: { title: true, description: true }
+                  select: {
+                    title: true,
+                    description: true,
+                    requirements: true,
+                    aiSummary: true,
+                    aiJobProfileJson: true
+                  }
                 });
 
                 if (job) {
-                  const jobContext = {
-                    jobTitle: job.title,
-                    jobDescriptionShort: job.description.length > 500 
-                      ? job.description.substring(0, 500) + '...' 
-                      : job.description
-                  };
+                  const jobContext = buildJobContextFromData({
+                    title: job.title,
+                    description: job.description ?? '',
+                    aiJobProfileJson: job.aiJobProfileJson ?? null,
+                    fallbackSummary: job.aiSummary ?? job.requirements ?? ''
+                  });
 
                   const parseResult = await parseAndScoreResume(resume.id, jobContext);
                   if (parseResult.success) {
