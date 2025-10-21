@@ -25,7 +25,96 @@ interface Job {
   createdAt: string;
   updatedAt: string;
   companyName: string;
+  aiJobProfileJson?: string | null;
+  aiJobProfileUpdatedAt?: string | null;
+  aiJobProfileVersion?: string | null;
+  aiJobProfile?: JobProfile | null;
 }
+
+interface JobProfile {
+  summary: string;
+  mustHaveSkills: string[];
+  niceToHaveSkills: string[];
+  softSkills: string[];
+  targetTitles: string[];
+  responsibilities: string[];
+  requiredExperienceYears: number | null;
+  preferredExperienceYears: number | null;
+  domainKeywords: string[];
+  certifications: string[];
+  locationConstraints: string | null;
+  disqualifiers: string[];
+  toolsAndTech: string[];
+}
+
+const safeParseProfile = (json: string | null | undefined): JobProfile | null => {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    const toYears = (value: unknown) => {
+      if (value === null || value === undefined) return null;
+      const numeric = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(numeric) ? Math.round(numeric) : null;
+    };
+
+    return {
+      summary: parsed.summary ?? '',
+      mustHaveSkills: parsed.mustHaveSkills ?? [],
+      niceToHaveSkills: parsed.niceToHaveSkills ?? [],
+      softSkills: parsed.softSkills ?? [],
+      targetTitles: parsed.targetTitles ?? [],
+      responsibilities: parsed.responsibilities ?? [],
+      requiredExperienceYears: toYears(parsed.requiredExperienceYears),
+      preferredExperienceYears: toYears(parsed.preferredExperienceYears),
+      domainKeywords: parsed.domainKeywords ?? [],
+      certifications: parsed.certifications ?? [],
+      locationConstraints: parsed.locationConstraints ?? null,
+      disqualifiers: parsed.disqualifiers ?? [],
+      toolsAndTech: parsed.toolsAndTech ?? []
+    };
+  } catch (error) {
+    console.warn('Failed to parse AI job profile JSON', error);
+    return null;
+  }
+};
+
+const renderChipSection = (label: string, items: string[] | null | undefined) => (
+  <section>
+    <h6 className="fw-semibold text-dark mb-2">
+      <i className="bi bi-record-circle text-primary me-2"></i>
+      {label}
+    </h6>
+    {items && items.length > 0 ? (
+      <div className="d-flex flex-wrap gap-2">
+        {items.map((item, index) => (
+          <Badge key={`${label}-${index}`} bg="secondary" className="fw-normal">
+            {item}
+          </Badge>
+        ))}
+      </div>
+    ) : (
+      <p className="text-muted mb-0">Not specified</p>
+    )}
+  </section>
+);
+
+const ExperienceBadge = ({ label, value }: { label: string; value: number | null }) => (
+  <div className="d-flex flex-column">
+    <span className="text-muted small">{label}</span>
+    <Badge bg="info" text="dark" className="mt-1 px-3 py-2">
+      {value !== null && value !== undefined ? `${value} years` : 'Not specified'}
+    </Badge>
+  </div>
+);
+
+const LocationBadge = ({ location }: { location: string | null }) => (
+  <div className="d-flex flex-column">
+    <span className="text-muted small">Location Constraints</span>
+    <Badge bg="info" text="dark" className="mt-1 px-3 py-2">
+      {location || 'None'}
+    </Badge>
+  </div>
+);
 
 export default function JobDetailPage() {
   const router = useRouter();
@@ -33,7 +122,10 @@ export default function JobDetailPage() {
   const jobId = params?.id as string;
 
   const [job, setJob] = useState<Job | null>(null);
+  const [jobProfile, setJobProfile] = useState<JobProfile | null>(null);
+  const [profileUpdatedAt, setProfileUpdatedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
 
@@ -46,6 +138,7 @@ export default function JobDetailPage() {
   const fetchJob = async () => {
     try {
       setLoading(true);
+      setProfileLoading(true);
       const response = await fetch(`/api/jobs/${jobId}`);
       
       if (!response.ok) {
@@ -54,9 +147,17 @@ export default function JobDetailPage() {
       
       const jobData: Job = await response.json();
       setJob(jobData);
+
+      const profileFromResponse: JobProfile | null =
+        (jobData as any).aiJobProfile ??
+        (jobData.aiJobProfileJson ? safeParseProfile(jobData.aiJobProfileJson) : null);
+
+      setJobProfile(profileFromResponse);
+      setProfileUpdatedAt(jobData.aiJobProfileUpdatedAt ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load job');
     } finally {
+      setProfileLoading(false);
       setLoading(false);
     }
   };
@@ -193,6 +294,65 @@ export default function JobDetailPage() {
 
       <Row className="g-4">
         <Col lg={12}>
+          {/* AI Job Profile */}
+          <Card className="mb-4 border-0 shadow-sm">
+            <Card.Header className="bg-light border-0 py-3 d-flex justify-content-between align-items-center">
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-stars text-primary"></i>
+                <h5 className="mb-0 fw-semibold">AI Job Profile</h5>
+              </div>
+              {profileUpdatedAt && (
+                <small className="text-muted">
+                  Last updated {new Date(profileUpdatedAt).toLocaleString()}
+                </small>
+              )}
+            </Card.Header>
+            <Card.Body className="p-4">
+              {profileLoading ? (
+                <div className="d-flex flex-column align-items-center justify-content-center py-4">
+                  <Spinner animation="border" role="status" />
+                  <p className="mt-3 mb-0 text-muted">Generating AI profile...</p>
+                </div>
+              ) : jobProfile ? (
+                <div className="d-flex flex-column gap-4">
+                  {jobProfile.summary && (
+                    <section>
+                      <h6 className="fw-semibold text-dark mb-2">
+                        <i className="bi bi-chat-left-dots text-primary me-2"></i>Summary
+                      </h6>
+                      <p className="mb-0 text-muted" style={{ whiteSpace: 'pre-wrap' }}>
+                        {jobProfile.summary}
+                      </p>
+                    </section>
+                  )}
+
+                  {renderChipSection('Must-have Skills', jobProfile.mustHaveSkills)}
+                  {renderChipSection('Nice-to-have Skills', jobProfile.niceToHaveSkills)}
+                  {renderChipSection('Soft Skills', jobProfile.softSkills)}
+                  {renderChipSection('Target Titles', jobProfile.targetTitles)}
+                  {renderChipSection('Responsibilities', jobProfile.responsibilities)}
+                  {renderChipSection('Tools & Technologies', jobProfile.toolsAndTech)}
+                  {renderChipSection('Domain Keywords', jobProfile.domainKeywords)}
+                  {renderChipSection('Certifications', jobProfile.certifications)}
+                  {renderChipSection('Disqualifiers', jobProfile.disqualifiers)}
+
+                  <section className="d-flex flex-wrap gap-4">
+                    <ExperienceBadge label="Required Experience" value={jobProfile.requiredExperienceYears} />
+                    <ExperienceBadge label="Preferred Experience" value={jobProfile.preferredExperienceYears} />
+                    <LocationBadge location={jobProfile.locationConstraints} />
+                  </section>
+                </div>
+              ) : (
+                <Alert variant="info" className="mb-0">
+                  <Alert.Heading className="fs-6 fw-semibold">No AI profile available yet</Alert.Heading>
+                  <p className="mb-0">
+                    Edit the job posting to trigger profile extraction, or ensure the OpenAI integration is configured.
+                  </p>
+                </Alert>
+              )}
+            </Card.Body>
+          </Card>
+
           {/* Job Description Card */}
           <Card className="mb-4 border-0 shadow-sm">
             <Card.Header className="bg-light border-0 py-3">

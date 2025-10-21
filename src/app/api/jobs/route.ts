@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
-import { refreshJobProfile } from '@/lib/ai/jobProfileService';
+import { refreshJobProfile, parseJobProfile } from '@/lib/ai/jobProfileService';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,8 +49,13 @@ async function GET(req: NextRequest) {
       prisma.job.count({ where })
     ]);
 
+    const jobsWithProfile = jobs.map(job => ({
+      ...job,
+      aiJobProfile: parseJobProfile(job.aiJobProfileJson)
+    }));
+
     return NextResponse.json({
-      jobs,
+      jobs: jobsWithProfile,
       pagination: {
         page,
         limit,
@@ -111,14 +116,15 @@ async function POST(req: NextRequest) {
       }
     });
 
-    const profilePromise = refreshJobProfile(job.id).catch(profileError => {
+    let refreshedJob = job;
+    let profile = null;
+    try {
+      profile = await refreshJobProfile(job.id);
+      if (profile) {
+        refreshedJob = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+      }
+    } catch (profileError) {
       console.warn(`Job profile generation failed for job ${job.id}`, profileError);
-    });
-
-    if (typeof req.waitUntil === 'function') {
-      req.waitUntil(profilePromise);
-    } else {
-      void profilePromise;
     }
 
     // Trigger job embedding generation (fire-and-forget, non-blocking)
@@ -132,7 +138,13 @@ async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(job, { status: 201 });
+    return NextResponse.json(
+      {
+        ...refreshedJob,
+        aiJobProfile: profile ?? parseJobProfile(refreshedJob.aiJobProfileJson)
+      },
+      { status: 201 }
+    );
 
   } catch (error) {
     console.error('Error creating job:', error);

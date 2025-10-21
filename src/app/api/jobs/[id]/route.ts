@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
-import { refreshJobProfile } from '@/lib/ai/jobProfileService';
+import { refreshJobProfile, parseJobProfile } from '@/lib/ai/jobProfileService';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +38,10 @@ async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
-    return NextResponse.json(job);
+    return NextResponse.json({
+      ...job,
+      aiJobProfile: parseJobProfile(job.aiJobProfileJson)
+    });
 
   } catch (error) {
     console.error('Error fetching job:', error);
@@ -102,13 +105,15 @@ async function PUT(req: NextRequest) {
       }
     });
 
-    const profilePromise = refreshJobProfile(job.id).catch(profileError => {
+    let refreshedJob = job;
+    let profile = null;
+    try {
+      profile = await refreshJobProfile(job.id);
+      if (profile) {
+        refreshedJob = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+      }
+    } catch (profileError) {
       console.warn(`Job profile regeneration failed for job ${job.id}`, profileError);
-    });
-    if (typeof req.waitUntil === 'function') {
-      req.waitUntil(profilePromise);
-    } else {
-      void profilePromise;
     }
 
     // Trigger job embedding update (fire-and-forget, non-blocking)
@@ -122,7 +127,10 @@ async function PUT(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(job);
+    return NextResponse.json({
+      ...refreshedJob,
+      aiJobProfile: profile ?? parseJobProfile(refreshedJob.aiJobProfileJson)
+    });
 
   } catch (error) {
     console.error('Error updating job:', error);
