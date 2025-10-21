@@ -69,6 +69,17 @@ const ResumeEditPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const formatJsonIfPossible = (value: string | null | undefined) => {
+    if (!value) return "";
+    try {
+      const parsed = JSON.parse(value);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return value;
+    }
+  };
 
   const loadResume = useCallback(async () => {
     if (!resumeId) return;
@@ -95,7 +106,7 @@ const ResumeEditPage = () => {
         contactInfo: data.contactInfo || "",
         aiSummary: data.aiSummary || "",
         companies: data.companies || "",
-        employmentHistoryJson: data.employmentHistoryJson || "",
+        employmentHistoryJson: formatJsonIfPossible(data.employmentHistoryJson),
         sourceFrom: data.sourceFrom || ""
       });
     } catch (err) {
@@ -115,6 +126,12 @@ const ResumeEditPage = () => {
         ...prev,
         [field]: value
       }));
+      setFieldErrors((prev) => {
+        if (!prev[field]) return prev;
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
     },
     []
   );
@@ -126,6 +143,25 @@ const ResumeEditPage = () => {
       setSubmitting(true);
       setError(null);
       setSuccess(null);
+      setFieldErrors({});
+
+      const errors: Record<string, string> = {};
+
+      let normalisedEmploymentHistory: string | null = null;
+      if (form.employmentHistoryJson.trim()) {
+        try {
+          const parsed = JSON.parse(form.employmentHistoryJson);
+          normalisedEmploymentHistory = JSON.stringify(parsed, null, 2);
+        } catch {
+          errors.employmentHistoryJson = "Employment history must be valid JSON.";
+        }
+      }
+
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        setSubmitting(false);
+        return;
+      }
 
       try {
         const payload: Record<string, any> = {
@@ -138,7 +174,7 @@ const ResumeEditPage = () => {
           contactInfo: form.contactInfo || null,
           aiSummary: form.aiSummary || null,
           companies: form.companies || null,
-          employmentHistoryJson: form.employmentHistoryJson || null,
+          employmentHistoryJson: normalisedEmploymentHistory,
           sourceFrom: form.sourceFrom || null,
           totalExperienceY:
             form.totalExperienceY.trim() === ""
@@ -354,7 +390,13 @@ const ResumeEditPage = () => {
                       handleChange("employmentHistoryJson", e.target.value)
                     }
                     placeholder="JSON representation of employment history"
+                    isInvalid={Boolean(fieldErrors.employmentHistoryJson)}
                   />
+                  {fieldErrors.employmentHistoryJson && (
+                    <Form.Control.Feedback type="invalid">
+                      {fieldErrors.employmentHistoryJson}
+                    </Form.Control.Feedback>
+                  )}
                 </Form.Group>
               </Col>
               <Col md={12}>

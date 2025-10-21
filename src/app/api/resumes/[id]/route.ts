@@ -71,7 +71,6 @@ async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
       'email',
       'phone',
       'companies',
-      'employmentHistoryJson',
       'sourceFrom'
     ];
 
@@ -80,6 +79,28 @@ async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
         updateData[field] = body[field];
       }
     });
+
+    if (Object.prototype.hasOwnProperty.call(body, 'employmentHistoryJson')) {
+      const value = body.employmentHistoryJson;
+      if (value === null || value === '') {
+        updateData.employmentHistoryJson = null;
+      } else if (typeof value === 'string') {
+        try {
+          JSON.parse(value);
+        } catch {
+          return NextResponse.json(
+            { error: 'employmentHistoryJson must be valid JSON' },
+            { status: 400 }
+          );
+        }
+        updateData.employmentHistoryJson = value;
+      } else {
+        return NextResponse.json(
+          { error: 'employmentHistoryJson must be a JSON string or null' },
+          { status: 400 }
+        );
+      }
+    }
 
     if (Object.prototype.hasOwnProperty.call(body, 'totalExperienceY')) {
       const val = body.totalExperienceY;

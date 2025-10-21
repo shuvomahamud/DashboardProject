@@ -15,6 +15,7 @@ export default function Navigation() {
   const canAccessAP = useTablePermit('ap_report');
   const canAccessOnboarding = useTablePermit('onboarding');
   const canAccessJobs = useTablePermit('jobs');
+  const canAccessResumes = useTablePermit('resumes');
 
   const isActive = (path: string) => pathname === path || pathname.startsWith(path + '/');
 
@@ -75,6 +76,16 @@ export default function Navigation() {
               className={isActive('/jobs') ? 'active' : ''}
             >
               Jobs
+            </Nav.Link>
+          )}
+
+          {canAccessResumes && (
+            <Nav.Link
+              as={Link}
+              href="/resumes"
+              className={isActive('/resumes') ? 'active' : ''}
+            >
+              Candidates
             </Nav.Link>
           )}
 
