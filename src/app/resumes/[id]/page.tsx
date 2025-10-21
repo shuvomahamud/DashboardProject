@@ -177,13 +177,20 @@ const ResumeDetailPage = () => {
   const handleDownloadResume = useCallback(async () => {
     try {
       const fileData = await fetchResumeFile();
-      if (typeof window !== "undefined") {
-        window.open(fileData.url, "_blank", "noopener");
-      }
+      const response = await fetch(fileData.url);
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = resumeId || "resume";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to download resume");
     }
-  }, [fetchResumeFile]);
+  }, [fetchResumeFile, resumeId]);
 
   const closePreviewModal = useCallback(() => {
     setPreviewModal({
@@ -580,21 +587,35 @@ const ResumeDetailPage = () => {
         </Col>
       </Row>
 
-      {resume.rawText && (
-        <Card className="shadow-sm border-0 mb-5">
-          <Card.Header className="bg-light border-0 py-3">
-            <h5 className="mb-0 fw-semibold">
-              <i className="bi bi-file-text text-primary me-2"></i>
-              Raw Resume Text
-            </h5>
-          </Card.Header>
-          <Card.Body className="p-4" style={{ maxHeight: "400px", overflowY: "auto" }}>
-            <pre className="mb-0" style={{ whiteSpace: "pre-wrap" }}>
-              {resume.rawText}
-            </pre>
-          </Card.Body>
-        </Card>
-      )}
+      <Card className="shadow-sm border-0 mb-5">
+        <Card.Header className="bg-light border-0 py-3">
+          <h5 className="mb-0 fw-semibold">
+            <i className="bi bi-file-earmark-text text-primary me-2"></i>
+            Resume File
+          </h5>
+        </Card.Header>
+        <Card.Body className="p-4 d-flex flex-column align-items-center gap-3">
+          <div
+            role="button"
+            className="text-muted"
+            style={{ fontSize: "4rem" }}
+            title="Preview resume"
+            onClick={handlePreviewResume}
+          >
+            <i className="bi bi-file-earmark-text" />
+          </div>
+          <div className="d-flex gap-3">
+            <Button variant="primary" onClick={handlePreviewResume}>
+              <i className="bi bi-eye me-1" />
+              Preview
+            </Button>
+            <Button variant="outline-secondary" onClick={handleDownloadResume}>
+              <i className="bi bi-download me-1" />
+              Download
+            </Button>
+          </div>
+        </Card.Body>
+      </Card>
 
       <Modal
         size="xl"
