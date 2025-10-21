@@ -4,6 +4,8 @@ import { z } from 'zod';
 import prisma, { withRetry } from '../prisma';
 import { getOpenAIClient } from './openaiClient';
 import type { JobContext } from './jobContext';
+import { computeProfileMatchScore } from './scoring/profileMatchScoring';
+import type { MatchScoreDetails } from './scoring/profileMatchScoring';
 
 type ResumeLogContext = Record<string, unknown>;
 
@@ -45,6 +47,32 @@ const stringArray = z.union([z.array(z.string()), z.string()])
   .default([]);
 
 // Enhanced schema that includes all three scores with hardened validation
+export const AnalysisSchema = z.object({
+  mustHaveSkillsMatched: stringArray,
+  mustHaveSkillsMissing: stringArray,
+  niceToHaveSkillsMatched: stringArray,
+  softSkillsMatched: stringArray,
+  targetTitlesMatched: stringArray,
+  responsibilitiesMatched: stringArray,
+  toolsAndTechMatched: stringArray,
+  domainKeywordsMatched: stringArray,
+  certificationsMatched: stringArray,
+  disqualifiersDetected: stringArray,
+  notes: stringOrNull
+}).default({
+  mustHaveSkillsMatched: [],
+  mustHaveSkillsMissing: [],
+  niceToHaveSkillsMatched: [],
+  softSkillsMatched: [],
+  targetTitlesMatched: [],
+  responsibilitiesMatched: [],
+  toolsAndTechMatched: [],
+  domainKeywordsMatched: [],
+  certificationsMatched: [],
+  disqualifiersDetected: [],
+  notes: null
+});
+
 export const EnhancedResumeParseSchema = z.object({
   resume: z.object({
     candidate: z.object({
@@ -75,10 +103,12 @@ export const EnhancedResumeParseSchema = z.object({
     companyScore: number0to100,
     fakeScore: number0to100
   }),
+  analysis: AnalysisSchema,
   summary: z.string()
 });
 
 export type EnhancedParsedResume = z.infer<typeof EnhancedResumeParseSchema>;
+export type ProfileAnalysis = z.infer<typeof AnalysisSchema>;
 
 interface ParseResult {
   success: boolean;
@@ -97,6 +127,7 @@ interface ParseSummary {
   companyScore: number;
   fakeScore: number;
   tokensUsed?: number;
+  matchScoreDetails?: MatchScoreDetails;
 }
 
 // Privacy redaction function for sensitive data
@@ -218,22 +249,23 @@ function sanitizeModelOutput(raw: any) {
 // Enhanced system message with numbered hard rules
 const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified JSON** that matches the schema below.
 
-**CRITICAL: Your response MUST have exactly 3 root keys: "resume", "scores", "summary". All three are REQUIRED.**
+**CRITICAL: Your response MUST have exactly 4 root keys: "resume", "scores", "analysis", "summary". All four are REQUIRED.**
 
 **Hard requirements (follow all):**
 
 1. **Output:** JSON only. No prose, markdown, comments, or extra keys.
-2. **Root object keys**: EXACTLY \`resume\`, \`scores\`, \`summary\`. **ALL THREE REQUIRED**. No others.
+2. **Root object keys**: EXACTLY \`resume\`, \`scores\`, \`analysis\`, \`summary\`. **ALL FOUR REQUIRED**. No others.
 3. **Scalars policy:** For these scalar fields -
    \`resume.candidate.name\`, \`resume.candidate.linkedinUrl\`, \`resume.candidate.currentLocation\`,
    \`resume.employment[i].title\`, \`resume.employment[i].startDate\`, \`resume.employment[i].endDate\`, \`resume.employment[i].employmentType\`,
    - **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
 4. **Dates:** \`YYYY\` or \`YYYY-MM\`. Use \`"Present"\` only inside the model, but **output** \`null\` for ongoing roles.
 5. **Arrays policy:** \`emails\`, \`phones\`, \`skills\`, \`education\`, \`employment\` are arrays; if none, use \`[]\`.
-6. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0-100**. NEVER omit the scores object.
-7. **Summary:** \`summary\` must be a **single string** at the root, <=140 chars. Never null/array/object. If unsure, use \`""\`.
-8. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
-9. **BE CONCISE:** Limit employment history to last 10 jobs max. Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
+6. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0-100**. Set \`matchScore\` to 0 (system recalculates) but you MUST provide a number. NEVER omit the scores object.
+7. **ANALYSIS REQUIRED:** The \`analysis\` object must exist exactly as shown in the schema. Arrays must contain strings (matching job profile wording when possible) or be \`[]\`.
+8. **Summary:** \`summary\` must be a **single string** at the root, <=140 chars. Never null/array/object. If unsure, use \`""\`.
+9. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
+10. **BE CONCISE:** Limit employment history to last 10 jobs max. Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
 
 **WRONG examples (do not do):**
 
@@ -242,7 +274,7 @@ const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified 
 * Missing the \`scores\` object (MUST be present!)
 * Missing the \`summary\` field (MUST be present!)
 
-**Return complete JSON with resume, scores, and summary.**`;
+**Return complete JSON with resume, scores, analysis, and summary.**`;
 
 const formatList = (items: string[], max = 8) => {
   if (!items || items.length === 0) {
@@ -320,13 +352,31 @@ SCHEMA (return exactly this object; no extra keys):
     "companyScore": 0,
     "fakeScore": 0
   },
+  "analysis": {
+    "mustHaveSkillsMatched": ["string"],
+    "mustHaveSkillsMissing": ["string"],
+    "niceToHaveSkillsMatched": ["string"],
+    "softSkillsMatched": ["string"],
+    "targetTitlesMatched": ["string"],
+    "responsibilitiesMatched": ["string"],
+    "toolsAndTechMatched": ["string"],
+    "domainKeywordsMatched": ["string"],
+    "certificationsMatched": ["string"],
+    "disqualifiersDetected": ["string"],
+    "notes": "string|null"
+  },
   "summary": "string"
 }
 
-SCORING RUBRICS (MANDATORY - MUST calculate and return in scores object!)
-- matchScore (0-100): skills(45), role/title fit(25), years(20), domain/context(10).
-- companyScore (0-100): evidence-only in resume; if unclear, ~50.
-- fakeScore (0-100): overlaps/impossibilities/ultra-short stints/contradictions/OCR artifacts -> higher risk.
+ANALYSIS RULES (MANDATORY):
+- List matched/missing items using EXACT wording from the job profile lists above whenever possible.
+- If nothing applies, return an empty array ([]) for that field.
+- Disqualifiers should list any risk factors (e.g., missing required documents, visa issues, location conflicts).
+- Notes may highlight nuance in <=150 chars or be null.
+
+SCORING PLACEHOLDER:
+- Set matchScore to 0 (the system will compute final points).
+- Continue estimating companyScore and fakeScore based on resume evidence only.
 
 RESUME (redacted):
 <<<RESUME_TEXT
@@ -751,6 +801,22 @@ export async function parseAndScoreResume(
 
     const validatedData = validation.data!;
 
+    let matchScoreDetails: MatchScoreDetails | null = null;
+    if (jobContext.jobProfile && validatedData.analysis) {
+      try {
+        matchScoreDetails = computeProfileMatchScore(jobContext.jobProfile, validatedData.analysis);
+        validatedData.scores.matchScore = matchScoreDetails.finalScore;
+        (validatedData as any).computedMatchScore = matchScoreDetails;
+      } catch (error) {
+        resumeLogWarn('match_score_compute_failed', {
+          resumeId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    } else if (!jobContext.jobProfile) {
+      resumeLogWarn('job_profile_missing_for_scoring', { resumeId });
+    }
+
     const candidateData = validatedData.resume.candidate;
     const hasMeaningfulData =
       Boolean(candidateData.name) ||
@@ -876,7 +942,8 @@ export async function parseAndScoreResume(
       matchScore: validatedData.scores.matchScore,
       companyScore: validatedData.scores.companyScore,
       fakeScore: validatedData.scores.fakeScore,
-      tokensUsed: parseResult.tokensUsed
+      tokensUsed: parseResult.tokensUsed,
+      matchScoreDetails: matchScoreDetails ?? undefined
     };
 
     const totalDuration = Date.now() - parseStart;
@@ -888,7 +955,8 @@ export async function parseAndScoreResume(
       matchScore: summary.matchScore,
       companyScore: summary.companyScore,
       fakeScore: summary.fakeScore,
-      tokensUsed: summary.tokensUsed ?? null
+      tokensUsed: summary.tokensUsed ?? null,
+      matchScoreStrategy: matchScoreDetails ? 'profile_weighted' : 'model_score'
     });
 
     return {
