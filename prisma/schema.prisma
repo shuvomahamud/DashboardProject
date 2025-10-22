@@ -357,6 +357,10 @@ model Resume {
   textHash              String?
   contactInfo           String?
   parsedText            String?
+  manualSkillsMatched   Json?
+  aiExtraSkills         Json?
+  manualToolsMatched    Json?
+  aiExtraTools          Json?
   applications          JobApplication[]
   resume_embeddings     resume_embeddings[]
   importItems           import_email_items[]

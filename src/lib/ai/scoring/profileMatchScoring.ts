@@ -31,7 +31,6 @@ const DIMENSION_CONFIG: Array<{
 }> = [
   { profileKey: 'mustHaveSkills', analysisKey: 'mustHaveSkillsMatched', label: 'Must-have Skills', weight: 45 },
   { profileKey: 'niceToHaveSkills', analysisKey: 'niceToHaveSkillsMatched', label: 'Nice-to-have Skills', weight: 15 },
-  { profileKey: 'softSkills', analysisKey: 'softSkillsMatched', label: 'Soft Skills', weight: 5 },
   { profileKey: 'targetTitles', analysisKey: 'targetTitlesMatched', label: 'Target Titles', weight: 10 },
   { profileKey: 'responsibilities', analysisKey: 'responsibilitiesMatched', label: 'Responsibilities', weight: 5 },
   { profileKey: 'toolsAndTech', analysisKey: 'toolsAndTechMatched', label: 'Tools & Technologies', weight: 10 },

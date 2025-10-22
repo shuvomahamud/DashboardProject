@@ -42,6 +42,10 @@ type ResumeData = {
   sourceFrom: string | null;
   companies: string | null;
   employmentHistoryJson: string | null;
+  manualSkillsMatched: string[] | null;
+  aiExtraSkills: string[] | null;
+  manualToolsMatched: string[] | null;
+  aiExtraTools: string[] | null;
   createdAt: string;
   updatedAt: string;
   fileName: string;
@@ -220,20 +224,42 @@ const ResumeDetailPage = () => {
   }, [matchDetails]);
 
   const analysisSections = useMemo(() => {
-    if (!analysis) return [];
-    return [
-      { label: "Must-have Skills Matched", value: analysis.mustHaveSkillsMatched },
-      { label: "Must-have Skills Missing", value: analysis.mustHaveSkillsMissing },
-      { label: "Nice-to-have Skills Matched", value: analysis.niceToHaveSkillsMatched },
-      { label: "Soft Skills Matched", value: analysis.softSkillsMatched },
-      { label: "Target Titles Matched", value: analysis.targetTitlesMatched },
-      { label: "Responsibilities Matched", value: analysis.responsibilitiesMatched },
-      { label: "Tools & Technologies Matched", value: analysis.toolsAndTechMatched },
-      { label: "Domain Keywords Matched", value: analysis.domainKeywordsMatched },
-      { label: "Certifications Matched", value: analysis.certificationsMatched },
-      { label: "Disqualifiers Detected", value: analysis.disqualifiersDetected }
-    ];
-  }, [analysis]);
+    const sections: Array<{ label: string; value: any }> = [];
+    if (analysis) {
+      sections.push(
+        { label: "Must-have Skills Matched", value: analysis.mustHaveSkillsMatched },
+        { label: "Must-have Skills Missing", value: analysis.mustHaveSkillsMissing },
+        { label: "Nice-to-have Skills Matched", value: analysis.niceToHaveSkillsMatched },
+        { label: "Target Titles Matched", value: analysis.targetTitlesMatched },
+        { label: "Responsibilities Matched", value: analysis.responsibilitiesMatched },
+        { label: "Tools & Technologies Matched", value: analysis.toolsAndTechMatched },
+        { label: "Domain Keywords Matched", value: analysis.domainKeywordsMatched },
+        { label: "Certifications Matched", value: analysis.certificationsMatched },
+        { label: "Disqualifiers Detected", value: analysis.disqualifiersDetected }
+      );
+    }
+    if (resume) {
+      sections.push(
+        {
+          label: "Manual Skills Confirmed",
+          value: Array.isArray(resume.manualSkillsMatched) ? resume.manualSkillsMatched : []
+        },
+        {
+          label: "AI Suggested Additional Skills",
+          value: Array.isArray(resume.aiExtraSkills) ? resume.aiExtraSkills : []
+        },
+        {
+          label: "Manual Tools & Technologies Confirmed",
+          value: Array.isArray(resume.manualToolsMatched) ? resume.manualToolsMatched : []
+        },
+        {
+          label: "AI Suggested Additional Tools",
+          value: Array.isArray(resume.aiExtraTools) ? resume.aiExtraTools : []
+        }
+      );
+    }
+    return sections;
+  }, [analysis, resume]);
 
   if (loading) {
     return (

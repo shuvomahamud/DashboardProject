@@ -51,7 +51,6 @@ export const AnalysisSchema = z.object({
   mustHaveSkillsMatched: stringArray,
   mustHaveSkillsMissing: stringArray,
   niceToHaveSkillsMatched: stringArray,
-  softSkillsMatched: stringArray,
   targetTitlesMatched: stringArray,
   responsibilitiesMatched: stringArray,
   toolsAndTechMatched: stringArray,
@@ -63,7 +62,6 @@ export const AnalysisSchema = z.object({
   mustHaveSkillsMatched: [],
   mustHaveSkillsMissing: [],
   niceToHaveSkillsMatched: [],
-  softSkillsMatched: [],
   targetTitlesMatched: [],
   responsibilitiesMatched: [],
   toolsAndTechMatched: [],
@@ -246,6 +244,150 @@ function sanitizeModelOutput(raw: any) {
   return raw;
 }
 
+const TOKEN_REGEX = /[A-Za-z0-9+#]+/g;
+const MIN_PREFIX_MATCH = 4;
+const PHRASE_WINDOW = 5;
+
+interface ResumeToken {
+  value: string;
+  normalized: string;
+  stem: string;
+}
+
+const normalizeValue = (value: string) => value.trim().toLowerCase();
+
+const normalizeToken = (token: string) => token.toLowerCase();
+
+const stemToken = (token: string): string => {
+  let stem = token;
+
+  if (stem.endsWith('ies') && stem.length > 4) {
+    return `${stem.slice(0, -3)}y`;
+  }
+
+  const suffixes = [
+    'ization', 'isation', 'ational', 'fulness', 'ousness', 'iveness',
+    'ability', 'ment', 'ments', 'ities', 'ally', 'lessly', 'less',
+    'ness', 'ingly', 'edly', 'ing', 'ers', 'ies', 'ed', 'er', 'ly', 'es', 's'
+  ];
+
+  for (const suffix of suffixes) {
+    if (stem.endsWith(suffix) && stem.length > suffix.length + 2) {
+      stem = stem.slice(0, -suffix.length);
+      break;
+    }
+  }
+
+  if (stem.endsWith('tion') && stem.length > 4) {
+    stem = stem.slice(0, -3);
+  }
+
+  return stem;
+};
+
+const buildResumeTokens = (text: string | null | undefined): ResumeToken[] => {
+  if (!text) return [];
+  const tokens: ResumeToken[] = [];
+  const iterator = text.matchAll(TOKEN_REGEX);
+  for (const match of iterator) {
+    const raw = match[0];
+    const normalized = normalizeToken(raw);
+    if (!normalized) continue;
+    tokens.push({
+      value: raw,
+      normalized,
+      stem: stemToken(normalized)
+    });
+  }
+  return tokens;
+};
+
+const splitPhraseTokens = (phrase: string): string[] =>
+  (phrase ?? '')
+    .split(/[^A-Za-z0-9+#]+/)
+    .map(token => normalizeToken(token))
+    .map(token => token.replace(/[^a-z0-9+#]/g, ''))
+    .filter(token => token.length > 0);
+
+const tokensAreSimilar = (resumeToken: ResumeToken, target: string): boolean => {
+  if (!target) return false;
+  if (resumeToken.normalized === target) return true;
+  if (resumeToken.stem && resumeToken.stem === stemToken(target)) return true;
+
+  if (target.length >= MIN_PREFIX_MATCH && resumeToken.normalized.startsWith(target)) {
+    return true;
+  }
+  if (resumeToken.normalized.length >= MIN_PREFIX_MATCH && target.startsWith(resumeToken.normalized)) {
+    return true;
+  }
+  if (target.length >= MIN_PREFIX_MATCH && resumeToken.normalized.includes(target)) {
+    return true;
+  }
+  if (resumeToken.normalized.length >= MIN_PREFIX_MATCH && target.includes(resumeToken.normalized)) {
+    return true;
+  }
+  return false;
+};
+
+const phraseMatches = (tokens: ResumeToken[], phraseTokens: string[], windowSize: number = PHRASE_WINDOW): boolean => {
+  if (phraseTokens.length === 0) return false;
+  for (let i = 0; i < tokens.length; i++) {
+    if (!tokensAreSimilar(tokens[i], phraseTokens[0])) continue;
+    let currentIndex = i;
+    let matched = true;
+    for (let j = 1; j < phraseTokens.length; j++) {
+      const target = phraseTokens[j];
+      let found = false;
+      for (let k = currentIndex + 1; k < tokens.length && k <= currentIndex + windowSize; k++) {
+        if (tokensAreSimilar(tokens[k], target)) {
+          currentIndex = k;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const matchPhrasesInResume = (phrases: string[], tokens: ResumeToken[]): string[] => {
+  const matches: string[] = [];
+  const seen = new Set<string>();
+  for (const phrase of phrases ?? []) {
+    const trimmed = phrase?.trim();
+    if (!trimmed || normalizeValue(trimmed) === 'not specified') continue;
+    const phraseTokens = splitPhraseTokens(trimmed);
+    if (phraseTokens.length === 0) continue;
+    if (phraseMatches(tokens, phraseTokens)) {
+      const key = normalizeValue(trimmed);
+      if (!seen.has(key)) {
+        seen.add(key);
+        matches.push(trimmed);
+      }
+    }
+  }
+  return matches;
+};
+
+const dedupePreserveOrder = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = normalizeValue(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(value);
+  }
+  return result;
+};
+
 // Enhanced system message with numbered hard rules
 const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified JSON** that matches the schema below.
 
@@ -302,7 +444,6 @@ function buildUserMessage(jobContext: JobContext, resumeText: string): string {
     ? `PROFILE SNAPSHOT (AI extracted):
 - Must-have skills: ${formatList(profile.mustHaveSkills)}
 - Nice-to-have skills: ${formatList(profile.niceToHaveSkills)}
-- Soft skills: ${formatList(profile.softSkills)}
 - Target titles: ${formatList(profile.targetTitles)}
 - Responsibilities: ${formatList(profile.responsibilities)}
 - Tools & tech: ${formatList(profile.toolsAndTech)}
@@ -356,7 +497,6 @@ SCHEMA (return exactly this object; no extra keys):
     "mustHaveSkillsMatched": ["string"],
     "mustHaveSkillsMissing": ["string"],
     "niceToHaveSkillsMatched": ["string"],
-    "softSkillsMatched": ["string"],
     "targetTitlesMatched": ["string"],
     "responsibilitiesMatched": ["string"],
     "toolsAndTechMatched": ["string"],
@@ -585,7 +725,15 @@ function buildApplicationSnapshot(app: {
 }
 
 // Convert processed data to database fields for Resume
-function toResumeDbFields(data: EnhancedParsedResume): Record<string, any> {
+function toResumeDbFields(
+  data: EnhancedParsedResume,
+  extras?: {
+    manualSkills?: string[];
+    aiExtraSkills?: string[];
+    manualTools?: string[];
+    aiExtraTools?: string[];
+  }
+): Record<string, any> {
   const candidate = data.resume.candidate;
   const skills = data.resume.skills;
   const employment = data.resume.employment;
@@ -622,7 +770,11 @@ function toResumeDbFields(data: EnhancedParsedResume): Record<string, any> {
     textHash: null, // Will be set by caller
     promptVersion: process.env.PROMPT_VERSION || 'v1',
     parseModel: process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini',
-    parseError: null
+    parseError: null,
+    manualSkillsMatched: extras?.manualSkills && extras.manualSkills.length > 0 ? extras.manualSkills : null,
+    aiExtraSkills: extras?.aiExtraSkills && extras.aiExtraSkills.length > 0 ? extras.aiExtraSkills : null,
+    manualToolsMatched: extras?.manualTools && extras.manualTools.length > 0 ? extras.manualTools : null,
+    aiExtraTools: extras?.aiExtraTools && extras.aiExtraTools.length > 0 ? extras.aiExtraTools : null
   };
 }
 
@@ -801,6 +953,54 @@ export async function parseAndScoreResume(
 
     const validatedData = validation.data!;
 
+    let manualMustMatches: string[] = [];
+    let manualNiceMatches: string[] = [];
+    let manualToolsMatches: string[] = [];
+    let manualSkillsCombined: string[] = [];
+    let aiExtraSkills: string[] = [];
+    let aiExtraTools: string[] = [];
+
+    if (jobContext.jobProfile && resume.rawText) {
+      const tokens = buildResumeTokens(resume.rawText);
+      manualMustMatches = matchPhrasesInResume(jobContext.jobProfile.mustHaveSkills ?? [], tokens);
+      manualNiceMatches = matchPhrasesInResume(jobContext.jobProfile.niceToHaveSkills ?? [], tokens);
+      manualToolsMatches = matchPhrasesInResume(jobContext.jobProfile.toolsAndTech ?? [], tokens);
+
+      manualSkillsCombined = dedupePreserveOrder([...manualMustMatches, ...manualNiceMatches]);
+
+      const manualSkillSet = new Set(manualSkillsCombined.map(normalizeValue));
+      const manualToolSet = new Set(manualToolsMatches.map(normalizeValue));
+
+      const aiMust = Array.isArray(validatedData.analysis.mustHaveSkillsMatched) ? validatedData.analysis.mustHaveSkillsMatched : [];
+      const aiNice = Array.isArray(validatedData.analysis.niceToHaveSkillsMatched) ? validatedData.analysis.niceToHaveSkillsMatched : [];
+      const aiTools = Array.isArray(validatedData.analysis.toolsAndTechMatched) ? validatedData.analysis.toolsAndTechMatched : [];
+
+      const aiSkillUnion = dedupePreserveOrder([...aiMust, ...aiNice]);
+      aiExtraSkills = aiSkillUnion.filter(skill => !manualSkillSet.has(normalizeValue(skill)));
+      aiExtraTools = dedupePreserveOrder(aiTools).filter(tool => !manualToolSet.has(normalizeValue(tool)));
+
+      validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
+      validatedData.analysis.mustHaveSkillsMissing = (jobContext.jobProfile.mustHaveSkills ?? []).filter(
+        skill => !manualSkillSet.has(normalizeValue(skill))
+      );
+      validatedData.analysis.niceToHaveSkillsMatched = manualNiceMatches;
+      validatedData.analysis.toolsAndTechMatched = manualToolsMatches;
+    } else {
+      manualSkillsCombined = [];
+      manualToolsMatches = [];
+      aiExtraSkills = [];
+      aiExtraTools = [];
+    }
+
+    resumeLogInfo('skill_match_summary', {
+      resumeId,
+      manualMustHave: manualMustMatches.length,
+      manualNiceToHave: manualNiceMatches.length,
+      manualTools: manualToolsMatches.length,
+      aiExtraSkills: aiExtraSkills.length,
+      aiExtraTools: aiExtraTools.length
+    });
+
     let matchScoreDetails: MatchScoreDetails | null = null;
     if (jobContext.jobProfile && validatedData.analysis) {
       try {
@@ -846,7 +1046,12 @@ export async function parseAndScoreResume(
     }
 
     // Prepare database updates
-    const resumeFields = toResumeDbFields(validatedData);
+    const resumeFields = toResumeDbFields(validatedData, {
+      manualSkills: manualSkillsCombined,
+      aiExtraSkills,
+      manualTools: manualToolsMatches,
+      aiExtraTools
+    });
     resumeFields.textHash = textHash;
 
     // Update Resume table with retry logic

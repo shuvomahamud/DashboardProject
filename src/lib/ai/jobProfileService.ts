@@ -45,7 +45,6 @@ export const JobProfileSchema = z.object({
     .default(''),
   mustHaveSkills: stringArray,
   niceToHaveSkills: stringArray,
-  softSkills: stringArray,
   targetTitles: stringArray,
   responsibilities: stringArray,
   requiredExperienceYears: numberOrNull,
@@ -187,7 +186,6 @@ Respond with minified JSON matching the schema below. Use concise wording.
   "summary": "<=400 chars overview for LLM context",
   "mustHaveSkills": ["skill"],
   "niceToHaveSkills": ["skill"],
-  "softSkills": ["skill"],
   "targetTitles": ["role title"],
   "responsibilities": ["brief responsibility"],
   "requiredExperienceYears": null,
@@ -239,7 +237,6 @@ export function sanitizeProfile(profile: JobProfile): JobProfile {
     summary: profile.summary.slice(0, 600),
     mustHaveSkills: dedupeList(profile.mustHaveSkills),
     niceToHaveSkills: dedupeList(profile.niceToHaveSkills),
-    softSkills: dedupeList(profile.softSkills),
     targetTitles: dedupeList(profile.targetTitles),
     responsibilities: dedupeList(profile.responsibilities),
     requiredExperienceYears: profile.requiredExperienceYears,
@@ -266,4 +263,44 @@ function dedupeList(list: string[]): string[] {
     }
   }
   return result;
+}
+
+export async function generateJobProfilePreview(input: {
+  title: string;
+  description?: string | null;
+  requirements?: string | null;
+  companyName?: string | null;
+  employmentType?: string | null;
+  location?: string | null;
+}): Promise<JobProfile | null> {
+  if (!process.env.OPENAI_API_KEY) {
+    console.info('[job-profile] OPENAI_API_KEY missing, skipping preview generation');
+    return null;
+  }
+
+  const cleanDescription = (input.description || '').trim();
+  const cleanRequirements = (input.requirements || '').trim();
+
+  if (!cleanDescription && !cleanRequirements) {
+    console.warn('[job-profile] preview: missing description and requirements, skipping');
+    return null;
+  }
+
+  try {
+    const profile = await extractJobProfile({
+      title: input.title,
+      description: cleanDescription,
+      requirements: cleanRequirements,
+      companyName: input.companyName || null,
+      employmentType: input.employmentType || null,
+      location: input.location || null
+    });
+    return profile;
+  } catch (error) {
+    console.error('[job-profile] preview generation failed', {
+      title: input.title,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return null;
+  }
 }

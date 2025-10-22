@@ -35,7 +35,6 @@ interface JobProfile {
   summary: string;
   mustHaveSkills: string[];
   niceToHaveSkills: string[];
-  softSkills: string[];
   targetTitles: string[];
   responsibilities: string[];
   requiredExperienceYears: number | null;
@@ -61,7 +60,6 @@ const safeParseProfile = (json: string | null | undefined): JobProfile | null =>
       summary: parsed.summary ?? '',
       mustHaveSkills: parsed.mustHaveSkills ?? [],
       niceToHaveSkills: parsed.niceToHaveSkills ?? [],
-      softSkills: parsed.softSkills ?? [],
       targetTitles: parsed.targetTitles ?? [],
       responsibilities: parsed.responsibilities ?? [],
       requiredExperienceYears: toYears(parsed.requiredExperienceYears),
@@ -328,7 +326,6 @@ export default function JobDetailPage() {
 
                   {renderChipSection('Must-have Skills', jobProfile.mustHaveSkills)}
                   {renderChipSection('Nice-to-have Skills', jobProfile.niceToHaveSkills)}
-                  {renderChipSection('Soft Skills', jobProfile.softSkills)}
                   {renderChipSection('Target Titles', jobProfile.targetTitles)}
                   {renderChipSection('Responsibilities', jobProfile.responsibilities)}
                   {renderChipSection('Tools & Technologies', jobProfile.toolsAndTech)}

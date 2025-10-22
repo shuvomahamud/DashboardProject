@@ -27,7 +27,6 @@ interface JobProfile {
   summary: string;
   mustHaveSkills: string[];
   niceToHaveSkills: string[];
-  softSkills: string[];
   targetTitles: string[];
   responsibilities: string[];
   toolsAndTech: string[];
@@ -73,7 +72,6 @@ interface JobProfileFormData {
   summary: string;
   mustHaveSkills: string;
   niceToHaveSkills: string;
-  softSkills: string;
   targetTitles: string;
   responsibilities: string;
   toolsAndTech: string;
@@ -89,7 +87,6 @@ const initialProfileFormData: JobProfileFormData = {
   summary: '',
   mustHaveSkills: '',
   niceToHaveSkills: '',
-  softSkills: '',
   targetTitles: '',
   responsibilities: '',
   toolsAndTech: '',
@@ -136,7 +133,6 @@ export default function EditJobPage() {
       summary: profile?.summary ?? '',
       mustHaveSkills: listToMultiline(profile?.mustHaveSkills),
       niceToHaveSkills: listToMultiline(profile?.niceToHaveSkills),
-      softSkills: listToMultiline(profile?.softSkills),
       targetTitles: listToMultiline(profile?.targetTitles),
       responsibilities: listToMultiline(profile?.responsibilities),
       toolsAndTech: listToMultiline(profile?.toolsAndTech),
@@ -265,7 +261,6 @@ export default function EditJobPage() {
         summary: profileFormData.summary.trim(),
         mustHaveSkills: multilineToList(profileFormData.mustHaveSkills),
         niceToHaveSkills: multilineToList(profileFormData.niceToHaveSkills),
-        softSkills: multilineToList(profileFormData.softSkills),
         targetTitles: multilineToList(profileFormData.targetTitles),
         responsibilities: multilineToList(profileFormData.responsibilities),
         toolsAndTech: multilineToList(profileFormData.toolsAndTech),
@@ -470,18 +465,6 @@ export default function EditJobPage() {
                       </Form.Group>
                     </Col>
 
-                    <Col md={6}>
-                      <Form.Group>
-                        <Form.Label>Soft Skills</Form.Label>
-                        <Form.Control
-                          as="textarea"
-                          rows={3}
-                          value={profileFormData.softSkills}
-                          onChange={(e) => handleProfileChange('softSkills', e.target.value)}
-                          placeholder="e.g., communication, leadership"
-                        />
-                      </Form.Group>
-                    </Col>
                     <Col md={6}>
                       <Form.Group>
                         <Form.Label>Target Titles</Form.Label>
