@@ -6,6 +6,7 @@ import { getOpenAIClient } from './openaiClient';
 import type { JobContext } from './jobContext';
 import { computeProfileMatchScore } from './scoring/profileMatchScoring';
 import type { MatchScoreDetails } from './scoring/profileMatchScoring';
+import type { JobProfile } from './jobProfileService';
 
 type ResumeLogContext = Record<string, unknown>;
 
@@ -387,6 +388,121 @@ const dedupePreserveOrder = (values: string[]): string[] => {
   }
   return result;
 };
+
+interface SkillVerificationResult {
+  extraMustHave: string[];
+  extraNiceToHave: string[];
+  extraTools: string[];
+}
+
+async function verifySkillMatchesWithAI(params: {
+  resumeText: string;
+  jobProfile: JobProfile;
+  manualMustHave: string[];
+  manualNiceToHave: string[];
+  manualTools: string[];
+}): Promise<SkillVerificationResult | null> {
+  if (!process.env.OPENAI_API_KEY) {
+    return null;
+  }
+
+  const client = getOpenAIClient();
+  const model =
+    process.env.OPENAI_JOB_PROFILE_MODEL ||
+    process.env.OPENAI_RESUME_MODEL ||
+    'gpt-4o-mini';
+  const temperature = Number(process.env.OPENAI_JOB_PROFILE_TEMPERATURE || 0);
+
+  const jobProfile = params.jobProfile;
+
+  const truncateText = (text: string, limit = 12_000) =>
+    text.length > limit ? `${text.slice(0, limit)}\n...[truncated]` : text;
+
+  const listSection = (title: string, items: string[]) =>
+    `${title}:\n${items.length > 0 ? items.map(item => `- ${item}`).join('\n') : '- (none)'}`;
+
+  const userMessage = [
+    'You audit manual resume-skill matches. Only confirm skills that explicitly appear in the resume text. '
+    + 'If a manual list already covers every mention, return empty arrays. '
+    + 'Only add items that are listed in the corresponding job profile category and appear in the resume.',
+    '',
+    listSection('Job profile must-have skills', jobProfile.mustHaveSkills ?? []),
+    listSection('Job profile nice-to-have skills', jobProfile.niceToHaveSkills ?? []),
+    listSection('Job profile tools & tech', jobProfile.toolsAndTech ?? []),
+    '',
+    listSection('Manual must-have matches', params.manualMustHave),
+    listSection('Manual nice-to-have matches', params.manualNiceToHave),
+    listSection('Manual tools matches', params.manualTools),
+    '',
+    'Resume (redacted):',
+    truncateText(params.resumeText)
+  ].join('\n');
+
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      temperature,
+      response_format: { type: 'json_object' },
+      max_tokens: 500,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You verify resume evidence. Respond ONLY with JSON of shape '
+            + '{"extraMustHave":["skill"],"extraNiceToHave":["skill"],"extraTools":["tool"]}. '
+            + 'Do not invent new skills; only list items present in the resume text and in the provided job profile lists.'
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ]
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return null;
+    }
+
+    const parsed = JSON.parse(content);
+
+    const sanitizeExtras = (values: unknown, allowed: Set<string>, manual: Set<string>) => {
+      if (!Array.isArray(values)) return [];
+      return dedupePreserveOrder(
+        values
+          .map(value => (typeof value === 'string' ? value.trim() : ''))
+          .filter(value => value.length > 0)
+          .filter(value => allowed.has(normalizeValue(value)))
+          .filter(value => !manual.has(normalizeValue(value)))
+      );
+    };
+
+    const allowedMust = new Set(
+      (jobProfile.mustHaveSkills ?? []).map(normalizeValue)
+    );
+    const allowedNice = new Set(
+      (jobProfile.niceToHaveSkills ?? []).map(normalizeValue)
+    );
+    const allowedTools = new Set(
+      (jobProfile.toolsAndTech ?? []).map(normalizeValue)
+    );
+
+    const manualMustSet = new Set(params.manualMustHave.map(normalizeValue));
+    const manualNiceSet = new Set(params.manualNiceToHave.map(normalizeValue));
+    const manualToolSet = new Set(params.manualTools.map(normalizeValue));
+
+    return {
+      extraMustHave: sanitizeExtras(parsed.extraMustHave, allowedMust, manualMustSet),
+      extraNiceToHave: sanitizeExtras(parsed.extraNiceToHave, allowedNice, manualNiceSet),
+      extraTools: sanitizeExtras(parsed.extraTools, allowedTools, manualToolSet)
+    };
+  } catch (error) {
+    resumeLogWarn('skill_verification_ai_error', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return null;
+  }
+}
 
 // Enhanced system message with numbered hard rules
 const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified JSON** that matches the schema below.
@@ -971,13 +1087,15 @@ export async function parseAndScoreResume(
       const manualSkillSet = new Set(manualSkillsCombined.map(normalizeValue));
       const manualToolSet = new Set(manualToolsMatches.map(normalizeValue));
 
-      const aiMust = Array.isArray(validatedData.analysis.mustHaveSkillsMatched) ? validatedData.analysis.mustHaveSkillsMatched : [];
-      const aiNice = Array.isArray(validatedData.analysis.niceToHaveSkillsMatched) ? validatedData.analysis.niceToHaveSkillsMatched : [];
-      const aiTools = Array.isArray(validatedData.analysis.toolsAndTechMatched) ? validatedData.analysis.toolsAndTechMatched : [];
-
-      const aiSkillUnion = dedupePreserveOrder([...aiMust, ...aiNice]);
-      aiExtraSkills = aiSkillUnion.filter(skill => !manualSkillSet.has(normalizeValue(skill)));
-      aiExtraTools = dedupePreserveOrder(aiTools).filter(tool => !manualToolSet.has(normalizeValue(tool)));
+      const aiMustOriginal = Array.isArray(validatedData.analysis.mustHaveSkillsMatched)
+        ? validatedData.analysis.mustHaveSkillsMatched
+        : [];
+      const aiNiceOriginal = Array.isArray(validatedData.analysis.niceToHaveSkillsMatched)
+        ? validatedData.analysis.niceToHaveSkillsMatched
+        : [];
+      const aiToolsOriginal = Array.isArray(validatedData.analysis.toolsAndTechMatched)
+        ? validatedData.analysis.toolsAndTechMatched
+        : [];
 
       validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
       validatedData.analysis.mustHaveSkillsMissing = (jobContext.jobProfile.mustHaveSkills ?? []).filter(
@@ -985,6 +1103,32 @@ export async function parseAndScoreResume(
       );
       validatedData.analysis.niceToHaveSkillsMatched = manualNiceMatches;
       validatedData.analysis.toolsAndTechMatched = manualToolsMatches;
+
+      const verification = await verifySkillMatchesWithAI({
+        resumeText: processedText,
+        jobProfile: jobContext.jobProfile,
+        manualMustHave: manualMustMatches,
+        manualNiceToHave: manualNiceMatches,
+        manualTools: manualToolsMatches
+      });
+
+      if (verification) {
+        const combinedExtras = dedupePreserveOrder([
+          ...(verification.extraMustHave ?? []),
+          ...(verification.extraNiceToHave ?? [])
+        ]);
+
+        aiExtraSkills = combinedExtras.filter(skill => !manualSkillSet.has(normalizeValue(skill)));
+        aiExtraTools = dedupePreserveOrder(verification.extraTools ?? []).filter(
+          tool => !manualToolSet.has(normalizeValue(tool))
+        );
+      } else {
+        const aiSkillUnion = dedupePreserveOrder([...aiMustOriginal, ...aiNiceOriginal]);
+        aiExtraSkills = aiSkillUnion.filter(skill => !manualSkillSet.has(normalizeValue(skill)));
+        aiExtraTools = dedupePreserveOrder(aiToolsOriginal).filter(
+          tool => !manualToolSet.has(normalizeValue(tool))
+        );
+      }
     } else {
       manualSkillsCombined = [];
       manualToolsMatches = [];

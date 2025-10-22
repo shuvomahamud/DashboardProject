@@ -224,37 +224,41 @@ const ResumeDetailPage = () => {
   }, [matchDetails]);
 
   const analysisSections = useMemo(() => {
-    const sections: Array<{ label: string; value: any }> = [];
+    const sections: Array<{ label: string; value: string[]; type: 'analysis' | 'manual' | 'aiExtra' }> = [];
     if (analysis) {
       sections.push(
-        { label: "Must-have Skills Matched", value: analysis.mustHaveSkillsMatched },
-        { label: "Must-have Skills Missing", value: analysis.mustHaveSkillsMissing },
-        { label: "Nice-to-have Skills Matched", value: analysis.niceToHaveSkillsMatched },
-        { label: "Target Titles Matched", value: analysis.targetTitlesMatched },
-        { label: "Responsibilities Matched", value: analysis.responsibilitiesMatched },
-        { label: "Tools & Technologies Matched", value: analysis.toolsAndTechMatched },
-        { label: "Domain Keywords Matched", value: analysis.domainKeywordsMatched },
-        { label: "Certifications Matched", value: analysis.certificationsMatched },
-        { label: "Disqualifiers Detected", value: analysis.disqualifiersDetected }
+        { label: "Must-have Skills Matched", value: analysis.mustHaveSkillsMatched ?? [], type: 'analysis' },
+        { label: "Must-have Skills Missing", value: analysis.mustHaveSkillsMissing ?? [], type: 'analysis' },
+        { label: "Nice-to-have Skills Matched", value: analysis.niceToHaveSkillsMatched ?? [], type: 'analysis' },
+        { label: "Target Titles Matched", value: analysis.targetTitlesMatched ?? [], type: 'analysis' },
+        { label: "Responsibilities Matched", value: analysis.responsibilitiesMatched ?? [], type: 'analysis' },
+        { label: "Tools & Technologies Matched", value: analysis.toolsAndTechMatched ?? [], type: 'analysis' },
+        { label: "Domain Keywords Matched", value: analysis.domainKeywordsMatched ?? [], type: 'analysis' },
+        { label: "Certifications Matched", value: analysis.certificationsMatched ?? [], type: 'analysis' },
+        { label: "Disqualifiers Detected", value: analysis.disqualifiersDetected ?? [], type: 'analysis' }
       );
     }
     if (resume) {
       sections.push(
         {
           label: "Manual Skills Confirmed",
-          value: Array.isArray(resume.manualSkillsMatched) ? resume.manualSkillsMatched : []
+          value: Array.isArray(resume.manualSkillsMatched) ? resume.manualSkillsMatched.filter(Boolean) : [],
+          type: 'manual'
         },
         {
           label: "AI Suggested Additional Skills",
-          value: Array.isArray(resume.aiExtraSkills) ? resume.aiExtraSkills : []
+          value: Array.isArray(resume.aiExtraSkills) ? resume.aiExtraSkills.filter(Boolean) : [],
+          type: 'aiExtra'
         },
         {
           label: "Manual Tools & Technologies Confirmed",
-          value: Array.isArray(resume.manualToolsMatched) ? resume.manualToolsMatched : []
+          value: Array.isArray(resume.manualToolsMatched) ? resume.manualToolsMatched.filter(Boolean) : [],
+          type: 'manual'
         },
         {
           label: "AI Suggested Additional Tools",
-          value: Array.isArray(resume.aiExtraTools) ? resume.aiExtraTools : []
+          value: Array.isArray(resume.aiExtraTools) ? resume.aiExtraTools.filter(Boolean) : [],
+          type: 'aiExtra'
         }
       );
     }
@@ -502,22 +506,46 @@ const ResumeDetailPage = () => {
           </Card.Header>
         <Card.Body className="p-4">
           <Row className="gy-4">
-            {analysisSections.map(({ label, value }) => (
+            {analysisSections.map(({ label, value, type }) => (
               <Col md={6} key={label}>
                 <h6 className="fw-semibold text-muted mb-2">{label}</h6>
-                  {Array.isArray(value) && value.length > 0 ? (
-                    <div className="d-flex flex-wrap gap-2">
-                      {value.map((item: string) => (
-                        <Badge bg="secondary" key={`${label}-${item}`}>
+                {Array.isArray(value) && value.length > 0 ? (
+                  <div className="d-flex flex-wrap gap-2">
+                    {value.map((item: string, index: number) => {
+                      if (!item) return null;
+                      const key = `${label}-${index}-${item}`;
+                      if (type === 'manual') {
+                        return (
+                          <Badge bg="primary" key={key} className="fw-normal">
+                            {item}
+                          </Badge>
+                        );
+                      }
+                      if (type === 'aiExtra') {
+                        return (
+                          <Badge
+                            key={key}
+                            className="fw-normal"
+                            bg="light"
+                            text="dark"
+                            style={{ backgroundColor: '#f7d6f9', color: '#6a1a4c' }}
+                          >
+                            {item}
+                          </Badge>
+                        );
+                      }
+                      return (
+                        <Badge bg="secondary" key={key} className="fw-normal">
                           {item}
                         </Badge>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-muted mb-0">Not specified</p>
-                  )}
-                </Col>
-              ))}
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-muted mb-0">Not specified</p>
+                )}
+              </Col>
+            ))}
             </Row>
             {analysis?.notes && (
               <div className="mt-4">
