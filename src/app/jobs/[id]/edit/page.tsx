@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Form, Button, Card, Row, Col, Alert, Spinner } from 'react-bootstrap';
+import { useToast } from '@/contexts/ToastContext';
 
 interface Job {
   id: number;
@@ -104,12 +105,14 @@ export default function EditJobPage() {
   const router = useRouter();
   const params = useParams();
   const jobId = params?.id as string;
+  const { showToast } = useToast();
 
   const [formData, setFormData] = useState<JobFormData>(initialFormData);
   const [profileFormData, setProfileFormData] = useState<JobProfileFormData>(initialProfileFormData);
   const [profileVersion, setProfileVersion] = useState('v1');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingProfile, setRefreshingProfile] = useState(false);
   const [loadingJob, setLoadingJob] = useState(true);
 
   const listToMultiline = (items?: string[] | null) =>
@@ -126,6 +129,25 @@ export default function EditJobPage() {
       ...prev,
       [field]: value
     }));
+  };
+
+  const applyProfileToForm = (profile: JobProfile | null) => {
+    setProfileFormData({
+      summary: profile?.summary ?? '',
+      mustHaveSkills: listToMultiline(profile?.mustHaveSkills),
+      niceToHaveSkills: listToMultiline(profile?.niceToHaveSkills),
+      softSkills: listToMultiline(profile?.softSkills),
+      targetTitles: listToMultiline(profile?.targetTitles),
+      responsibilities: listToMultiline(profile?.responsibilities),
+      toolsAndTech: listToMultiline(profile?.toolsAndTech),
+      domainKeywords: listToMultiline(profile?.domainKeywords),
+      certifications: listToMultiline(profile?.certifications),
+      disqualifiers: listToMultiline(profile?.disqualifiers),
+      requiredExperienceYears: profile?.requiredExperienceYears != null ? String(profile.requiredExperienceYears) : '',
+      preferredExperienceYears: profile?.preferredExperienceYears != null ? String(profile.preferredExperienceYears) : '',
+      locationConstraints: profile?.locationConstraints ?? ''
+    });
+    setProfileVersion(profile?.version ?? 'v1');
   };
 
   useEffect(() => {
@@ -168,26 +190,45 @@ export default function EditJobPage() {
       });
 
       const profile = job.aiJobProfile || null;
-      setProfileFormData({
-        summary: profile?.summary ?? '',
-        mustHaveSkills: listToMultiline(profile?.mustHaveSkills),
-        niceToHaveSkills: listToMultiline(profile?.niceToHaveSkills),
-        softSkills: listToMultiline(profile?.softSkills),
-        targetTitles: listToMultiline(profile?.targetTitles),
-        responsibilities: listToMultiline(profile?.responsibilities),
-        toolsAndTech: listToMultiline(profile?.toolsAndTech),
-        domainKeywords: listToMultiline(profile?.domainKeywords),
-        certifications: listToMultiline(profile?.certifications),
-        disqualifiers: listToMultiline(profile?.disqualifiers),
-        requiredExperienceYears: profile?.requiredExperienceYears != null ? String(profile.requiredExperienceYears) : '',
-        preferredExperienceYears: profile?.preferredExperienceYears != null ? String(profile.preferredExperienceYears) : '',
-        locationConstraints: profile?.locationConstraints ?? ''
-      });
-      setProfileVersion(profile?.version ?? 'v1');
+      applyProfileToForm(profile);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load job');
     } finally {
       setLoadingJob(false);
+    }
+  };
+
+  const handleProfileRefresh = async () => {
+    if (!jobId) {
+      return;
+    }
+
+    setRefreshingProfile(true);
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/refresh-profile`, {
+        method: 'POST'
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || payload?.message || 'Failed to refresh AI job profile');
+      }
+
+      const profile = payload?.aiJobProfile as JobProfile | null;
+      if (!profile) {
+        throw new Error('AI did not return a usable profile. Please try again later.');
+      }
+
+      applyProfileToForm(profile);
+      setError(null);
+      showToast(payload?.message ?? 'AI profile fields updated.', 'success', 4000);
+    } catch (err) {
+      console.error('Failed to refresh AI job profile', err);
+      const message = err instanceof Error ? err.message : 'Failed to refresh AI job profile';
+      showToast(message, 'error', 6000);
+    } finally {
+      setRefreshingProfile(false);
     }
   };
 
@@ -361,10 +402,32 @@ export default function EditJobPage() {
                 </Form.Group>
 
                 <div className="mb-4 p-3 border rounded bg-light">
-                  <h5 className="fw-semibold mb-3">AI Job Profile</h5>
-                  <p className="text-muted">
-                    Control the structured requirements used by AI scoring. Enter one item per line for list fields.
-                  </p>
+                  <div className="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                      <h5 className="fw-semibold mb-1">AI Job Profile</h5>
+                      <p className="text-muted mb-0">
+                        Control the structured requirements used by AI scoring. Enter one item per line for list fields.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline-primary"
+                      size="sm"
+                      onClick={handleProfileRefresh}
+                      disabled={refreshingProfile || loading || loadingJob}
+                    >
+                      {refreshingProfile ? (
+                        <>
+                          <Spinner animation="border" size="sm" className="me-2" />
+                          Refreshing...
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-arrow-repeat me-2"></i>
+                          Re-run with AI
+                        </>
+                      )}
+                    </Button>
+                  </div>
 
                   <Form.Group className="mb-3">
                     <Form.Label>Summary</Form.Label>
