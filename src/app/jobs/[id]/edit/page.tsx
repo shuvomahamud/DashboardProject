@@ -18,6 +18,24 @@ interface Job {
   expiryDate: string;
   companyName: string;
   applicationQuery: string;
+  aiJobProfile?: JobProfile | null;
+}
+
+interface JobProfile {
+  version?: string;
+  summary: string;
+  mustHaveSkills: string[];
+  niceToHaveSkills: string[];
+  softSkills: string[];
+  targetTitles: string[];
+  responsibilities: string[];
+  toolsAndTech: string[];
+  domainKeywords: string[];
+  certifications: string[];
+  disqualifiers: string[];
+  requiredExperienceYears: number | null;
+  preferredExperienceYears: number | null;
+  locationConstraints: string | null;
 }
 
 interface JobFormData {
@@ -50,15 +68,65 @@ const initialFormData: JobFormData = {
   applicationQuery: ''
 };
 
+interface JobProfileFormData {
+  summary: string;
+  mustHaveSkills: string;
+  niceToHaveSkills: string;
+  softSkills: string;
+  targetTitles: string;
+  responsibilities: string;
+  toolsAndTech: string;
+  domainKeywords: string;
+  certifications: string;
+  disqualifiers: string;
+  requiredExperienceYears: string;
+  preferredExperienceYears: string;
+  locationConstraints: string;
+}
+
+const initialProfileFormData: JobProfileFormData = {
+  summary: '',
+  mustHaveSkills: '',
+  niceToHaveSkills: '',
+  softSkills: '',
+  targetTitles: '',
+  responsibilities: '',
+  toolsAndTech: '',
+  domainKeywords: '',
+  certifications: '',
+  disqualifiers: '',
+  requiredExperienceYears: '',
+  preferredExperienceYears: '',
+  locationConstraints: ''
+};
+
 export default function EditJobPage() {
   const router = useRouter();
   const params = useParams();
   const jobId = params?.id as string;
 
   const [formData, setFormData] = useState<JobFormData>(initialFormData);
+  const [profileFormData, setProfileFormData] = useState<JobProfileFormData>(initialProfileFormData);
+  const [profileVersion, setProfileVersion] = useState('v1');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingJob, setLoadingJob] = useState(true);
+
+  const listToMultiline = (items?: string[] | null) =>
+    items && items.length > 0 ? items.join('\n') : '';
+
+  const multilineToList = (value: string) =>
+    value
+      .split(/\r?\n/)
+      .map(item => item.trim())
+      .filter(item => item.length > 0);
+
+  const handleProfileChange = (field: keyof JobProfileFormData, value: string) => {
+    setProfileFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
 
   useEffect(() => {
     if (jobId) {
@@ -98,6 +166,24 @@ export default function EditJobPage() {
         companyName: job.companyName || '',
         applicationQuery: job.applicationQuery || ''
       });
+
+      const profile = job.aiJobProfile || null;
+      setProfileFormData({
+        summary: profile?.summary ?? '',
+        mustHaveSkills: listToMultiline(profile?.mustHaveSkills),
+        niceToHaveSkills: listToMultiline(profile?.niceToHaveSkills),
+        softSkills: listToMultiline(profile?.softSkills),
+        targetTitles: listToMultiline(profile?.targetTitles),
+        responsibilities: listToMultiline(profile?.responsibilities),
+        toolsAndTech: listToMultiline(profile?.toolsAndTech),
+        domainKeywords: listToMultiline(profile?.domainKeywords),
+        certifications: listToMultiline(profile?.certifications),
+        disqualifiers: listToMultiline(profile?.disqualifiers),
+        requiredExperienceYears: profile?.requiredExperienceYears != null ? String(profile.requiredExperienceYears) : '',
+        preferredExperienceYears: profile?.preferredExperienceYears != null ? String(profile.preferredExperienceYears) : '',
+        locationConstraints: profile?.locationConstraints ?? ''
+      });
+      setProfileVersion(profile?.version ?? 'v1');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load job');
     } finally {
@@ -126,6 +212,30 @@ export default function EditJobPage() {
         throw new Error('Company name is required');
       }
 
+      const parseYears = (value: string) => {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const parsed = Number(trimmed);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+
+      const aiJobProfile = {
+        version: profileVersion || 'v1',
+        summary: profileFormData.summary.trim(),
+        mustHaveSkills: multilineToList(profileFormData.mustHaveSkills),
+        niceToHaveSkills: multilineToList(profileFormData.niceToHaveSkills),
+        softSkills: multilineToList(profileFormData.softSkills),
+        targetTitles: multilineToList(profileFormData.targetTitles),
+        responsibilities: multilineToList(profileFormData.responsibilities),
+        toolsAndTech: multilineToList(profileFormData.toolsAndTech),
+        domainKeywords: multilineToList(profileFormData.domainKeywords),
+        certifications: multilineToList(profileFormData.certifications),
+        disqualifiers: multilineToList(profileFormData.disqualifiers),
+        requiredExperienceYears: parseYears(profileFormData.requiredExperienceYears),
+        preferredExperienceYears: parseYears(profileFormData.preferredExperienceYears),
+        locationConstraints: profileFormData.locationConstraints.trim() || null
+      };
+
       const jobData = {
         title: formData.title.trim(),
         description: formData.description.trim(),
@@ -138,7 +248,9 @@ export default function EditJobPage() {
         status: formData.status,
         expiryDate: formData.expiryDate ? new Date(formData.expiryDate).toISOString() : null,
         companyName: formData.companyName.trim(),
-        applicationQuery: formData.applicationQuery.trim() || null
+        applicationQuery: formData.applicationQuery.trim() || null,
+        aiJobProfile,
+        aiSummary: aiJobProfile.summary
       };
 
       const response = await fetch(`/api/jobs/${jobId}`, {
@@ -247,6 +359,185 @@ export default function EditJobPage() {
                     placeholder="List the required skills, experience, education, etc..."
                   />
                 </Form.Group>
+
+                <div className="mb-4 p-3 border rounded bg-light">
+                  <h5 className="fw-semibold mb-3">AI Job Profile</h5>
+                  <p className="text-muted">
+                    Control the structured requirements used by AI scoring. Enter one item per line for list fields.
+                  </p>
+
+                  <Form.Group className="mb-3">
+                    <Form.Label>Summary</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      value={profileFormData.summary}
+                      onChange={(e) => handleProfileChange('summary', e.target.value)}
+                      placeholder="Concise overview of the ideal candidate (max 600 characters)."
+                    />
+                    <Form.Text className="text-muted">
+                      Keep under 600 characters.
+                    </Form.Text>
+                  </Form.Group>
+
+                  <Row className="gy-3">
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Must-have Skills</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={4}
+                          value={profileFormData.mustHaveSkills}
+                          onChange={(e) => handleProfileChange('mustHaveSkills', e.target.value)}
+                          placeholder="One skill per line"
+                        />
+                        <Form.Text className="text-muted">Required for top candidates.</Form.Text>
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Nice-to-have Skills</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={4}
+                          value={profileFormData.niceToHaveSkills}
+                          onChange={(e) => handleProfileChange('niceToHaveSkills', e.target.value)}
+                          placeholder="One skill per line"
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Soft Skills</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={3}
+                          value={profileFormData.softSkills}
+                          onChange={(e) => handleProfileChange('softSkills', e.target.value)}
+                          placeholder="e.g., communication, leadership"
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Target Titles</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={3}
+                          value={profileFormData.targetTitles}
+                          onChange={(e) => handleProfileChange('targetTitles', e.target.value)}
+                          placeholder="e.g., Senior Java Developer"
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={12}>
+                      <Form.Group>
+                        <Form.Label>Responsibilities</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={4}
+                          value={profileFormData.responsibilities}
+                          onChange={(e) => handleProfileChange('responsibilities', e.target.value)}
+                          placeholder="One responsibility per line"
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Tools &amp; Technologies</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={3}
+                          value={profileFormData.toolsAndTech}
+                          onChange={(e) => handleProfileChange('toolsAndTech', e.target.value)}
+                          placeholder="One item per line"
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Domain Keywords</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={3}
+                          value={profileFormData.domainKeywords}
+                          onChange={(e) => handleProfileChange('domainKeywords', e.target.value)}
+                          placeholder="e.g., healthcare, fintech"
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Certifications</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={3}
+                          value={profileFormData.certifications}
+                          onChange={(e) => handleProfileChange('certifications', e.target.value)}
+                          placeholder="One certification per line"
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Disqualifiers</Form.Label>
+                        <Form.Control
+                          as="textarea"
+                          rows={3}
+                          value={profileFormData.disqualifiers}
+                          onChange={(e) => handleProfileChange('disqualifiers', e.target.value)}
+                          placeholder="e.g., Missing references"
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Required Experience (years)</Form.Label>
+                        <Form.Control
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={profileFormData.requiredExperienceYears}
+                          onChange={(e) => handleProfileChange('requiredExperienceYears', e.target.value)}
+                          placeholder="e.g., 8"
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Preferred Experience (years)</Form.Label>
+                        <Form.Control
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={profileFormData.preferredExperienceYears}
+                          onChange={(e) => handleProfileChange('preferredExperienceYears', e.target.value)}
+                          placeholder="e.g., 10"
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={12}>
+                      <Form.Group>
+                        <Form.Label>Location Constraints</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={profileFormData.locationConstraints}
+                          onChange={(e) => handleProfileChange('locationConstraints', e.target.value)}
+                          placeholder="e.g., Albany, NY"
+                        />
+                        <Form.Text className="text-muted">
+                          Leave blank if there are no specific constraints.
+                        </Form.Text>
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                </div>
 
                 <Row>
                   <Col md={3}>

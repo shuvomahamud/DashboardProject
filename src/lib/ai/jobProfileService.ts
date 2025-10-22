@@ -36,7 +36,7 @@ const numberOrNull = z
   .optional()
   .default(null);
 
-const JobProfileSchema = z.object({
+export const JobProfileSchema = z.object({
   version: z.string().default(JOB_PROFILE_VERSION),
   summary: z
     .string()
@@ -233,7 +233,7 @@ Rules:
   return sanitizeProfile(validation.data);
 }
 
-function sanitizeProfile(profile: JobProfile): JobProfile {
+export function sanitizeProfile(profile: JobProfile): JobProfile {
   return {
     version: JOB_PROFILE_VERSION,
     summary: profile.summary.slice(0, 600),

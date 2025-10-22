@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
-import { refreshJobProfile, parseJobProfile } from '@/lib/ai/jobProfileService';
+import { refreshJobProfile, parseJobProfile, JobProfileSchema, sanitizeProfile, JobProfile } from '@/lib/ai/jobProfileService';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,33 +98,53 @@ async function POST(req: NextRequest) {
       salaryMax = maxVal;
     }
 
-    const job = await prisma.job.create({
-      data: {
-        title: body.title,
-        description: body.description,
-        requirements: body.requirements,
-        salaryMin,
-        salaryMax,
-        location: body.location,
-        isRemote: body.isRemote || false,
-        employmentType: body.employmentType,
-        status: body.status || 'active',
-        expiryDate: body.expiryDate ? new Date(body.expiryDate) : null,
-        companyName: body.companyName,
-        aiExtractJson: body.aiExtractJson,
-        aiSummary: body.aiSummary
+    const jobData: any = {
+      title: body.title,
+      description: body.description,
+      requirements: body.requirements,
+      salaryMin,
+      salaryMax,
+      location: body.location,
+      isRemote: body.isRemote || false,
+      employmentType: body.employmentType,
+      status: body.status || 'active',
+      expiryDate: body.expiryDate ? new Date(body.expiryDate) : null,
+      companyName: body.companyName,
+      aiExtractJson: body.aiExtractJson,
+      aiSummary: body.aiSummary
+    };
+
+    let manualProfile: JobProfile | null = null;
+    if (body.aiJobProfile) {
+      const parsedProfile = JobProfileSchema.safeParse(body.aiJobProfile);
+      if (!parsedProfile.success) {
+        return NextResponse.json(
+          { error: parsedProfile.error.message },
+          { status: 400 }
+        );
       }
+      manualProfile = sanitizeProfile(parsedProfile.data);
+      jobData.aiJobProfileJson = JSON.stringify(manualProfile);
+      jobData.aiJobProfileUpdatedAt = new Date();
+      jobData.aiJobProfileVersion = manualProfile.version;
+      jobData.aiSummary = manualProfile.summary;
+    }
+
+    const job = await prisma.job.create({
+      data: jobData
     });
 
     let refreshedJob = job;
-    let profile = null;
-    try {
-      profile = await refreshJobProfile(job.id);
-      if (profile) {
-        refreshedJob = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    let profile = manualProfile;
+    if (!manualProfile) {
+      try {
+        profile = await refreshJobProfile(job.id);
+        if (profile) {
+          refreshedJob = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+        }
+      } catch (profileError) {
+        console.warn(`Job profile generation failed for job ${job.id}`, profileError);
       }
-    } catch (profileError) {
-      console.warn(`Job profile generation failed for job ${job.id}`, profileError);
     }
 
     // Trigger job embedding generation (fire-and-forget, non-blocking)
