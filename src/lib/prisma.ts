@@ -1,48 +1,76 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@prisma/client';
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
-}
-
-// Configure connection pool via DATABASE_URL query parameters
-// For Vercel serverless, use MINIMAL connection pool to avoid exhaustion
-// Format: postgresql://user:pass@host/db?connection_limit=2&pool_timeout=10&connect_timeout=5
-const getDatabaseUrl = () => {
-  const baseUrl = process.env.DATABASE_URL || '';
-
-  // Only modify if pool params aren't already set
-  if (baseUrl.includes('connection_limit=')) {
-    return baseUrl;
-  }
-
-  // Ultra-minimal pool: 2 connections per instance
-  // With 100 concurrent functions: 2×100 = 200 connections (at Supabase limit)
-  // Previously: 5×100 = 500 connections (way over limit)
-  // Increased connect_timeout from 5s to 10s for better cold start handling
-  const separator = baseUrl.includes('?') ? '&' : '?';
-  return `${baseUrl}${separator}connection_limit=2&pool_timeout=15&connect_timeout=10&pgbouncer=true`;
+  prisma: PrismaClient | undefined;
 };
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({
-  datasources: {
-    db: {
-      url: getDatabaseUrl()
-    }
-  },
-  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-  // Increased timeouts for better cold start handling
-  __internal: {
-    engine: {
-      connection_timeout: 10,  // Increased from 5s to 10s
-      pool_timeout: 15,        // Increased from 10s to 15s
-    }
-  } as any
-})
+const getDatabaseUrl = () => {
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) {
+    console.error('DATABASE_URL is not set. Prisma cannot initialise.');
+    return '';
+  }
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+  try {
+    const url = new URL(rawUrl);
 
-// Graceful shutdown handler for serverless
-// This helps release connections when function execution ends
+    const isSupabasePooler = url.hostname.includes('pooler.supabase.com');
+    if (isSupabasePooler && (!url.port || url.port === '5432')) {
+      url.port = '6543';
+    }
+
+    if (!url.searchParams.has('pgbouncer')) {
+      url.searchParams.set('pgbouncer', 'true');
+    }
+
+    if (!url.searchParams.has('sslmode')) {
+      url.searchParams.set('sslmode', 'require');
+    }
+
+    if (!url.searchParams.has('connect_timeout')) {
+      url.searchParams.set('connect_timeout', '10');
+    }
+
+    if (!url.searchParams.has('pool_timeout')) {
+      url.searchParams.set('pool_timeout', '15');
+    }
+
+    if (!url.searchParams.has('connection_limit')) {
+      url.searchParams.set('connection_limit', '2');
+    }
+
+    return url.toString();
+  } catch (error) {
+    console.warn('Failed to normalise DATABASE_URL, falling back to raw value:', error);
+    if (rawUrl.includes('connection_limit=')) {
+      return rawUrl;
+    }
+    const separator = rawUrl.includes('?') ? '&' : '?';
+    return `${rawUrl}${separator}connection_limit=2&pool_timeout=15&connect_timeout=10&pgbouncer=true&sslmode=require`;
+  }
+};
+
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    datasources: {
+      db: {
+        url: getDatabaseUrl()
+      }
+    },
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    __internal: {
+      engine: {
+        connection_timeout: 10,
+        pool_timeout: 15
+      }
+    } as any
+  });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
+
 export async function disconnectPrisma() {
   try {
     await prisma.$disconnect();
@@ -51,7 +79,6 @@ export async function disconnectPrisma() {
   }
 }
 
-// Helper to ensure connection is healthy
 export async function ensureConnection(retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -67,7 +94,6 @@ export async function ensureConnection(retries = 3) {
   return false;
 }
 
-// Retry wrapper for database operations with exponential backoff
 export async function withRetry<T>(
   operation: () => Promise<T>,
   options: {
@@ -82,17 +108,16 @@ export async function withRetry<T>(
     initialDelayMs = 100,
     maxDelayMs = 5000,
     shouldRetry = (error: any) => {
-      // Retry on connection errors, timeouts, or database unavailability
       const message = error?.message?.toLowerCase() || '';
       return (
-        message.includes('can\'t reach database') ||
+        message.includes("can't reach database") ||
         message.includes('connection') ||
         message.includes('timeout') ||
-        message.includes('ECONNREFUSED') ||
-        message.includes('ETIMEDOUT') ||
-        error?.code === 'P1001' || // Can't reach database server
-        error?.code === 'P1008' || // Operations timed out
-        error?.code === 'P1017'    // Server closed the connection
+        message.includes('econnrefused') ||
+        message.includes('etimedout') ||
+        error?.code === 'P1001' ||
+        error?.code === 'P1008' ||
+        error?.code === 'P1017'
       );
     }
   } = options;
@@ -105,19 +130,16 @@ export async function withRetry<T>(
     } catch (error: any) {
       lastError = error;
 
-      // Don't retry if this is the last attempt or error shouldn't be retried
       if (attempt === maxRetries || !shouldRetry(error)) {
         throw error;
       }
 
-      // Calculate delay with exponential backoff and jitter
       const baseDelay = Math.min(initialDelayMs * Math.pow(2, attempt), maxDelayMs);
-      const jitter = Math.random() * baseDelay * 0.3; // Add up to 30% jitter
+      const jitter = Math.random() * baseDelay * 0.3;
       const delay = Math.floor(baseDelay + jitter);
 
       console.warn(
-        `Database operation failed (attempt ${attempt + 1}/${maxRetries + 1}), ` +
-        `retrying in ${delay}ms: ${error.message}`
+        `Database operation failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms: ${error.message}`
       );
 
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -127,4 +149,4 @@ export async function withRetry<T>(
   throw lastError;
 }
 
-export default prisma 
+export default prisma;
