@@ -6,7 +6,6 @@ import { getOpenAIClient } from './openaiClient';
 import type { JobContext } from './jobContext';
 import { computeProfileMatchScore } from './scoring/profileMatchScoring';
 import type { MatchScoreDetails } from './scoring/profileMatchScoring';
-import type { JobProfile } from './jobProfileService';
 
 type ResumeLogContext = Record<string, unknown>;
 
@@ -110,126 +109,6 @@ export const EnhancedResumeParseSchema = z.object({
 
 export type EnhancedParsedResume = z.infer<typeof EnhancedResumeParseSchema>;
 export type ProfileAnalysis = z.infer<typeof AnalysisSchema>;
-
-interface ManualSkillMatchResult {
-  matchedMustHave: string[];
-  missingMustHave: string[];
-  matchedToolsAndTech: string[];
-}
-
-interface ResumeSearchIndex {
-  raw: string;
-  lower: string;
-  collapsed: string;
-}
-
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const buildResumeSearchIndex = (text: string | null | undefined): ResumeSearchIndex => {
-  const raw = text ?? '';
-  const lower = raw.toLowerCase();
-  const collapsed = lower.replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return { raw, lower, collapsed };
-};
-
-const containsTermInResume = (index: ResumeSearchIndex, term: string): boolean => {
-  const candidate = term.trim();
-  if (!candidate) {
-    return false;
-  }
-
-  const lowerTerm = candidate.toLowerCase();
-  const canonical = lowerTerm.replace(/\s+/g, ' ').trim();
-
-  if (canonical) {
-    const pattern = canonical
-      .split(' ')
-      .map(part => escapeRegExp(part))
-      .join('[\\s\\-_/]+');
-
-    if (pattern) {
-      const boundaryRegex = new RegExp(`(^|[^a-z0-9+#])${pattern}(?=[^a-z0-9+#]|$)`, 'i');
-      if (boundaryRegex.test(index.raw)) {
-        return true;
-      }
-    }
-  }
-
-  const collapsedTerm = lowerTerm.replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (collapsedTerm && index.collapsed.includes(collapsedTerm)) {
-    return true;
-  }
-
-  return index.lower.includes(lowerTerm);
-};
-
-const dedupePreserveOrder = (values: string[]): string[] => {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    const trimmed = value.trim();
-    if (!trimmed) continue;
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(trimmed);
-  }
-  return result;
-};
-
-const computeManualSkillMatches = (
-  index: ResumeSearchIndex,
-  profile: JobProfile
-): ManualSkillMatchResult => {
-  const mustHave = dedupePreserveOrder(profile.mustHaveSkills ?? []);
-  const tools = dedupePreserveOrder(profile.toolsAndTech ?? []);
-
-  const matchedMustHave: string[] = [];
-  const missingMustHave: string[] = [];
-  const matchedToolsAndTech: string[] = [];
-
-  for (const skill of mustHave) {
-    if (containsTermInResume(index, skill)) {
-      matchedMustHave.push(skill);
-    } else {
-      missingMustHave.push(skill);
-    }
-  }
-
-  for (const tool of tools) {
-    if (containsTermInResume(index, tool)) {
-      matchedToolsAndTech.push(tool);
-    }
-  }
-
-  return {
-    matchedMustHave,
-    missingMustHave,
-    matchedToolsAndTech
-  };
-};
-
-const applyManualSkillOverrides = (
-  analysis: ProfileAnalysis,
-  profile: JobProfile | null,
-  resumeText: string | null | undefined
-): ManualSkillMatchResult | null => {
-  if (!profile) {
-    return null;
-  }
-  if (!resumeText || !resumeText.trim()) {
-    return null;
-  }
-
-  const index = buildResumeSearchIndex(resumeText);
-  const manualMatches = computeManualSkillMatches(index, profile);
-
-  analysis.mustHaveSkillsMatched = manualMatches.matchedMustHave;
-  analysis.mustHaveSkillsMissing = manualMatches.missingMustHave;
-  analysis.toolsAndTechMatched = manualMatches.matchedToolsAndTech;
-
-  return manualMatches;
-};
 
 interface ParseResult {
   success: boolean;
@@ -921,23 +800,6 @@ export async function parseAndScoreResume(
     }
 
     const validatedData = validation.data!;
-
-    let manualSkillMatches: ManualSkillMatchResult | null = null;
-    if (validatedData.analysis) {
-      manualSkillMatches = applyManualSkillOverrides(
-        validatedData.analysis,
-        jobContext.jobProfile,
-        resume.rawText
-      );
-      if (manualSkillMatches) {
-        resumeLogInfo('manual_skill_overrides_applied', {
-          resumeId,
-          mustHaveMatched: manualSkillMatches.matchedMustHave.length,
-          mustHaveMissing: manualSkillMatches.missingMustHave.length,
-          toolsMatched: manualSkillMatches.matchedToolsAndTech.length
-        });
-      }
-    }
 
     let matchScoreDetails: MatchScoreDetails | null = null;
     if (jobContext.jobProfile && validatedData.analysis) {
