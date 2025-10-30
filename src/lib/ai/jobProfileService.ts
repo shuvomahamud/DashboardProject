@@ -43,7 +43,7 @@ export const JobProfileSchema = z.object({
     .transform(value => value.trim())
     .refine(value => value.length <= 600, 'summary must be ≤ 600 characters')
     .default(''),
-  mustHaveSkills: stringArray,
+  mustHaveSkills: stringArray.optional().default([]),
   niceToHaveSkills: stringArray,
   targetTitles: stringArray,
   responsibilities: stringArray,

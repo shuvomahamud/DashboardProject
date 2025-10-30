@@ -28,6 +28,37 @@ type ResumeApplication = {
   } | null;
 };
 
+type SkillExperienceEntry = {
+  skill: string;
+  months: number;
+  confidence?: number | null;
+  evidence?: string | null;
+  lastUsed?: string | null;
+  source?: string | null;
+};
+
+type SkillRequirementEvaluationRow = {
+  skill: string;
+  requiredMonths: number;
+  manualMonths: number | null;
+  aiMonths: number | null;
+  candidateMonths: number;
+  meetsRequirement: boolean;
+  manualFound: boolean;
+  aiFound: boolean;
+  deficitMonths: number;
+};
+
+type SkillRequirementEvaluation = {
+  evaluatedAt?: string;
+  requirements?: Array<{ skill: string; requiredMonths: number }>;
+  evaluations?: SkillRequirementEvaluationRow[];
+  manualCoverageMissing?: string[];
+  unmetRequirements?: string[];
+  aiDetectedWithoutManual?: string[];
+  allMet?: boolean;
+};
+
 type ResumeData = {
   id: number;
   candidateName: string | null;
@@ -46,6 +77,9 @@ type ResumeData = {
   aiExtraSkills: string[] | null;
   manualToolsMatched: string[] | null;
   aiExtraTools: string[] | null;
+  manualSkillAssessments: Array<{ skill: string; months: number | null; source?: string | null }> | null;
+  aiSkillExperience: SkillExperienceEntry[] | null;
+  skillRequirementEvaluation: SkillRequirementEvaluation | null;
   createdAt: string;
   updatedAt: string;
   fileName: string;
@@ -87,6 +121,117 @@ const parseAiExtract = (json: string | null | undefined) => {
   } catch {
     return null;
   }
+};
+
+const coerceJson = (value: unknown): unknown => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return value;
+};
+
+const parseSkillExperienceEntries = (value: unknown): SkillExperienceEntry[] => {
+  const raw = coerceJson(value);
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const entry = item as Record<string, unknown>;
+      const skill = typeof entry.skill === "string" ? entry.skill.trim() : null;
+      if (!skill) return null;
+      const monthsValue = Number(entry.months ?? 0);
+      const months = Number.isFinite(monthsValue) ? Math.max(0, Math.round(monthsValue)) : 0;
+      return {
+        skill,
+        months,
+        confidence:
+          entry.confidence === null || entry.confidence === undefined
+            ? null
+            : Math.max(0, Math.min(1, Number(entry.confidence) || 0)),
+        evidence: typeof entry.evidence === "string" ? entry.evidence : null,
+        lastUsed: typeof entry.lastUsed === "string" ? entry.lastUsed : null,
+        source: typeof entry.source === "string" ? entry.source : null
+      } as SkillExperienceEntry;
+    })
+    .filter((entry): entry is SkillExperienceEntry => Boolean(entry));
+};
+
+const parseSkillRequirementEvaluation = (value: unknown): SkillRequirementEvaluation | null => {
+  const raw = coerceJson(value);
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const data = raw as Record<string, unknown>;
+  const evaluationsRaw = Array.isArray(data.evaluations) ? data.evaluations : [];
+  const evaluations: SkillRequirementEvaluationRow[] = evaluationsRaw
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const record = row as Record<string, unknown>;
+      const skill = typeof record.skill === "string" ? record.skill.trim() : null;
+      if (!skill) return null;
+      const requiredMonths = Number(record.requiredMonths ?? 0);
+      const manualMonths =
+        record.manualMonths === null || record.manualMonths === undefined
+          ? null
+          : Math.max(0, Math.round(Number(record.manualMonths) || 0));
+      const aiMonths =
+        record.aiMonths === null || record.aiMonths === undefined
+          ? null
+          : Math.max(0, Math.round(Number(record.aiMonths) || 0));
+      const candidateMonths = Math.max(0, Math.round(Number(record.candidateMonths) || 0));
+      const meetsRequirement = Boolean(record.meetsRequirement);
+      const manualFound = Boolean(record.manualFound);
+      const aiFound = Boolean(record.aiFound);
+      const deficitMonths = Math.max(0, Math.round(Number(record.deficitMonths) || 0));
+
+      return {
+        skill,
+        requiredMonths: Math.max(0, Math.round(requiredMonths)),
+        manualMonths,
+        aiMonths,
+        candidateMonths,
+        meetsRequirement,
+        manualFound,
+        aiFound,
+        deficitMonths
+      };
+    })
+    .filter((row): row is SkillRequirementEvaluationRow => Boolean(row));
+
+  const toStringArray = (input: unknown): string[] =>
+    Array.isArray(input) ? input.map((item) => String(item)).filter(Boolean) : [];
+
+  const requirementsRaw = Array.isArray(data.requirements) ? data.requirements : [];
+  const requirements = requirementsRaw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const skill = typeof record.skill === "string" ? record.skill.trim() : null;
+      if (!skill) return null;
+      const requiredMonths = Number(record.requiredMonths ?? 0);
+      return { skill, requiredMonths: Math.max(0, Math.round(requiredMonths)) };
+    })
+    .filter((item): item is { skill: string; requiredMonths: number } => Boolean(item));
+
+  return {
+    evaluatedAt: typeof data.evaluatedAt === "string" ? data.evaluatedAt : undefined,
+    requirements,
+    evaluations,
+    manualCoverageMissing: toStringArray(data.manualCoverageMissing),
+    unmetRequirements: toStringArray(data.unmetRequirements),
+    aiDetectedWithoutManual: toStringArray(data.aiDetectedWithoutManual),
+    allMet: Boolean(data.allMet)
+  };
+};
+
+const formatMonths = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return "—";
+  return `${value} mo`;
 };
 
 const ResumeDetailPage = () => {
@@ -264,6 +409,16 @@ const ResumeDetailPage = () => {
     }
     return sections;
   }, [analysis, resume]);
+
+  const skillEvaluation = useMemo(
+    () => parseSkillRequirementEvaluation(resume?.skillRequirementEvaluation),
+    [resume?.skillRequirementEvaluation]
+  );
+
+  const aiSkillExperienceList = useMemo(
+    () => parseSkillExperienceEntries(resume?.aiSkillExperience),
+    [resume?.aiSkillExperience]
+  );
 
   if (loading) {
     return (
@@ -558,6 +713,134 @@ const ResumeDetailPage = () => {
         </Card.Body>
       </Card>
     )}
+
+      <Card className="shadow-sm border-0 mb-4">
+        <Card.Header className="bg-light border-0 py-3">
+          <h5 className="mb-0 fw-semibold">
+            <i className="bi bi-diagram-3 text-primary me-2"></i>
+            Mandatory Skills Evaluation
+          </h5>
+        </Card.Header>
+        <Card.Body className="p-4">
+          {skillEvaluation ? (
+            (skillEvaluation.evaluations && skillEvaluation.evaluations.length > 0) ? (
+              <>
+                <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                  <div className="d-flex align-items-center gap-2">
+                    <Badge bg={skillEvaluation.allMet ? "success" : "danger"}>
+                      {skillEvaluation.allMet ? "All requirements met" : "Requirements pending"}
+                    </Badge>
+                    {skillEvaluation.evaluatedAt && (
+                      <span className="text-muted small">
+                        Evaluated {formatDate(skillEvaluation.evaluatedAt)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-muted small">
+                    {(skillEvaluation.requirements?.length ?? 0)} mandatory skill
+                    {(skillEvaluation.requirements?.length ?? 0) === 1 ? "" : "s"}
+                  </div>
+                </div>
+
+                <Table hover responsive className="mb-0">
+                  <thead>
+                    <tr>
+                      <th>Skill</th>
+                      <th>Required</th>
+                      <th>Manual</th>
+                      <th>AI</th>
+                      <th>Credited</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(skillEvaluation.evaluations ?? []).map((row) => {
+                      const statusVariant = row.meetsRequirement
+                        ? "success"
+                        : row.requiredMonths === 0
+                          ? "warning"
+                          : "danger";
+                      const statusLabel = row.meetsRequirement
+                        ? "Met"
+                        : row.requiredMonths === 0
+                          ? "Not found"
+                          : row.deficitMonths > 0
+                            ? `Short ${row.deficitMonths} mo`
+                            : "Not met";
+                      return (
+                        <tr key={row.skill}>
+                          <td>{row.skill}</td>
+                          <td>{formatMonths(row.requiredMonths)}</td>
+                          <td>
+                            {row.manualFound
+                              ? formatMonths(row.manualMonths)
+                              : <span className="text-muted">Not noted</span>}
+                          </td>
+                          <td>
+                            {row.aiFound
+                              ? formatMonths(row.aiMonths)
+                              : <span className="text-muted">Not detected</span>}
+                          </td>
+                          <td>{formatMonths(row.candidateMonths)}</td>
+                          <td>
+                            <Badge bg={statusVariant}>{statusLabel}</Badge>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+
+                {skillEvaluation.unmetRequirements && skillEvaluation.unmetRequirements.length > 0 ? (
+                  <Alert variant="danger" className="mt-3 mb-0">
+                    Missing mandatory coverage: {skillEvaluation.unmetRequirements.join(", ")}
+                  </Alert>
+                ) : (
+                  <Alert variant="success" className="mt-3 mb-0">
+                    All mandatory skills meet the required experience thresholds.
+                  </Alert>
+                )}
+
+                {skillEvaluation.manualCoverageMissing && skillEvaluation.manualCoverageMissing.length > 0 && (
+                  <div className="mt-3 text-warning small">
+                    <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                    Manual review missed: {skillEvaluation.manualCoverageMissing.join(", ")}
+                  </div>
+                )}
+
+                {skillEvaluation.aiDetectedWithoutManual && skillEvaluation.aiDetectedWithoutManual.length > 0 && (
+                  <div className="mt-2 text-info small">
+                    <i className="bi bi-lightbulb-fill me-2"></i>
+                    AI detected evidence for: {skillEvaluation.aiDetectedWithoutManual.join(", ")}
+                  </div>
+                )}
+
+                {aiSkillExperienceList.length > 0 && (
+                  <div className="mt-4">
+                    <h6 className="fw-semibold text-muted mb-2">AI Skill Experience Snapshot</h6>
+                    <div className="d-flex flex-wrap gap-2">
+                      {aiSkillExperienceList.slice(0, 12).map((entry) => (
+                        <Badge
+                          bg="secondary"
+                          key={`${entry.skill}-${entry.months}`}
+                          className="fw-normal"
+                          title={entry.evidence || undefined}
+                        >
+                          {entry.skill}: {formatMonths(entry.months)}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-muted mb-0">No mandatory skill requirements recorded for this candidate.</p>
+            )
+          ) : (
+            <p className="text-muted mb-0">Mandatory skill evaluation is not available for this resume.</p>
+          )}
+        </Card.Body>
+      </Card>
 
       <Row className="g-4 mb-4">
         <Col lg={6}>

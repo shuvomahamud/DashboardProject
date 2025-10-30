@@ -1,5 +1,6 @@
 import type { JobProfile } from '../jobProfileService';
 import type { ProfileAnalysis } from '../resumeParsingService';
+import type { SkillRequirementEvaluationSummary } from '../skillRequirements';
 
 export interface DimensionBreakdown {
   label: string;
@@ -21,6 +22,7 @@ export interface MatchScoreDetails {
   breakdown: Record<string, DimensionBreakdown>;
   disqualifiersDetected: string[];
   notes: string | null;
+  mandatorySkills?: SkillRequirementEvaluationSummary;
 }
 
 const DIMENSION_CONFIG: Array<{

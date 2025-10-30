@@ -1,11 +1,14 @@
 import type { JobProfile } from './jobProfileService';
 import { parseJobProfile } from './jobProfileService';
+import type { SkillRequirement } from './skillRequirements';
+import { parseSkillRequirementConfig } from './skillRequirements';
 
 export interface JobContext {
   jobTitle: string;
   jobDescriptionShort: string;
   jobDescriptionExcerpt: string;
   jobProfile: JobProfile | null;
+  mandatorySkillRequirements: SkillRequirement[];
 }
 
 interface BuildJobContextParams {
@@ -13,16 +16,19 @@ interface BuildJobContextParams {
   description?: string | null;
   aiJobProfileJson?: string | null;
   fallbackSummary?: string | null;
+  mandatorySkillRequirements?: unknown;
 }
 
 export function buildJobContext({
   title,
   description,
   aiJobProfileJson,
-  fallbackSummary
+  fallbackSummary,
+  mandatorySkillRequirements
 }: BuildJobContextParams): JobContext {
   const rawDescription = description?.trim() ?? '';
   const profile = parseJobProfile(aiJobProfileJson);
+  const requirements = parseSkillRequirementConfig(mandatorySkillRequirements);
 
   const summary = profile?.summary?.trim() ?? fallbackSummary?.trim() ?? rawDescription;
   const shortSummary = summary.length > 500 ? `${summary.substring(0, 500)}...` : summary;
@@ -32,6 +38,7 @@ export function buildJobContext({
     jobTitle: title,
     jobDescriptionShort: shortSummary || title,
     jobDescriptionExcerpt: excerpt,
-    jobProfile: profile
+    jobProfile: profile,
+    mandatorySkillRequirements: requirements
   };
 }

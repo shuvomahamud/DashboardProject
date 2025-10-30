@@ -7,6 +7,14 @@ import type { JobContext } from './jobContext';
 import { computeProfileMatchScore } from './scoring/profileMatchScoring';
 import type { MatchScoreDetails } from './scoring/profileMatchScoring';
 import type { JobProfile } from './jobProfileService';
+import {
+  evaluateSkillRequirements,
+  parseManualSkillAssessments,
+  parseAiSkillExperience,
+  type ManualSkillAssessment,
+  type SkillExperienceEntry,
+  type SkillRequirementEvaluationSummary
+} from './skillRequirements';
 
 type ResumeLogContext = Record<string, unknown>;
 
@@ -41,6 +49,7 @@ const resumeLogError = (message: string, context?: ResumeLogContext) => {
 const stringOrNull = z.union([z.string(), z.null()]).optional();
 const number0to100 = z.coerce.number().min(0).max(100);
 const number0to80 = z.coerce.number().min(0).max(80);
+const number0to1200 = z.coerce.number().min(0).max(1200);
 
 // Arrays may sometimes come as a single string; accept both & normalize to array
 const stringArray = z.union([z.array(z.string()), z.string()])
@@ -58,6 +67,9 @@ export const AnalysisSchema = z.object({
   domainKeywordsMatched: stringArray,
   certificationsMatched: stringArray,
   disqualifiersDetected: stringArray,
+  mandatorySkillsCovered: stringArray,
+  mandatorySkillsMissing: stringArray,
+  mandatorySkillsManualMissed: stringArray,
   notes: stringOrNull
 }).default({
   mustHaveSkillsMatched: [],
@@ -69,6 +81,9 @@ export const AnalysisSchema = z.object({
   domainKeywordsMatched: [],
   certificationsMatched: [],
   disqualifiersDetected: [],
+  mandatorySkillsCovered: [],
+  mandatorySkillsMissing: [],
+  mandatorySkillsManualMissed: [],
   notes: null
 });
 
@@ -83,6 +98,14 @@ export const EnhancedResumeParseSchema = z.object({
       totalExperienceYears: number0to80
     }),
     skills: stringArray,
+    skillExperience: z.array(z.object({
+      skill: z.string(),
+      months: number0to1200,
+      confidence: z.coerce.number().min(0).max(1).optional().default(0.5),
+      evidence: stringOrNull,
+      lastUsed: stringOrNull,
+      source: z.string().optional().default('ai')
+    })).default([]),
     education: z.array(z.object({
       degree: z.string(),
       institution: stringOrNull,
@@ -223,6 +246,16 @@ function sanitizeModelOutput(raw: any) {
       fixScalar(raw.resume, 'notes');
     }
 
+    if (raw?.resume?.skillExperience) {
+      try {
+        raw.resume.skillExperience = parseAiSkillExperience(raw.resume.skillExperience);
+      } catch {
+        raw.resume.skillExperience = [];
+      }
+    } else if (raw?.resume) {
+      raw.resume.skillExperience = [];
+    }
+
     // NEW: normalize summary last
     coerceSummary(raw);
 
@@ -258,6 +291,22 @@ interface ResumeToken {
 const normalizeValue = (value: string) => value.trim().toLowerCase();
 
 const normalizeToken = (token: string) => token.toLowerCase();
+
+const normalizeSkillKey = (value: string) =>
+  value.trim().toLowerCase().replace(/[^a-z0-9+#]/g, '');
+
+const skillMatchesSet = (skill: string, normalizedSet: Set<string>): boolean => {
+  const key = normalizeSkillKey(skill);
+  if (!key) return false;
+  if (normalizedSet.has(key)) return true;
+  for (const candidate of normalizedSet) {
+    if (!candidate) continue;
+    if (key.includes(candidate) || candidate.includes(key)) {
+      return true;
+    }
+  }
+  return false;
+};
 
 const stemToken = (token: string): string => {
   let stem = token;
@@ -848,6 +897,8 @@ function toResumeDbFields(
     aiExtraSkills?: string[];
     manualTools?: string[];
     aiExtraTools?: string[];
+    aiSkillExperience?: SkillExperienceEntry[];
+    skillRequirementEvaluation?: Record<string, unknown> | null;
   }
 ): Record<string, any> {
   const candidate = data.resume.candidate;
@@ -890,7 +941,9 @@ function toResumeDbFields(
     manualSkillsMatched: extras?.manualSkills && extras.manualSkills.length > 0 ? extras.manualSkills : null,
     aiExtraSkills: extras?.aiExtraSkills && extras.aiExtraSkills.length > 0 ? extras.aiExtraSkills : null,
     manualToolsMatched: extras?.manualTools && extras.manualTools.length > 0 ? extras.manualTools : null,
-    aiExtraTools: extras?.aiExtraTools && extras.aiExtraTools.length > 0 ? extras.aiExtraTools : null
+    aiExtraTools: extras?.aiExtraTools && extras.aiExtraTools.length > 0 ? extras.aiExtraTools : null,
+    aiSkillExperience: extras?.aiSkillExperience && extras.aiSkillExperience.length > 0 ? extras.aiSkillExperience : null,
+    skillRequirementEvaluation: extras?.skillRequirementEvaluation ?? null
   };
 }
 
@@ -951,6 +1004,8 @@ export async function parseAndScoreResume(
           id: true,
           rawText: true,
           fileName: true,
+          manualSkillAssessments: true,
+          manualSkillsMatched: true,
           applications: {
             select: { jobId: true }
           }
@@ -1019,6 +1074,10 @@ export async function parseAndScoreResume(
     const redactedText = redactSensitiveData(resume.rawText);
     const processedText = redactedText;
 
+    let manualAssessments: ManualSkillAssessment[] = parseManualSkillAssessments(
+      (resume as any).manualSkillAssessments ?? (resume as any).manualSkillsMatched ?? null
+    );
+
     // Call OpenAI for parsing with timeout
     const parseResult = await callOpenAIForParsing(jobContext, processedText, timeoutMs);
 
@@ -1078,14 +1137,35 @@ export async function parseAndScoreResume(
 
     if (jobContext.jobProfile && resume.rawText) {
       const tokens = buildResumeTokens(resume.rawText);
-      manualMustMatches = matchPhrasesInResume(jobContext.jobProfile.mustHaveSkills ?? [], tokens);
-      manualNiceMatches = matchPhrasesInResume(jobContext.jobProfile.niceToHaveSkills ?? [], tokens);
-      manualToolsMatches = matchPhrasesInResume(jobContext.jobProfile.toolsAndTech ?? [], tokens);
+      const profileMust = jobContext.jobProfile.mustHaveSkills ?? [];
+      const profileNice = jobContext.jobProfile.niceToHaveSkills ?? [];
+      const profileTools = jobContext.jobProfile.toolsAndTech ?? [];
 
-      manualSkillsCombined = dedupePreserveOrder([...manualMustMatches, ...manualNiceMatches]);
+      const manualNormalizedSet = new Set(manualAssessments.map(assessment => normalizeSkillKey(assessment.skill)));
 
-      const manualSkillSet = new Set(manualSkillsCombined.map(normalizeValue));
-      const manualToolSet = new Set(manualToolsMatches.map(normalizeValue));
+      if (manualAssessments.length === 0) {
+        manualMustMatches = matchPhrasesInResume(profileMust, tokens);
+        manualNiceMatches = matchPhrasesInResume(profileNice, tokens);
+        manualToolsMatches = matchPhrasesInResume(profileTools, tokens);
+        manualSkillsCombined = dedupePreserveOrder([...manualMustMatches, ...manualNiceMatches]);
+        manualAssessments = manualSkillsCombined.map(skill => ({
+          skill,
+          months: null,
+          source: 'auto',
+          confidence: null,
+          notes: null
+        }));
+        manualNormalizedSet.clear();
+        manualAssessments.forEach(assessment => manualNormalizedSet.add(normalizeSkillKey(assessment.skill)));
+      } else {
+        manualMustMatches = profileMust.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
+        manualNiceMatches = profileNice.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
+        manualToolsMatches = profileTools.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
+        manualSkillsCombined = dedupePreserveOrder(manualAssessments.map(assessment => assessment.skill));
+      }
+
+      const manualSkillSet = new Set(manualSkillsCombined.map(skill => normalizeSkillKey(skill)));
+      const manualToolSet = new Set(manualToolsMatches.map(tool => normalizeSkillKey(tool)));
 
       const aiMustOriginal = Array.isArray(validatedData.analysis.mustHaveSkillsMatched)
         ? validatedData.analysis.mustHaveSkillsMatched
@@ -1099,7 +1179,7 @@ export async function parseAndScoreResume(
 
       validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
       validatedData.analysis.mustHaveSkillsMissing = (jobContext.jobProfile.mustHaveSkills ?? []).filter(
-        skill => !manualSkillSet.has(normalizeValue(skill))
+        skill => !manualSkillSet.has(normalizeSkillKey(skill))
       );
       validatedData.analysis.niceToHaveSkillsMatched = manualNiceMatches;
       validatedData.analysis.toolsAndTechMatched = manualToolsMatches;
@@ -1118,15 +1198,15 @@ export async function parseAndScoreResume(
           ...(verification.extraNiceToHave ?? [])
         ]);
 
-        aiExtraSkills = combinedExtras.filter(skill => !manualSkillSet.has(normalizeValue(skill)));
+        aiExtraSkills = combinedExtras.filter(skill => !manualSkillSet.has(normalizeSkillKey(skill)));
         aiExtraTools = dedupePreserveOrder(verification.extraTools ?? []).filter(
-          tool => !manualToolSet.has(normalizeValue(tool))
+          tool => !manualToolSet.has(normalizeSkillKey(tool))
         );
       } else {
         const aiSkillUnion = dedupePreserveOrder([...aiMustOriginal, ...aiNiceOriginal]);
-        aiExtraSkills = aiSkillUnion.filter(skill => !manualSkillSet.has(normalizeValue(skill)));
+        aiExtraSkills = aiSkillUnion.filter(skill => !manualSkillSet.has(normalizeSkillKey(skill)));
         aiExtraTools = dedupePreserveOrder(aiToolsOriginal).filter(
-          tool => !manualToolSet.has(normalizeValue(tool))
+          tool => !manualToolSet.has(normalizeSkillKey(tool))
         );
       }
     } else {
@@ -1136,19 +1216,48 @@ export async function parseAndScoreResume(
       aiExtraTools = [];
     }
 
+    const aiSkillExperiences = parseAiSkillExperience(validatedData.resume.skillExperience);
+    validatedData.resume.skillExperience = aiSkillExperiences;
+
+    const requirementSummary: SkillRequirementEvaluationSummary = evaluateSkillRequirements(
+      jobContext.mandatorySkillRequirements ?? [],
+      manualAssessments,
+      aiSkillExperiences
+    );
+
     resumeLogInfo('skill_match_summary', {
       resumeId,
       manualMustHave: manualMustMatches.length,
       manualNiceToHave: manualNiceMatches.length,
       manualTools: manualToolsMatches.length,
       aiExtraSkills: aiExtraSkills.length,
-      aiExtraTools: aiExtraTools.length
+      aiExtraTools: aiExtraTools.length,
+      mandatoryRequirements: jobContext.mandatorySkillRequirements?.length ?? 0,
+      mandatoryAllMet: requirementSummary.allMet
     });
+
+    if (jobContext.mandatorySkillRequirements.length > 0) {
+      validatedData.analysis.mandatorySkillsCovered = requirementSummary.evaluations
+        .filter(item => item.manualFound || item.aiFound)
+        .map(item => item.skill);
+      validatedData.analysis.mandatorySkillsMissing = requirementSummary.unmetRequirements;
+      validatedData.analysis.mandatorySkillsManualMissed = requirementSummary.manualCoverageMissing;
+      validatedData.analysis.mustHaveSkillsMissing = dedupePreserveOrder([
+        ...(validatedData.analysis.mustHaveSkillsMissing ?? []),
+        ...requirementSummary.unmetRequirements
+      ]);
+    }
 
     let matchScoreDetails: MatchScoreDetails | null = null;
     if (jobContext.jobProfile && validatedData.analysis) {
       try {
         matchScoreDetails = computeProfileMatchScore(jobContext.jobProfile, validatedData.analysis);
+        if (jobContext.mandatorySkillRequirements.length > 0) {
+          matchScoreDetails.mandatorySkills = requirementSummary;
+          if (requirementSummary.allMet) {
+            matchScoreDetails.finalScore = 100;
+          }
+        }
         validatedData.scores.matchScore = matchScoreDetails.finalScore;
         (validatedData as any).computedMatchScore = matchScoreDetails;
       } catch (error) {
@@ -1159,6 +1268,23 @@ export async function parseAndScoreResume(
       }
     } else if (!jobContext.jobProfile) {
       resumeLogWarn('job_profile_missing_for_scoring', { resumeId });
+    }
+
+    if (jobContext.mandatorySkillRequirements.length > 0) {
+      if (requirementSummary.allMet) {
+        validatedData.scores.matchScore = 100;
+        resumeLogInfo('mandatory_skill_evaluation', {
+          resumeId,
+          requirements: jobContext.mandatorySkillRequirements.length,
+          allMet: true
+        });
+      } else {
+        resumeLogWarn('mandatory_skill_unmet', {
+          resumeId,
+          unmet: requirementSummary.unmetRequirements,
+          manualCoverageMissing: requirementSummary.manualCoverageMissing
+        });
+      }
     }
 
     const candidateData = validatedData.resume.candidate;
@@ -1190,11 +1316,26 @@ export async function parseAndScoreResume(
     }
 
     // Prepare database updates
+    const skillRequirementEvaluationRecord =
+      jobContext.mandatorySkillRequirements.length > 0
+        ? {
+            evaluatedAt: new Date().toISOString(),
+            requirements: jobContext.mandatorySkillRequirements,
+            evaluations: requirementSummary.evaluations,
+            manualCoverageMissing: requirementSummary.manualCoverageMissing,
+            unmetRequirements: requirementSummary.unmetRequirements,
+            aiDetectedWithoutManual: requirementSummary.aiDetectedWithoutManual,
+            allMet: requirementSummary.allMet
+          }
+        : null;
+
     const resumeFields = toResumeDbFields(validatedData, {
       manualSkills: manualSkillsCombined,
       aiExtraSkills,
       manualTools: manualToolsMatches,
-      aiExtraTools
+      aiExtraTools,
+      aiSkillExperience: aiSkillExperiences,
+      skillRequirementEvaluation: skillRequirementEvaluationRecord
     });
     resumeFields.textHash = textHash;
 

@@ -387,7 +387,8 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
                     description: true,
                     requirements: true,
                     aiSummary: true,
-                    aiJobProfileJson: true
+                    aiJobProfileJson: true,
+                    mandatorySkillRequirements: true
                   }
                 });
 
@@ -396,7 +397,8 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
                     title: job.title,
                     description: job.description ?? '',
                     aiJobProfileJson: job.aiJobProfileJson ?? null,
-                    fallbackSummary: job.aiSummary ?? job.requirements ?? ''
+                    fallbackSummary: job.aiSummary ?? job.requirements ?? '',
+                    mandatorySkillRequirements: job.mandatorySkillRequirements ?? null
                   });
 
                   const parseResult = await parseAndScoreResume(resume.id, jobContext);

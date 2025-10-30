@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Form, Button, Card, Row, Col, Alert, Spinner } from 'react-bootstrap';
+import { Form, Button, Card, Row, Col, Alert, Spinner, Badge } from 'react-bootstrap';
 import { useToast } from '@/contexts/ToastContext';
 
 interface JobFormData {
@@ -37,7 +37,6 @@ const initialFormData: JobFormData = {
 
 interface JobProfileFormData {
   summary: string;
-  mustHaveSkills: string;
   niceToHaveSkills: string;
   targetTitles: string;
   responsibilities: string;
@@ -52,7 +51,6 @@ interface JobProfileFormData {
 
 const initialProfileFormData: JobProfileFormData = {
   summary: '',
-  mustHaveSkills: '',
   niceToHaveSkills: '',
   targetTitles: '',
   responsibilities: '',
@@ -65,6 +63,64 @@ const initialProfileFormData: JobProfileFormData = {
   locationConstraints: ''
 };
 
+interface MandatorySkillRequirement {
+  skill: string;
+  requiredMonths: number;
+}
+
+
+const extractSuggestedMonths = (skill: string, context: string): number | null => {
+  if (!skill || !context) return null;
+  const normalizedContext = context.toLowerCase();
+  const normalizedSkill = skill.toLowerCase();
+
+  const windows: Array<[number, number]> = [];
+  let index = normalizedContext.indexOf(normalizedSkill);
+  while (index !== -1) {
+    windows.push([
+      Math.max(0, index - 80),
+      Math.min(normalizedContext.length, index + normalizedSkill.length + 80)
+    ]);
+    index = normalizedContext.indexOf(normalizedSkill, index + normalizedSkill.length);
+  }
+
+  if (windows.length === 0) {
+    windows.push([0, Math.min(normalizedContext.length, 200)]);
+  }
+
+  const evaluateSnippet = (snippet: string): number | null => {
+    const patterns = [
+      /(\d{1,2})\s*\+?\s*(years?|yrs?|yr|y)\b/g,
+      /(\d{1,2})\s*\+?\s*(months?|mos?|mo)\b/g,
+      /(\d{1,2})\s*-\s*year\b/g
+    ];
+
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(snippet)) !== null) {
+        const raw = Number(match[1]);
+        if (!Number.isFinite(raw)) continue;
+        const token = (match[2] ?? '').toLowerCase();
+        const months = /year|yr|y/.test(token) ? raw * 12 : raw;
+        if (months > 0) {
+          return Math.min(1200, Math.max(1, months));
+        }
+      }
+    }
+    return null;
+  };
+
+  for (const [start, end] of windows) {
+    const snippet = normalizedContext.slice(start, end);
+    const months = evaluateSnippet(snippet);
+    if (months !== null) {
+      return months;
+    }
+  }
+
+  return null;
+};
+
 export default function NewJobPage() {
   const router = useRouter();
   const { showToast } = useToast();
@@ -75,6 +131,11 @@ export default function NewJobPage() {
   const [runningProfile, setRunningProfile] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mandatorySkills, setMandatorySkills] = useState<MandatorySkillRequirement[]>([]);
+  const [addingMandatorySkill, setAddingMandatorySkill] = useState(false);
+  const [newMandatorySkill, setNewMandatorySkill] = useState('');
+  const [newMandatoryMonths, setNewMandatoryMonths] = useState('');
+  const [aiMustHaveSkills, setAiMustHaveSkills] = useState<string[]>([]);
 
   const listToMultiline = (items?: string[] | null) =>
     items && items.length > 0 ? items.join('\n') : '';
@@ -84,6 +145,128 @@ export default function NewJobPage() {
       .split(/\r?\n/)
       .map(item => item.trim())
       .filter(item => item.length > 0);
+
+  const normalizeSkillKey = (value: string) => value.trim().toLowerCase();
+
+  const computeDefaultMonths = (profile: any | null | undefined) => {
+    const years =
+      (typeof profile?.requiredExperienceYears === 'number' && profile.requiredExperienceYears > 0
+        ? profile.requiredExperienceYears
+        : null) ??
+      (typeof profile?.preferredExperienceYears === 'number' && profile.preferredExperienceYears > 0
+        ? profile.preferredExperienceYears
+        : null);
+
+    if (!years || !Number.isFinite(years)) {
+      return 12;
+    }
+
+    const months = Math.round(years * 12);
+    return Math.max(6, Math.min(1200, months));
+  };
+
+  const syncMandatorySkillsFromList = (
+    skills: string[],
+    options?: { defaultMonths?: number; contextText?: string }
+  ) => {
+    const defaultMonths = options?.defaultMonths ?? 0;
+    const contextText = options?.contextText ?? '';
+    setMandatorySkills(prev => {
+      const prevMap = new Map(prev.map(item => [normalizeSkillKey(item.skill), item]));
+      const next: MandatorySkillRequirement[] = [];
+      for (const rawSkill of skills) {
+        const skill = rawSkill.trim();
+        if (!skill) continue;
+        if (next.length >= 30) break;
+        const existing = prevMap.get(normalizeSkillKey(skill));
+        const suggestedMonths = contextText ? extractSuggestedMonths(skill, contextText) : null;
+        const months = existing
+          ? (existing.requiredMonths > 0 ? existing.requiredMonths : (suggestedMonths ?? defaultMonths))
+          : (suggestedMonths ?? defaultMonths);
+        next.push({ skill, requiredMonths: months });
+      }
+      return next;
+    });
+  };
+
+  const handleMandatorySkillChange = (
+    index: number,
+    field: 'skill' | 'requiredMonths',
+    value: string
+  ) => {
+    setMandatorySkills(prev => {
+      if (!prev[index]) return prev;
+      const next = [...prev];
+      if (field === 'skill') {
+        next[index] = {
+          ...next[index],
+          skill: value
+        };
+      } else {
+        const numeric = Number(value);
+        const sanitized = Number.isFinite(numeric) && numeric >= 0 ? Math.min(1200, Math.round(numeric)) : 0;
+        next[index] = {
+          ...next[index],
+          requiredMonths: sanitized
+        };
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveMandatorySkill = (index: number) => {
+    setMandatorySkills(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const resetNewMandatoryInputs = () => {
+    setNewMandatorySkill('');
+    setNewMandatoryMonths('');
+  };
+
+  const handleAddMandatorySkill = () => {
+    const skill = newMandatorySkill.trim();
+    if (!skill) {
+      showToast('Skill name is required.', 'error', 4000);
+      return;
+    }
+
+    const monthsNumber = (() => {
+      const numeric = Number(newMandatoryMonths);
+      if (!Number.isFinite(numeric) || numeric < 0) return 0;
+      return Math.min(1200, Math.round(numeric));
+    })();
+
+    let additionMade = false;
+
+    setMandatorySkills(prev => {
+      const existingIndex = prev.findIndex(item => normalizeSkillKey(item.skill) === normalizeSkillKey(skill));
+      if (existingIndex >= 0) {
+        additionMade = true;
+        const next = [...prev];
+        next[existingIndex] = { skill, requiredMonths: monthsNumber };
+        return next;
+      }
+
+      if (prev.length >= 30) {
+        showToast('You can only add up to 30 mandatory skills.', 'warning', 4000);
+        additionMade = false;
+        return prev;
+      }
+
+      additionMade = true;
+      return [...prev, { skill, requiredMonths: monthsNumber }];
+    });
+
+    if (additionMade) {
+      resetNewMandatoryInputs();
+      setAddingMandatorySkill(false);
+    }
+  };
+
+  const handleCancelAddMandatorySkill = () => {
+    resetNewMandatoryInputs();
+    setAddingMandatorySkill(false);
+  };
 
   const handleProfileChange = (field: keyof JobProfileFormData, value: string) => {
     setProfileFormData(prev => ({
@@ -103,12 +286,15 @@ export default function NewJobPage() {
     if (!profile) {
       setProfileFormData(initialProfileFormData);
       setProfileVersion('v1');
+      setMandatorySkills([]);
+      setAiMustHaveSkills([]);
       return;
     }
 
+    setAiMustHaveSkills(Array.isArray(profile.mustHaveSkills) ? profile.mustHaveSkills : []);
+
     setProfileFormData({
       summary: profile.summary ?? '',
-      mustHaveSkills: listToMultiline(profile.mustHaveSkills),
       niceToHaveSkills: listToMultiline(profile.niceToHaveSkills),
       targetTitles: listToMultiline(profile.targetTitles),
       responsibilities: listToMultiline(profile.responsibilities),
@@ -121,6 +307,20 @@ export default function NewJobPage() {
       locationConstraints: profile?.locationConstraints ?? ''
     });
     setProfileVersion(profile.version ?? 'v1');
+    const defaultMonths = computeDefaultMonths(profile);
+    const contextText = [
+      formData.description,
+      formData.requirements,
+      profile.summary,
+      Array.isArray(profile.responsibilities) ? profile.responsibilities.join('\n') : '',
+      Array.isArray(profile.toolsAndTech) ? profile.toolsAndTech.join('\n') : ''
+    ]
+      .filter(Boolean)
+      .join('\n');
+    syncMandatorySkillsFromList(profile.mustHaveSkills ?? [], {
+      defaultMonths,
+      contextText
+    });
   };
 
   const handleRunProfile = async () => {
@@ -199,12 +399,11 @@ export default function NewJobPage() {
         return Number.isFinite(parsed) ? parsed : null;
       };
 
-      const aiJobProfile = {
-        version: profileVersion || 'v1',
-        summary: profileFormData.summary.trim(),
-        mustHaveSkills: multilineToList(profileFormData.mustHaveSkills),
-        niceToHaveSkills: multilineToList(profileFormData.niceToHaveSkills),
-        targetTitles: multilineToList(profileFormData.targetTitles),
+const aiJobProfile = {
+  version: profileVersion || 'v1',
+  summary: profileFormData.summary.trim(),
+  niceToHaveSkills: multilineToList(profileFormData.niceToHaveSkills),
+  targetTitles: multilineToList(profileFormData.targetTitles),
         responsibilities: multilineToList(profileFormData.responsibilities),
         toolsAndTech: multilineToList(profileFormData.toolsAndTech),
         domainKeywords: multilineToList(profileFormData.domainKeywords),
@@ -214,6 +413,21 @@ export default function NewJobPage() {
         preferredExperienceYears: parseYears(profileFormData.preferredExperienceYears),
         locationConstraints: profileFormData.locationConstraints.trim() || null
       };
+
+      let mandatorySkillRequirementsPayload = mandatorySkills
+        .map(item => ({
+          skill: item.skill.trim(),
+          requiredMonths: Math.max(0, Math.min(1200, Math.round(item.requiredMonths ?? 0)))
+        }))
+        .filter(item => item.skill.length > 0)
+        .slice(0, 30);
+
+      if (mandatorySkillRequirementsPayload.length === 0) {
+        mandatorySkillRequirementsPayload = aiMustHaveSkills.slice(0, 30).map(skill => ({
+          skill,
+          requiredMonths: 0
+        }));
+      }
 
       const jobData = {
         title: formData.title.trim(),
@@ -229,7 +443,8 @@ export default function NewJobPage() {
         companyName: formData.companyName.trim(),
         applicationQuery: formData.applicationQuery.trim() || null,
         aiJobProfile,
-        aiSummary: aiJobProfile.summary
+        aiSummary: aiJobProfile.summary,
+        mandatorySkillRequirements: mandatorySkillRequirementsPayload
       };
 
       const response = await fetch('/api/jobs', {
@@ -474,19 +689,6 @@ export default function NewJobPage() {
                   <Row className="gy-3">
                     <Col md={6}>
                       <Form.Group>
-                        <Form.Label>Must-have Skills</Form.Label>
-                        <Form.Control
-                          as="textarea"
-                          rows={4}
-                          value={profileFormData.mustHaveSkills}
-                          onChange={(e) => handleProfileChange('mustHaveSkills', e.target.value)}
-                          placeholder="One skill per line"
-                        />
-                        <Form.Text className="text-muted">Required for top candidates.</Form.Text>
-                      </Form.Group>
-                    </Col>
-                    <Col md={6}>
-                      <Form.Group>
                         <Form.Label>Nice-to-have Skills</Form.Label>
                         <Form.Control
                           as="textarea"
@@ -611,6 +813,142 @@ export default function NewJobPage() {
                       </Form.Group>
                     </Col>
                   </Row>
+
+                  {aiMustHaveSkills.length > 0 && (
+                    <div className="mt-3">
+                      <Form.Label>Must-have Skills (AI suggested)</Form.Label>
+                      <div className="d-flex flex-wrap gap-2">
+                        {aiMustHaveSkills.map((skill, index) => (
+                          <Badge bg="secondary" className="fw-normal" key={`${skill}-${index}`}>
+                            {skill}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4">
+                  <div className="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3 mb-3">
+                    <div>
+                      <h5 className="fw-semibold mb-1">Mandatory Skills & Experience Checks</h5>
+                      <p className="text-muted small mb-0">
+                        Add up to 30 critical skills and the minimum months of experience required. Leave months at 0 to track presence only.
+                      </p>
+                    </div>
+                    <div>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        type="button"
+                        disabled={mandatorySkills.length >= 30}
+                        onClick={() => {
+                          resetNewMandatoryInputs();
+                          setAddingMandatorySkill(true);
+                        }}
+                      >
+                        <i className="bi bi-plus-circle me-1" />
+                        Add Skill
+                      </Button>
+                    </div>
+                  </div>
+
+                  {addingMandatorySkill && (
+                    <div className="border rounded bg-light p-3 mb-3">
+                      <Row className="g-3 align-items-end">
+                        <Col md={6}>
+                          <Form.Group className="mb-0">
+                            <Form.Label className="small fw-semibold">Skill *</Form.Label>
+                            <Form.Control
+                              size="sm"
+                              type="text"
+                              value={newMandatorySkill}
+                              onChange={(e) => setNewMandatorySkill(e.target.value)}
+                              placeholder="e.g., React"
+                              autoFocus
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={3}>
+                          <Form.Group className="mb-0">
+                            <Form.Label className="small fw-semibold">Required Months</Form.Label>
+                            <Form.Control
+                              size="sm"
+                              type="number"
+                              min={0}
+                              max={1200}
+                              value={newMandatoryMonths}
+                              onChange={(e) => setNewMandatoryMonths(e.target.value)}
+                              placeholder="0"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={3} className="d-flex gap-2">
+                          <Button size="sm" variant="primary" type="button" onClick={handleAddMandatorySkill}>
+                            Save
+                          </Button>
+                          <Button size="sm" variant="outline-secondary" type="button" onClick={handleCancelAddMandatorySkill}>
+                            Cancel
+                          </Button>
+                        </Col>
+                      </Row>
+                    </div>
+                  )}
+
+                  {mandatorySkills.length > 0 ? (
+                    <div className="table-responsive">
+                      <table className="table table-sm align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '4rem' }}>#</th>
+                            <th>Skill</th>
+                            <th style={{ width: '12rem' }}>Required Months</th>
+                            <th style={{ width: '5rem' }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mandatorySkills.map((item, index) => (
+                            <tr key={`${item.skill}-${index}`}>
+                              <td className="text-muted">{index + 1}</td>
+                              <td>
+                                <Form.Control
+                                  size="sm"
+                                  type="text"
+                                  value={item.skill}
+                                  onChange={(e) => handleMandatorySkillChange(index, 'skill', e.target.value)}
+                                />
+                              </td>
+                              <td>
+                                <Form.Control
+                                  size="sm"
+                                  type="number"
+                                  min={0}
+                                  max={1200}
+                                  value={item.requiredMonths}
+                                  onChange={(e) => handleMandatorySkillChange(index, 'requiredMonths', e.target.value)}
+                                />
+                              </td>
+                              <td className="text-end">
+                                <Button
+                                  variant="outline-danger"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => handleRemoveMandatorySkill(index)}
+                                >
+                                  <i className="bi bi-trash" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <Alert variant="light" className="border border-secondary-subtle text-muted mb-0">
+                      <i className="bi bi-info-circle me-2" />
+                      No mandatory skills added yet. Sync from the must-have list or add skills manually above.
+                    </Alert>
+                  )}
                 </div>
 
                 <div className="d-flex justify-content-end gap-2">

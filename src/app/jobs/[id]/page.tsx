@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Card, Row, Col, Badge, Button, Alert, Spinner } from 'react-bootstrap';
 import DataTable from '@/components/DataTable';
@@ -29,6 +29,7 @@ interface Job {
   aiJobProfileUpdatedAt?: string | null;
   aiJobProfileVersion?: string | null;
   aiJobProfile?: JobProfile | null;
+  mandatorySkillRequirements?: MandatorySkillRequirement[] | null;
 }
 
 interface JobProfile {
@@ -45,6 +46,48 @@ interface JobProfile {
   disqualifiers: string[];
   toolsAndTech: string[];
 }
+
+interface MandatorySkillRequirement {
+  skill: string;
+  requiredMonths: number;
+}
+
+const computeDefaultMonths = (profile: JobProfile | null | undefined) => {
+  const years =
+    (typeof profile?.requiredExperienceYears === 'number' && profile.requiredExperienceYears > 0
+      ? profile.requiredExperienceYears
+      : null) ??
+    (typeof profile?.preferredExperienceYears === 'number' && profile.preferredExperienceYears > 0
+      ? profile.preferredExperienceYears
+      : null);
+
+  if (!years || !Number.isFinite(years)) {
+    return 12;
+  }
+
+  const months = Math.round(years * 12);
+  return Math.max(6, Math.min(1200, months));
+};
+
+const coerceMandatorySkillRequirements = (input: unknown): MandatorySkillRequirement[] => {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const result: MandatorySkillRequirement[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue;
+    const record = item as Record<string, unknown>;
+    const skill = typeof record.skill === 'string' ? record.skill.trim() : '';
+    if (!skill) continue;
+    const key = skill.toLowerCase();
+    if (seen.has(key)) continue;
+    const numeric = Number(record.requiredMonths ?? record.months ?? 0);
+    const months = Number.isFinite(numeric) && numeric >= 0 ? Math.min(1200, Math.round(numeric)) : 0;
+    result.push({ skill, requiredMonths: months });
+    seen.add(key);
+    if (result.length >= 30) break;
+  }
+  return result;
+};
 
 const safeParseProfile = (json: string | null | undefined): JobProfile | null => {
   if (!json) return null;
@@ -126,6 +169,19 @@ export default function JobDetailPage() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const mandatoryRequirements = useMemo(() => {
+    const parsed = coerceMandatorySkillRequirements(job?.mandatorySkillRequirements ?? null);
+    if (parsed.length > 0) {
+      return parsed;
+    }
+    const fallbackSkills = jobProfile?.mustHaveSkills ?? [];
+    if (fallbackSkills.length === 0) {
+      return [];
+    }
+    const defaultMonths = computeDefaultMonths(jobProfile);
+    return fallbackSkills.slice(0, 30).map(skill => ({ skill, requiredMonths: defaultMonths }));
+  }, [job?.mandatorySkillRequirements, jobProfile?.mustHaveSkills]);
+  const hasMandatoryRequirements = mandatoryRequirements.length > 0;
 
   useEffect(() => {
     if (jobId) {
@@ -324,7 +380,6 @@ export default function JobDetailPage() {
                     </section>
                   )}
 
-                  {renderChipSection('Must-have Skills', jobProfile.mustHaveSkills)}
                   {renderChipSection('Nice-to-have Skills', jobProfile.niceToHaveSkills)}
                   {renderChipSection('Target Titles', jobProfile.targetTitles)}
                   {renderChipSection('Responsibilities', jobProfile.responsibilities)}
@@ -345,6 +400,69 @@ export default function JobDetailPage() {
                   <p className="mb-0">
                     Edit the job posting to trigger profile extraction, or ensure the OpenAI integration is configured.
                   </p>
+                </Alert>
+              )}
+            </Card.Body>
+          </Card>
+
+          <Card className="mb-4 border-0 shadow-sm">
+            <Card.Header className="bg-light border-0 py-3 d-flex justify-content-between align-items-center">
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-check2-square text-primary"></i>
+                <h5 className="mb-0 fw-semibold">Mandatory Skill Requirements</h5>
+              </div>
+              {hasMandatoryRequirements && (
+                <Badge bg="secondary" className="fw-normal">
+                  {mandatoryRequirements.length} skills tracked
+                </Badge>
+              )}
+            </Card.Header>
+            <Card.Body className="p-4">
+              {hasMandatoryRequirements ? (
+                <div className="table-responsive">
+                  <table className="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '4rem' }}>#</th>
+                        <th>Skill</th>
+                        <th style={{ width: '12rem' }}>Required Months</th>
+                        <th style={{ width: '12rem' }}>Check Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mandatoryRequirements.map((req, index) => (
+                        <tr key={`${req.skill}-${index}`}>
+                          <td className="text-muted">{index + 1}</td>
+                          <td>{req.skill}</td>
+                          <td>
+                            {req.requiredMonths > 0 ? (
+                              <Badge bg="info" text="dark" className="fw-normal">
+                                {req.requiredMonths} months
+                              </Badge>
+                            ) : (
+                              <span className="text-muted">0 (presence)</span>
+                            )}
+                          </td>
+                          <td>
+                            {req.requiredMonths > 0 ? (
+                              <Badge bg="success" className="fw-normal">
+                                Duration match
+                              </Badge>
+                            ) : (
+                              <Badge bg="secondary" className="fw-normal">
+                                Presence only
+                              </Badge>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Alert variant="light" className="border border-secondary-subtle text-muted mb-0">
+                  <i className="bi bi-info-circle me-2" />
+                  No mandatory skills configured. Update the job profile to add required skill thresholds for AI scoring.
                 </Alert>
               )}
             </Card.Body>

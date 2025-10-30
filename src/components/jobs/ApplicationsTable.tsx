@@ -410,21 +410,6 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       width: '160px'
     },
     {
-      id: 'skills',
-      name: 'Skills',
-      selector: (row: ApplicationRow) => row.skills || '',
-      sortable: true,
-      sortField: 'skills',
-      cell: (row: ApplicationRow) => (
-        <div style={{ wordWrap: 'break-word', whiteSpace: 'pre-wrap' }}>
-          {row.skills || '-'}
-        </div>
-      ),
-      minWidth: '200px',
-      maxWidth: '400px',
-      grow: 2
-    },
-    {
       id: 'experience',
       name: 'Experience',
       selector: (row: ApplicationRow) => row.experience ?? '',
@@ -433,6 +418,21 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       cell: (row: ApplicationRow) => (
         <div style={{ wordWrap: 'break-word', whiteSpace: 'pre-wrap' }}>
           {row.experience != null ? row.experience : '-'}
+        </div>
+      ),
+      minWidth: '200px',
+      maxWidth: '400px',
+      grow: 2
+    },
+    {
+      id: 'skills',
+      name: 'Skills',
+      selector: (row: ApplicationRow) => row.skills || '',
+      sortable: true,
+      sortField: 'skills',
+      cell: (row: ApplicationRow) => (
+        <div style={{ wordWrap: 'break-word', whiteSpace: 'pre-wrap' }}>
+          {row.skills || '-'}
         </div>
       ),
       minWidth: '200px',

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 import { refreshJobProfile, parseJobProfile, JobProfileSchema, sanitizeProfile, JobProfile } from '@/lib/ai/jobProfileService';
+import { parseSkillRequirementConfig } from '@/lib/ai/skillRequirements';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,6 +129,13 @@ async function POST(req: NextRequest) {
       jobData.aiJobProfileUpdatedAt = new Date();
       jobData.aiJobProfileVersion = manualProfile.version;
       jobData.aiSummary = manualProfile.summary;
+    }
+
+    const mandatorySkillRequirements = parseSkillRequirementConfig(body.mandatorySkillRequirements);
+    if (mandatorySkillRequirements.length > 0) {
+      jobData.mandatorySkillRequirements = mandatorySkillRequirements;
+    } else {
+      jobData.mandatorySkillRequirements = null;
     }
 
     const job = await prisma.job.create({

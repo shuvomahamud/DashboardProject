@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 import { refreshJobProfile, parseJobProfile, JobProfileSchema, sanitizeProfile, JobProfile } from '@/lib/ai/jobProfileService';
+import { parseSkillRequirementConfig } from '@/lib/ai/skillRequirements';
 
 export const dynamic = 'force-dynamic';
 
@@ -117,6 +118,9 @@ async function PUT(req: NextRequest) {
       updateData.aiJobProfileVersion = manualProfile.version;
       updateData.aiSummary = manualProfile.summary;
     }
+
+    const mandatorySkillRequirements = parseSkillRequirementConfig(body.mandatorySkillRequirements);
+    updateData.mandatorySkillRequirements = mandatorySkillRequirements.length > 0 ? mandatorySkillRequirements : null;
 
     const job = await prisma.job.update({
       where: { id: jobId },

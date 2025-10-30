@@ -129,7 +129,8 @@ export async function POST(req: NextRequest) {
                 description: true,
                 requirements: true,
                 aiSummary: true,
-                aiJobProfileJson: true
+                aiJobProfileJson: true,
+                mandatorySkillRequirements: true
               }
             }
           }
@@ -190,7 +191,8 @@ export async function POST(req: NextRequest) {
         title: jobRecord?.title ?? 'Unknown Role',
         description: jobRecord?.description ?? '',
         aiJobProfileJson: jobRecord?.aiJobProfileJson ?? null,
-        fallbackSummary: jobRecord?.aiSummary ?? jobRecord?.requirements ?? ''
+        fallbackSummary: jobRecord?.aiSummary ?? jobRecord?.requirements ?? '',
+        mandatorySkillRequirements: jobRecord?.mandatorySkillRequirements ?? null
       });
       const resumeId = job.resumeId;
       const runId = job.runId || 'worker';
