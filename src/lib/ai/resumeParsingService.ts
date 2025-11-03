@@ -1285,13 +1285,11 @@ export async function parseAndScoreResume(
     let matchScoreDetails: MatchScoreDetails | null = null;
     if (jobContext.jobProfile && validatedData.analysis) {
       try {
-        matchScoreDetails = computeProfileMatchScore(jobContext.jobProfile, validatedData.analysis);
-        if (jobContext.mandatorySkillRequirements.length > 0) {
-          matchScoreDetails.mandatorySkills = requirementSummary;
-          if (requirementSummary.allMet) {
-            matchScoreDetails.finalScore = 100;
-          }
-        }
+        matchScoreDetails = computeProfileMatchScore(
+          jobContext.jobProfile,
+          validatedData.analysis,
+          requirementSummary
+        );
         validatedData.scores.matchScore = matchScoreDetails.finalScore;
         (validatedData as any).computedMatchScore = matchScoreDetails;
       } catch (error) {
@@ -1306,7 +1304,6 @@ export async function parseAndScoreResume(
 
     if (jobContext.mandatorySkillRequirements.length > 0) {
       if (requirementSummary.allMet) {
-        validatedData.scores.matchScore = 100;
         resumeLogInfo('mandatory_skill_evaluation', {
           resumeId,
           requirements: jobContext.mandatorySkillRequirements.length,

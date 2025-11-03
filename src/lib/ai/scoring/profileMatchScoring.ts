@@ -12,14 +12,29 @@ export interface DimensionBreakdown {
   score: number;
 }
 
+export interface MandatoryContribution {
+  skill: string;
+  requiredMonths: number;
+  candidateMonths: number;
+  meetsRequirement: boolean;
+  deficitMonths: number;
+  maxContribution: number;
+  contribution: number;
+  ratio: number;
+}
+
 export interface MatchScoreDetails {
   baseScore: number;
   finalScore: number;
+  mandatoryScore: number;
+  mandatoryMaxPoints: number;
+  profileScore: number;
+  profileMaxPoints: number;
   penalties: {
     disqualifierPenalty: number;
-    mustHaveCapApplied: boolean;
   };
   breakdown: Record<string, DimensionBreakdown>;
+  mandatoryBreakdown: MandatoryContribution[];
   disqualifiersDetected: string[];
   notes: string | null;
   mandatorySkills?: SkillRequirementEvaluationSummary;
@@ -31,26 +46,89 @@ const DIMENSION_CONFIG: Array<{
   label: string;
   weight: number;
 }> = [
-  { profileKey: 'mustHaveSkills', analysisKey: 'mustHaveSkillsMatched', label: 'Must-have Skills', weight: 45 },
-  { profileKey: 'niceToHaveSkills', analysisKey: 'niceToHaveSkillsMatched', label: 'Nice-to-have Skills', weight: 15 },
-  { profileKey: 'targetTitles', analysisKey: 'targetTitlesMatched', label: 'Target Titles', weight: 10 },
-  { profileKey: 'responsibilities', analysisKey: 'responsibilitiesMatched', label: 'Responsibilities', weight: 5 },
-  { profileKey: 'toolsAndTech', analysisKey: 'toolsAndTechMatched', label: 'Tools & Technologies', weight: 10 },
-  { profileKey: 'domainKeywords', analysisKey: 'domainKeywordsMatched', label: 'Domain Keywords', weight: 5 },
-  { profileKey: 'certifications', analysisKey: 'certificationsMatched', label: 'Certifications', weight: 5 }
+  { profileKey: 'niceToHaveSkills', analysisKey: 'niceToHaveSkillsMatched', label: 'Nice-to-have Skills', weight: 30 },
+  { profileKey: 'targetTitles', analysisKey: 'targetTitlesMatched', label: 'Target Titles', weight: 20 },
+  { profileKey: 'responsibilities', analysisKey: 'responsibilitiesMatched', label: 'Responsibilities', weight: 10 },
+  { profileKey: 'toolsAndTech', analysisKey: 'toolsAndTechMatched', label: 'Tools & Technologies', weight: 20 },
+  { profileKey: 'domainKeywords', analysisKey: 'domainKeywordsMatched', label: 'Domain Keywords', weight: 10 }
 ];
 
 const DISQUALIFIER_PENALTY = 25;
-const MUST_HAVE_CAP = 40;
+const MANDATORY_TOTAL_POINTS = 70;
+const PROFILE_TOTAL_POINTS = 30;
 
 const normalize = (value: string) => value.trim().toLowerCase();
 
 const stripNotSpecified = (list: string[] | undefined | null) =>
   (list ?? []).filter(item => item && normalize(item) !== 'not specified');
 
+function computeMandatoryContribution(
+  summary: SkillRequirementEvaluationSummary | null | undefined
+): {
+  score: number;
+  maxPoints: number;
+  breakdown: MandatoryContribution[];
+  completed: number;
+  total: number;
+} {
+  const evaluations = summary?.evaluations ?? [];
+  if (!evaluations.length) {
+    return {
+      score: 0,
+      maxPoints: 0,
+      breakdown: [],
+      completed: 0,
+      total: 0
+    };
+  }
+
+  const maxPoints = MANDATORY_TOTAL_POINTS;
+  const perRequirement = evaluations.length > 0 ? maxPoints / evaluations.length : 0;
+  let score = 0;
+  let completed = 0;
+
+  const breakdown = evaluations.map<MandatoryContribution>(evaluation => {
+    const { requiredMonths, candidateMonths, meetsRequirement, deficitMonths } = evaluation;
+    let ratio = 0;
+    if (requiredMonths <= 0) {
+      ratio = evaluation.manualFound || evaluation.aiFound ? 1 : 0;
+    } else if (candidateMonths <= 0) {
+      ratio = 0;
+    } else {
+      ratio = Math.min(1, Math.max(0, candidateMonths / requiredMonths));
+    }
+
+    const contribution = perRequirement * ratio;
+    if (meetsRequirement) {
+      completed += 1;
+    }
+    score += contribution;
+
+    return {
+      skill: evaluation.skill,
+      requiredMonths,
+      candidateMonths,
+      meetsRequirement,
+      deficitMonths,
+      maxContribution: perRequirement,
+      contribution,
+      ratio
+    };
+  });
+
+  return {
+    score,
+    maxPoints,
+    breakdown,
+    completed,
+    total: evaluations.length
+  };
+}
+
 export function computeProfileMatchScore(
   profile: JobProfile,
-  analysis: ProfileAnalysis
+  analysis: ProfileAnalysis,
+  mandatorySummary?: SkillRequirementEvaluationSummary | null
 ): MatchScoreDetails {
   const breakdown: Record<string, DimensionBreakdown> = {};
 
@@ -60,9 +138,9 @@ export function computeProfileMatchScore(
   });
 
   const totalActiveWeight = activeDimensions.reduce((sum, dim) => sum + dim.weight, 0);
-  const weightScale = totalActiveWeight > 0 ? 100 / totalActiveWeight : 0;
+  const weightScale = totalActiveWeight > 0 ? PROFILE_TOTAL_POINTS / totalActiveWeight : 0;
 
-  let baseScore = 0;
+  let profileScore = 0;
 
   activeDimensions.forEach(config => {
     const profileItems = stripNotSpecified(profile[config.profileKey] as string[] | null | undefined);
@@ -87,7 +165,7 @@ export function computeProfileMatchScore(
     const scaledWeight = config.weight * weightScale;
     const dimensionScore = scaledWeight * ratio;
 
-    baseScore += dimensionScore;
+    profileScore += dimensionScore;
 
     breakdown[config.label] = {
       label: config.label,
@@ -100,6 +178,26 @@ export function computeProfileMatchScore(
     };
   });
 
+  const mandatoryResult = computeMandatoryContribution(mandatorySummary ?? null);
+  const mandatoryScore = mandatoryResult.score;
+  const mandatoryMaxPoints = mandatoryResult.maxPoints;
+
+  if (mandatoryResult.total > 0) {
+    const mandatoryRatio =
+      mandatoryMaxPoints > 0 ? Math.min(1, Math.max(0, mandatoryScore / mandatoryMaxPoints)) : 0;
+    breakdown['Mandatory Skills'] = {
+      label: 'Mandatory Skills',
+      available: mandatoryResult.total,
+      matched: mandatoryResult.completed,
+      weight: MANDATORY_TOTAL_POINTS,
+      scaledWeight: mandatoryMaxPoints,
+      ratio: mandatoryRatio,
+      score: mandatoryScore
+    };
+  }
+
+  const baseScore = mandatoryScore + profileScore;
+
   let finalScore = baseScore;
   let disqualifierPenalty = 0;
   const disqualifiersDetected = analysis.disqualifiersDetected ?? [];
@@ -109,28 +207,23 @@ export function computeProfileMatchScore(
     finalScore -= disqualifierPenalty;
   }
 
-  let mustHaveCapApplied = false;
-  const mustHaveProfile = stripNotSpecified(profile.mustHaveSkills);
-  if (
-    mustHaveProfile.length > 0 &&
-    Array.isArray(analysis.mustHaveSkillsMissing) &&
-    analysis.mustHaveSkillsMissing.length > 0
-  ) {
-    finalScore = Math.min(finalScore, MUST_HAVE_CAP);
-    mustHaveCapApplied = true;
-  }
-
   finalScore = Math.max(0, Math.min(100, Math.round(finalScore)));
+  const roundedBase = Math.max(0, Math.min(100, Math.round(baseScore)));
 
   return {
-    baseScore: Math.max(0, Math.min(100, Math.round(baseScore))),
+    baseScore: roundedBase,
     finalScore,
+    mandatoryScore: Math.max(0, Math.min(MANDATORY_TOTAL_POINTS, Math.round(mandatoryScore))),
+    mandatoryMaxPoints,
+    profileScore: Math.max(0, Math.min(PROFILE_TOTAL_POINTS, Math.round(profileScore))),
+    profileMaxPoints: PROFILE_TOTAL_POINTS,
     penalties: {
-      disqualifierPenalty,
-      mustHaveCapApplied
+      disqualifierPenalty
     },
     breakdown,
+    mandatoryBreakdown: mandatoryResult.breakdown,
     disqualifiersDetected,
-    notes: analysis.notes ?? null
+    notes: analysis.notes ?? null,
+    mandatorySkills: mandatorySummary ?? undefined
   };
 }
