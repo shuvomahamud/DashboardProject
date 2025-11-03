@@ -568,11 +568,12 @@ const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified 
    - **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
 4. **Dates:** \`YYYY\` or \`YYYY-MM\`. Use \`"Present"\` only inside the model, but **output** \`null\` for ongoing roles.
 5. **Arrays policy:** \`emails\`, \`phones\`, \`skills\`, \`education\`, \`employment\` are arrays; if none, use \`[]\`.
-6. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0-100**. Set \`matchScore\` to 0 (system recalculates) but you MUST provide a number. NEVER omit the scores object.
-7. **ANALYSIS REQUIRED:** The \`analysis\` object must exist exactly as shown in the schema. Arrays must contain strings (matching job profile wording when possible) or be \`[]\`.
-8. **Summary:** \`summary\` must be a **single string** at the root, <=140 chars. Never null/array/object. If unsure, use \`""\`.
-9. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
-10. **BE CONCISE:** Limit employment history to last 10 jobs max. Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
+6. **Skill experience:** Populate \`resume.skillExperience\` with key technologies. Each entry needs \`skill\`, integer \`months\` (0-1200) derived from timeline, optional \`confidence\` (0-1), concise \`evidence\` (<=120 chars), and \`lastUsed\` (\`YYYY[-MM]\` or null). Focus on the mandatory requirements provided.
+7. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0-100**. Set \`matchScore\` to 0 (system recalculates) but you MUST provide a number. NEVER omit the scores object.
+8. **ANALYSIS REQUIRED:** The \`analysis\` object must exist exactly as shown in the schema. Arrays must contain strings (matching job profile wording when possible) or be \`[]\`.
+9. **Summary:** \`summary\` must be a **single string** at the root, <=140 chars. Never null/array/object. If unsure, use \`""\`.
+10. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
+11. **BE CONCISE:** Limit employment history to last 10 jobs max. Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
 
 **WRONG examples (do not do):**
 
@@ -602,6 +603,24 @@ const formatYears = (value: number | null | undefined) => {
   return `${value} years`;
 };
 
+const formatMandatoryRequirements = (items: JobContext['mandatorySkillRequirements']) => {
+  if (!items || items.length === 0) {
+    return '- None provided.';
+  }
+
+  return items
+    .slice(0, 40)
+    .map(item => {
+      const months = item.requiredMonths ?? 0;
+      const label =
+        months > 0
+          ? `${months} month${months === 1 ? '' : 's'} required`
+          : 'presence only';
+      return `- ${item.skill}: ${label}`;
+    })
+    .join('\n');
+};
+
 // Enhanced user message template with proper fencing and structure
 function buildUserMessage(jobContext: JobContext, resumeText: string): string {
   const profile = jobContext.jobProfile;
@@ -620,6 +639,9 @@ function buildUserMessage(jobContext: JobContext, resumeText: string): string {
 - Location constraints: ${profile.locationConstraints ?? 'unspecified'}`
     : 'PROFILE SNAPSHOT: No structured profile available. Use job summary and description snippet.';
 
+  const mandatorySection = `MANDATORY SKILL REQUIREMENTS (feed into resume.skillExperience):
+${formatMandatoryRequirements(jobContext.mandatorySkillRequirements)}`;
+
   return `JOB CONTEXT
 Title: ${jobContext.jobTitle}
 
@@ -627,6 +649,8 @@ Summary:
 ${jobContext.jobDescriptionShort}
 
 ${profileSection}
+
+${mandatorySection}
 
 RAW DESCRIPTION SNIPPET:
 <<<JOB_DESCRIPTION
@@ -645,6 +669,9 @@ SCHEMA (return exactly this object; no extra keys):
       "totalExperienceYears": 0
     },
     "skills": ["string"],
+    "skillExperience": [
+      {"skill": "string", "months": 0, "confidence": 0.5, "evidence": "string|null", "lastUsed": "YYYY[-MM]|null"}
+    ],
     "education": [
       {"degree": "string", "institution": "string|null", "year": "string|null"}
     ],
@@ -678,6 +705,13 @@ ANALYSIS RULES (MANDATORY):
 - If nothing applies, return an empty array ([]) for that field.
 - Disqualifiers should list any risk factors (e.g., missing required documents, visa issues, location conflicts).
 - Notes may highlight nuance in <=150 chars or be null.
+
+SKILL EXPERIENCE RULES (MANDATORY):
+- Use resume.skillExperience to quantify experience for the mandatory requirements above plus other core skills that appear in the resume.
+- Derive months from timeline evidence (years × 12). Never output phrases like "8 years"—convert to months.
+- Only add a skill if the resume text clearly supports it; otherwise omit the entry.
+- Evidence should cite the role/company or project and timeframe in <=120 characters.
+- Set lastUsed to the most recent year/month mentioned for that skill, or null if unavailable. Confidence 0-1 (default 0.5 if unsure).
 
 SCORING PLACEHOLDER:
 - Set matchScore to 0 (the system will compute final points).
