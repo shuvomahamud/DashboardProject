@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import prisma from '@/lib/prisma';
 import { embedText, normalizeForEmbedding } from './embeddings';
+import { parseSkillRequirementConfig } from './skillRequirements';
 
 export interface EmbedJobResult {
   ok: boolean;
@@ -25,14 +26,96 @@ function computeContentHash(text: string): string {
   return createHash('sha256').update(normalized, 'utf8').digest('hex');
 }
 
+function valueToString(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === 'number' || typeof value === 'bigint' || typeof value === 'boolean') {
+    return `${value}`;
+  }
+
+  if (typeof value === 'object') {
+    const stringValue = (value as any)?.toString?.();
+    if (typeof stringValue === 'string' && stringValue !== '[object Object]') {
+      return stringValue;
+    }
+  }
+
+  return null;
+}
+
+function formatSalaryRange(min: unknown, max: unknown): string | null {
+  const minText = valueToString(min);
+  const maxText = valueToString(max);
+
+  if (!minText && !maxText) {
+    return null;
+  }
+
+  if (minText && maxText) {
+    return `${minText} - ${maxText}`;
+  }
+
+  if (minText) {
+    return `Minimum ${minText}`;
+  }
+
+  return `Maximum ${maxText}`;
+}
+
+function formatRequiredMonths(months: number): string | null {
+  if (!Number.isFinite(months) || months <= 0) {
+    return null;
+  }
+
+  const wholeMonths = Math.round(months);
+  const years = Math.floor(wholeMonths / 12);
+  const remainingMonths = wholeMonths % 12;
+
+  const parts: string[] = [];
+  if (years > 0) {
+    parts.push(years === 1 ? '1 year' : `${years} years`);
+  }
+  if (remainingMonths > 0 || years === 0) {
+    parts.push(remainingMonths === 1 ? '1 month' : `${remainingMonths} months`);
+  }
+
+  return parts.join(' ');
+}
+
+function formatMandatorySkills(input: unknown): string | null {
+  const requirements = parseSkillRequirementConfig(input);
+  if (requirements.length === 0) {
+    return null;
+  }
+
+  const skillText = requirements
+    .map(req => {
+      const duration = formatRequiredMonths(req.requiredMonths);
+      return duration ? `${req.skill} (${duration})` : req.skill;
+    })
+    .join(', ');
+
+  return skillText.length > 0 ? skillText : null;
+}
+
 function buildJobProfileText(job: {
   title: string;
   description: string | null;
   company?: { name: string } | null;
-  tags?: string | null;
   requirements?: string | null;
   location?: string | null;
-  salaryRange?: string | null;
+  salaryMin?: unknown;
+  salaryMax?: unknown;
+  employmentType?: string | null;
+  isRemote?: boolean | null;
+  mandatorySkillRequirements?: unknown;
 }): string {
   const parts: string[] = [];
   
@@ -61,14 +144,24 @@ function buildJobProfileText(job: {
     parts.push(`Requirements: ${job.requirements}`);
   }
   
-  // Skills/tags
-  if (job.tags) {
-    parts.push(`Skills: ${job.tags}`);
+  // Explicit mandatory skills
+  const mandatorySkills = formatMandatorySkills(job.mandatorySkillRequirements);
+  if (mandatorySkills) {
+    parts.push(`Mandatory Skills: ${mandatorySkills}`);
   }
   
   // Salary context
-  if (job.salaryRange) {
-    parts.push(`Salary: ${job.salaryRange}`);
+  const salaryRange = formatSalaryRange(job.salaryMin, job.salaryMax);
+  if (salaryRange) {
+    parts.push(`Salary: ${salaryRange}`);
+  }
+
+  if (job.employmentType) {
+    parts.push(`Employment Type: ${job.employmentType}`);
+  }
+
+  if (job.isRemote) {
+    parts.push('Remote Friendly Role');
   }
   
   return parts.join('\n\n');
@@ -84,9 +177,12 @@ export async function upsertJobEmbedding(jobId: number): Promise<EmbedJobResult>
         title: true,
         description: true,
         requirements: true,
-        tags: true,
         location: true,
-        salaryRange: true,
+        salaryMin: true,
+        salaryMax: true,
+        employmentType: true,
+        isRemote: true,
+        mandatorySkillRequirements: true,
         company: {
           select: {
             name: true

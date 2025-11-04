@@ -553,6 +553,132 @@ async function verifySkillMatchesWithAI(params: {
   }
 }
 
+type MandatoryRequirementStatus = 'met' | 'partial' | 'not_met';
+
+interface MandatoryRequirementAuditResult {
+  skill: string;
+  status: MandatoryRequirementStatus;
+  evidence: string | null;
+  confidence: number | null;
+}
+
+async function auditMandatoryRequirementsWithAI(params: {
+  jobTitle: string;
+  jobSummary: string;
+  resumeText: string;
+  requirements: JobContext['mandatorySkillRequirements'];
+}): Promise<MandatoryRequirementAuditResult[] | null> {
+  if (!process.env.OPENAI_API_KEY) {
+    return null;
+  }
+
+  const requirements = params.requirements ?? [];
+  if (requirements.length === 0) {
+    return [];
+  }
+
+  const client = getOpenAIClient();
+  const model =
+    process.env.OPENAI_MANDATORY_AUDIT_MODEL ||
+    process.env.OPENAI_JOB_PROFILE_MODEL ||
+    process.env.OPENAI_RESUME_MODEL ||
+    'gpt-4.1-mini';
+  const temperature = Number(process.env.OPENAI_MANDATORY_AUDIT_TEMPERATURE || 0);
+
+  const truncateText = (text: string, limit = 12_000) =>
+    text.length > limit ? `${text.slice(0, limit)}\n...[truncated]` : text;
+
+  const requirementLines = requirements.map(req => {
+    const months = typeof req.requiredMonths === 'number' && Number.isFinite(req.requiredMonths)
+      ? `${req.requiredMonths} months`
+      : 'evidence required';
+    return `- ${req.skill}: ${months} minimum.`;
+  });
+
+  const rules = [
+    'Classify each skill as "met", "partial", or "not_met".',
+    '"met" = resume explicitly describes owning the responsibility at the stated depth (planning, control, decision authority).',
+    '"partial" = resume shows some related activity but lacks ownership depth or quantified duration.',
+    '"not_met" = resume text has no direct evidence. Never assume unrelated leadership implies these skills.',
+    'For management terms (project, budget, scope, scheduling, stakeholders) require clear mention of managing/owning those areas.',
+    'Evidence must cite a concrete phrase, bullet, or responsibility from the resume. If none, set evidence to null.',
+    'Do not rely on implicit inferences like seniority, leading automation, or mentorship unless the text states managing the area directly.'
+  ];
+
+  const userMessage = [
+    `Job title: ${params.jobTitle}`,
+    params.jobSummary ? `Job summary: ${params.jobSummary}` : 'Job summary: (not provided)',
+    '',
+    'Mandatory requirements:',
+    requirementLines.length > 0 ? requirementLines.join('\n') : '- (none)',
+    '',
+    'Evaluation rules:',
+    rules.map(rule => `- ${rule}`).join('\n'),
+    '',
+    'Resume (redacted):',
+    truncateText(params.resumeText)
+  ].join('\n');
+
+  try {
+    const response = await client.chat.completions.create({
+      model,
+      temperature,
+      max_tokens: 900,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You audit whether a resume satisfies mandatory job requirements. '
+            + 'Respond ONLY with JSON of the shape {"results":[{"skill":"string","status":"met|partial|not_met","evidence":"string|null","confidence":0-1}]}. '
+            + 'Do not add extra keys. Only mark "met" if the resume text explicitly demonstrates the responsibility.'
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ]
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return null;
+    }
+
+    const parsed = JSON.parse(content);
+    const items = Array.isArray(parsed?.results) ? parsed.results : [];
+
+    const sanitized: MandatoryRequirementAuditResult[] = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const skill = typeof item.skill === 'string' ? item.skill.trim() : '';
+      const statusRaw = typeof item.status === 'string' ? item.status.trim().toLowerCase() : '';
+      if (!skill || !['met', 'partial', 'not_met'].includes(statusRaw)) continue;
+      const evidence =
+        typeof item.evidence === 'string'
+          ? item.evidence.slice(0, 200).trim() || null
+          : null;
+      const confidence =
+        typeof item.confidence === 'number' && Number.isFinite(item.confidence)
+          ? Math.max(0, Math.min(1, item.confidence))
+          : null;
+      sanitized.push({
+        skill,
+        status: statusRaw as MandatoryRequirementStatus,
+        evidence,
+        confidence
+      });
+    }
+
+    return sanitized;
+  } catch (error) {
+    resumeLogWarn('mandatory_audit_ai_error', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return null;
+  }
+}
+
 // Enhanced system message with numbered hard rules
 const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified JSON** that matches the schema below.
 
@@ -1250,7 +1376,102 @@ export async function parseAndScoreResume(
       aiExtraTools = [];
     }
 
-    const aiSkillExperiences = parseAiSkillExperience(validatedData.resume.skillExperience);
+    let aiSkillExperiences = parseAiSkillExperience(validatedData.resume.skillExperience);
+
+    const mandatoryAuditResults = await auditMandatoryRequirementsWithAI({
+      jobTitle: jobContext.jobTitle,
+      jobSummary: jobContext.jobDescriptionShort,
+      resumeText: processedText,
+      requirements: jobContext.mandatorySkillRequirements ?? []
+    });
+
+    if (mandatoryAuditResults && mandatoryAuditResults.length > 0) {
+      const requirementMap = new Map(
+        (jobContext.mandatorySkillRequirements ?? []).map(req => [normalizeValue(req.skill), req])
+      );
+      const experienceMap = new Map(
+        aiSkillExperiences.map(entry => [normalizeValue(entry.skill), entry])
+      );
+
+      const removeKeys = new Set<string>();
+      const addedEntries: SkillExperienceEntry[] = [];
+      const removedSkills: string[] = [];
+      const downgradedSkills: string[] = [];
+      const confirmedSkills: string[] = [];
+
+      for (const result of mandatoryAuditResults) {
+        const key = normalizeValue(result.skill);
+        const requirement = requirementMap.get(key);
+        if (!requirement) {
+          continue;
+        }
+
+        const existing = experienceMap.get(key) ?? null;
+        if (result.status === 'met') {
+          confirmedSkills.push(requirement.skill);
+          if (existing) {
+            if (result.evidence) {
+              existing.evidence = result.evidence;
+            }
+            if (typeof result.confidence === 'number') {
+              existing.confidence = Math.max(
+                Math.min(1, result.confidence),
+                existing.confidence ?? 0.5
+              );
+            }
+          } else {
+            const months =
+              typeof requirement.requiredMonths === 'number' && Number.isFinite(requirement.requiredMonths)
+                ? Math.max(0, Math.round(requirement.requiredMonths))
+                : 0;
+            const newEntry: SkillExperienceEntry = {
+              skill: requirement.skill,
+              months,
+              confidence: result.confidence ?? 0.6,
+              evidence: result.evidence,
+              lastUsed: null,
+              source: 'mandatory_audit'
+            };
+            addedEntries.push(newEntry);
+            experienceMap.set(key, newEntry);
+          }
+        } else {
+          removeKeys.add(key);
+          if (existing) {
+            experienceMap.delete(key);
+          }
+          if (result.status === 'partial') {
+            downgradedSkills.push(requirement.skill);
+          } else {
+            removedSkills.push(requirement.skill);
+          }
+        }
+      }
+
+      if (removeKeys.size > 0) {
+        aiSkillExperiences = aiSkillExperiences.filter(
+          entry => !removeKeys.has(normalizeValue(entry.skill))
+        );
+      }
+
+      if (addedEntries.length > 0) {
+        aiSkillExperiences = [...aiSkillExperiences, ...addedEntries];
+      }
+
+      if (
+        removedSkills.length > 0 ||
+        downgradedSkills.length > 0 ||
+        confirmedSkills.length > 0
+      ) {
+        resumeLogInfo('mandatory_audit_results', {
+          resumeId,
+          removed: removedSkills,
+          downgraded: downgradedSkills,
+          confirmed: confirmedSkills
+        });
+      }
+    }
+
     validatedData.resume.skillExperience = aiSkillExperiences;
 
     const requirementSummary: SkillRequirementEvaluationSummary = evaluateSkillRequirements(
