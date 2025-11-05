@@ -74,19 +74,30 @@ export async function GET() {
     ]);
 
     // Format for UI
-    const formatRun = (run: any) => ({
-      id: run.id,
-      jobId: run.job_id,
-      jobTitle: run.Job.title,
-      status: run.status,
-      progress: parseFloat(run.progress.toString()),
-      processedMessages: run.processed_messages,
-      totalMessages: run.total_messages,
-      lastError: run.last_error,
-      createdAt: run.created_at.toISOString(),
-      startedAt: run.started_at?.toISOString(),
-      finishedAt: run.finished_at?.toISOString()
-    });
+    const formatRun = (run: any) => {
+      const rawDuration = run.processing_duration_ms;
+      const durationMs =
+        typeof rawDuration === 'number'
+          ? rawDuration
+          : (run.started_at && run.finished_at
+              ? Math.max(0, run.finished_at.getTime() - run.started_at.getTime())
+              : null);
+
+      return {
+        id: run.id,
+        jobId: run.job_id,
+        jobTitle: run.Job.title,
+        status: run.status,
+        progress: run.progress ? parseFloat(run.progress.toString()) : 0,
+        processedMessages: run.processed_messages,
+        totalMessages: run.total_messages,
+        lastError: run.last_error,
+        createdAt: run.created_at.toISOString(),
+        startedAt: run.started_at?.toISOString(),
+        finishedAt: run.finished_at?.toISOString(),
+        timeTakenMs: durationMs
+      };
+    };
 
     return NextResponse.json({
       inProgress: inProgressRuns[0] ? formatRun(inProgressRuns[0]) : null,

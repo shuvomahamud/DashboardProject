@@ -16,6 +16,7 @@ interface ImportRun {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  timeTakenMs?: number | null;
 }
 
 interface ImportQueueSummary {
@@ -115,6 +116,43 @@ export default function ImportQueueStatus() {
   }
 
   const hasActivity = summary.inProgress || summary.enqueued.length > 0;
+
+  const formatDuration = (ms?: number | null) => {
+    if (ms === null || ms === undefined) {
+      return null;
+    }
+    if (ms <= 0) {
+      return '0s';
+    }
+    const totalSeconds = Math.round(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const parts: string[] = [];
+    if (hours > 0) {
+      parts.push(`${hours}h`);
+    }
+    if (minutes > 0) {
+      parts.push(`${minutes}m`);
+    }
+    if (seconds > 0 || parts.length === 0) {
+      parts.push(`${seconds}s`);
+    }
+    return parts.join(' ');
+  };
+
+  const deriveTimeTaken = (run: ImportRun) => {
+    if (run.timeTakenMs !== null && run.timeTakenMs !== undefined) {
+      return run.timeTakenMs;
+    }
+    if (run.startedAt && run.finishedAt) {
+      const started = new Date(run.startedAt).getTime();
+      const finished = new Date(run.finishedAt).getTime();
+      return Math.max(0, finished - started);
+    }
+    return null;
+  };
 
   return (
     <Card className="mb-4">
@@ -264,35 +302,43 @@ export default function ImportQueueStatus() {
               <i className="bi bi-check-circle me-2"></i>
               Recently Finished
             </h6>
-            {summary.recentDone.map((run) => (
-              <div key={run.id} className="border rounded p-2 mb-2">
-                <div className="d-flex justify-content-between align-items-start">
-                  <div className="flex-grow-1">
-                    <div className="d-flex align-items-center gap-2">
-                      <strong>{run.jobTitle}</strong>
-                      <Badge bg="secondary" pill>Job #{run.jobId}</Badge>
-                      {getStatusBadge(run.status)}
+            {summary.recentDone.map((run) => {
+              const timeTakenLabel = formatDuration(deriveTimeTaken(run));
+              return (
+                <div key={run.id} className="border rounded p-2 mb-2">
+                  <div className="d-flex justify-content-between align-items-start">
+                    <div className="flex-grow-1">
+                      <div className="d-flex align-items-center gap-2">
+                        <strong>{run.jobTitle}</strong>
+                        <Badge bg="secondary" pill>Job #{run.jobId}</Badge>
+                        {getStatusBadge(run.status)}
+                      </div>
+                      {run.finishedAt && (
+                        <div className="text-muted small">
+                          Finished {formatDistanceToNow(new Date(run.finishedAt), { addSuffix: true })}
+                        </div>
+                      )}
+                      {timeTakenLabel && (
+                        <div className="text-muted small">
+                          Time Taken: {timeTakenLabel}
+                        </div>
+                      )}
+                      {run.processedMessages !== undefined && (
+                        <div className="text-muted small">
+                          Processed {run.processedMessages} messages
+                        </div>
+                      )}
+                      {run.status === 'failed' && run.lastError && (
+                        <div className="text-danger small mt-1">
+                          Error: {run.lastError.substring(0, 100)}
+                          {run.lastError.length > 100 && '...'}
+                        </div>
+                      )}
                     </div>
-                    {run.finishedAt && (
-                      <div className="text-muted small">
-                        Finished {formatDistanceToNow(new Date(run.finishedAt), { addSuffix: true })}
-                      </div>
-                    )}
-                    {run.status === 'succeeded' && run.processedMessages !== undefined && (
-                      <div className="text-muted small">
-                        Processed {run.processedMessages} messages
-                      </div>
-                    )}
-                    {run.status === 'failed' && run.lastError && (
-                      <div className="text-danger small mt-1">
-                        Error: {run.lastError.substring(0, 100)}
-                        {run.lastError.length > 100 && '...'}
-                      </div>
-                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

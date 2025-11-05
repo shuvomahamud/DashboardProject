@@ -133,6 +133,12 @@ export async function POST(req: NextRequest) {
     });
     logMetric('processor_run_active', { runId: run.id, jobId: run.job_id, totalMessages: run.total_messages ?? 0 });
 
+    const runStartDate = run.started_at ?? run.created_at;
+    const computeDurationMs = (finishedAt: Date = new Date()) => {
+      const start = runStartDate instanceof Date ? runStartDate : new Date(runStartDate);
+      return Math.max(0, finishedAt.getTime() - start.getTime());
+    };
+
     // Check if canceled
     if (run.status === 'canceled') {
       logInfo('run canceled detected', { runId: run.id });
@@ -142,11 +148,13 @@ export async function POST(req: NextRequest) {
     // Validate required fields
     if (!run.mailbox || !run.search_text) {
       logError('missing mailbox or search_text', { runId: run.id });
+      const finishedAt = new Date();
       await prisma.import_email_runs.update({
         where: { id: run.id },
         data: {
           status: 'failed',
-          finished_at: new Date(),
+          finished_at: finishedAt,
+          processing_duration_ms: computeDurationMs(finishedAt),
           last_error: 'Missing mailbox or search_text configuration'
         }
       });
@@ -548,13 +556,16 @@ export async function POST(req: NextRequest) {
         processedInSlice: processedCount
       });
 
+      const finishedAt = new Date();
+      const durationMs = computeDurationMs(finishedAt);
       const runUpdateData = {
         status: finalStatus,
-        finished_at: new Date(),
+        finished_at: finishedAt,
+        processing_duration_ms: durationMs,
         progress: 1.0,
         processed_messages: completedCount,
         last_error: lastError
-      } as const;
+      };
 
       if (timeLeft(startTime) <= 5000) {
         await prisma.import_email_runs.update({
@@ -693,11 +704,15 @@ export async function POST(req: NextRequest) {
 
       if (run) {
         logError('marking run as failed after processor error', { runId: run.id, error: error?.message });
+        const runStart = run.started_at ?? run.created_at ?? new Date();
+        const finishedAt = new Date();
+        const durationMs = Math.max(0, finishedAt.getTime() - new Date(runStart).getTime());
         await prisma.import_email_runs.update({
           where: { id: run.id },
           data: {
             status: 'failed',
-            finished_at: new Date(),
+            finished_at: finishedAt,
+            processing_duration_ms: durationMs,
             last_error: error.message
           }
         });

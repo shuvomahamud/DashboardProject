@@ -463,6 +463,7 @@ model import_email_runs {
   processed_messages Int                  @default(0)
   attempts           Int                  @default(0)
   last_error         String?
+  processing_duration_ms Int?             @db.Integer
   since              DateTime?            @db.Timestamptz(6)
   page_cursor        String?
   meta               Json?

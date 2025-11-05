@@ -15,7 +15,30 @@ export async function POST(
   try {
     const { runId } = params;
 
-    // Update status to canceled
+    const run = await prisma.import_email_runs.findFirst({
+      where: {
+        id: runId,
+        status: { in: ['enqueued', 'running'] }
+      },
+      select: {
+        id: true,
+        status: true,
+        started_at: true,
+        created_at: true
+      }
+    });
+
+    if (!run) {
+      return NextResponse.json(
+        { error: 'Run not found or already finished' },
+        { status: 404 }
+      );
+    }
+
+    const finishedAt = new Date();
+    const start = run.started_at ?? run.created_at;
+    const durationMs = Math.max(0, finishedAt.getTime() - start.getTime());
+
     const updated = await prisma.import_email_runs.updateMany({
       where: {
         id: runId,
@@ -23,7 +46,8 @@ export async function POST(
       },
       data: {
         status: 'canceled',
-        finished_at: new Date()
+        finished_at: finishedAt,
+        processing_duration_ms: durationMs
       }
     });
 
