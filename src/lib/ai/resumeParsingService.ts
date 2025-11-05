@@ -4,6 +4,7 @@ import { z } from 'zod';
 import prisma, { withRetry } from '../prisma';
 import { getOpenAIClient } from './openaiClient';
 import type { JobContext } from './jobContext';
+import { getResumeParserPrompt } from './prompts/resumeParserPrompt';
 import { computeProfileMatchScore } from './scoring/profileMatchScoring';
 import type { MatchScoreDetails } from './scoring/profileMatchScoring';
 import type { JobProfile } from './jobProfileService';
@@ -56,10 +57,48 @@ const stringArray = z.union([z.array(z.string()), z.string()])
   .transform(v => Array.isArray(v) ? v : (v ? [v] : []))
   .default([]);
 
-// Enhanced schema that includes all three scores with hardened validation
+const months0to1200Optional = z
+  .union([z.number(), z.string(), z.null(), z.undefined()])
+  .transform(value => {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const numeric = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return Math.max(0, Math.min(1200, Math.round(numeric)));
+  });
+
+const confidenceOptional = z
+  .union([z.number(), z.string(), z.null(), z.undefined()])
+  .transform(value => {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const numeric = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return Math.max(0, Math.min(1, numeric));
+  });
+
+const mandatoryAuditEntrySchema = z.object({
+  skill: z.string(),
+  status: z.enum(['met', 'partial', 'not_met']),
+  observedMonths: months0to1200Optional,
+  evidence: stringOrNull,
+  confidence: confidenceOptional
+}).transform(entry => ({
+  skill: entry.skill,
+  status: entry.status,
+  observedMonths: entry.observedMonths,
+  evidence: entry.evidence,
+  confidence: entry.confidence
+}));
+
+// Enhanced schema for analysis output
 export const AnalysisSchema = z.object({
-  mustHaveSkillsMatched: stringArray,
-  mustHaveSkillsMissing: stringArray,
   niceToHaveSkillsMatched: stringArray,
   targetTitlesMatched: stringArray,
   responsibilitiesMatched: stringArray,
@@ -67,13 +106,9 @@ export const AnalysisSchema = z.object({
   domainKeywordsMatched: stringArray,
   certificationsMatched: stringArray,
   disqualifiersDetected: stringArray,
-  mandatorySkillsCovered: stringArray,
-  mandatorySkillsMissing: stringArray,
-  mandatorySkillsManualMissed: stringArray,
+  mandatorySkillsAudit: z.array(mandatoryAuditEntrySchema).default([]),
   notes: stringOrNull
 }).default({
-  mustHaveSkillsMatched: [],
-  mustHaveSkillsMissing: [],
   niceToHaveSkillsMatched: [],
   targetTitlesMatched: [],
   responsibilitiesMatched: [],
@@ -81,9 +116,7 @@ export const AnalysisSchema = z.object({
   domainKeywordsMatched: [],
   certificationsMatched: [],
   disqualifiersDetected: [],
-  mandatorySkillsCovered: [],
-  mandatorySkillsMissing: [],
-  mandatorySkillsManualMissed: [],
+  mandatorySkillsAudit: [],
   notes: null
 });
 
@@ -114,17 +147,17 @@ export const EnhancedResumeParseSchema = z.object({
     employment: z.array(z.object({
       company: z.string(),
       title: stringOrNull,
-      startDate: stringOrNull,          // "YYYY", "YYYY-MM", or null
-      endDate: stringOrNull,            // "YYYY", "YYYY-MM", "Present" (we'll normalize), or null
+      startDate: stringOrNull,
+      endDate: stringOrNull,
       employmentType: stringOrNull
-    })).default([]),
-    notes: stringOrNull
+    })).optional(),
+    notes: stringOrNull.optional()
   }),
   scores: z.object({
-    matchScore: number0to100,
-    companyScore: number0to100,
-    fakeScore: number0to100
-  }),
+    matchScore: number0to100.optional(),
+    companyScore: number0to100.optional(),
+    fakeScore: number0to100.optional()
+  }).optional(),
   analysis: AnalysisSchema,
   summary: z.string()
 });
@@ -241,10 +274,6 @@ function sanitizeModelOutput(raw: any) {
         ['institution', 'year'].forEach(k => fixScalar(e, k));
       });
     }
-    // Fix notes field
-    if (raw?.resume) {
-      fixScalar(raw.resume, 'notes');
-    }
 
     if (raw?.resume?.skillExperience) {
       try {
@@ -258,20 +287,6 @@ function sanitizeModelOutput(raw: any) {
 
     // NEW: normalize summary last
     coerceSummary(raw);
-
-    // Clamp scores before schema validation
-    if (raw?.scores) {
-      const scores = raw.scores;
-      if (typeof scores.matchScore === 'number') {
-        scores.matchScore = Math.max(0, Math.min(100, scores.matchScore));
-      }
-      if (typeof scores.companyScore === 'number') {
-        scores.companyScore = Math.max(0, Math.min(100, scores.companyScore));
-      }
-      if (typeof scores.fakeScore === 'number') {
-        scores.fakeScore = Math.max(0, Math.min(100, scores.fakeScore));
-      }
-    }
   } catch {
     // Silently handle any sanitization errors
   }
@@ -558,8 +573,31 @@ type MandatoryRequirementStatus = 'met' | 'partial' | 'not_met';
 interface MandatoryRequirementAuditResult {
   skill: string;
   status: MandatoryRequirementStatus;
+  observedMonths: number | null;
   evidence: string | null;
   confidence: number | null;
+}
+
+function extractAuditResultsFromAnalysis(analysis: ProfileAnalysis | null | undefined): MandatoryRequirementAuditResult[] {
+  if (!analysis?.mandatorySkillsAudit || analysis.mandatorySkillsAudit.length === 0) {
+    return [];
+  }
+
+  return analysis.mandatorySkillsAudit
+    .map(entry => ({
+      skill: entry.skill?.trim?.() || entry.skill,
+      status: entry.status as MandatoryRequirementStatus,
+      observedMonths:
+        typeof entry.observedMonths === 'number' && Number.isFinite(entry.observedMonths)
+          ? Math.max(0, Math.min(1200, Math.round(entry.observedMonths)))
+          : null,
+      evidence: entry.evidence ?? null,
+      confidence:
+        typeof entry.confidence === 'number' && Number.isFinite(entry.confidence)
+          ? Math.max(0, Math.min(1, entry.confidence))
+          : null
+    }))
+    .filter(entry => typeof entry.skill === 'string' && entry.skill.length > 0);
 }
 
 async function auditMandatoryRequirementsWithAI(params: {
@@ -662,9 +700,20 @@ async function auditMandatoryRequirementsWithAI(params: {
         typeof item.confidence === 'number' && Number.isFinite(item.confidence)
           ? Math.max(0, Math.min(1, item.confidence))
           : null;
+      let observedMonths: number | null = null;
+      const rawMonths = (item as any).observedMonths;
+      if (typeof rawMonths === 'number' && Number.isFinite(rawMonths)) {
+        observedMonths = Math.max(0, Math.min(1200, Math.round(rawMonths)));
+      } else if (typeof rawMonths === 'string' && rawMonths.trim().length > 0) {
+        const numeric = Number(rawMonths);
+        if (Number.isFinite(numeric)) {
+          observedMonths = Math.max(0, Math.min(1200, Math.round(numeric)));
+        }
+      }
       sanitized.push({
         skill,
         status: statusRaw as MandatoryRequirementStatus,
+        observedMonths,
         evidence,
         confidence
       });
@@ -679,183 +728,6 @@ async function auditMandatoryRequirementsWithAI(params: {
   }
 }
 
-// Enhanced system message with numbered hard rules
-const SYSTEM_MESSAGE = `You are an expert resume parser. Return **only minified JSON** that matches the schema below.
-
-**CRITICAL: Your response MUST have exactly 4 root keys: "resume", "scores", "analysis", "summary". All four are REQUIRED.**
-
-**Hard requirements (follow all):**
-
-1. **Output:** JSON only. No prose, markdown, comments, or extra keys.
-2. **Root object keys**: EXACTLY \`resume\`, \`scores\`, \`analysis\`, \`summary\`. **ALL FOUR REQUIRED**. No others.
-3. **Scalars policy:** For these scalar fields -
-   \`resume.candidate.name\`, \`resume.candidate.linkedinUrl\`, \`resume.candidate.currentLocation\`,
-   \`resume.employment[i].title\`, \`resume.employment[i].startDate\`, \`resume.employment[i].endDate\`, \`resume.employment[i].employmentType\`,
-   - **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
-4. **Dates:** \`YYYY\` or \`YYYY-MM\`. Use \`"Present"\` only inside the model, but **output** \`null\` for ongoing roles.
-5. **Arrays policy:** \`emails\`, \`phones\`, \`skills\`, \`education\`, \`employment\` are arrays; if none, use \`[]\`.
-6. **Skill experience:** Populate \`resume.skillExperience\` with key technologies. Each entry needs \`skill\`, integer \`months\` (0-1200) derived from timeline, optional \`confidence\` (0-1), concise \`evidence\` (<=120 chars), and \`lastUsed\` (\`YYYY[-MM]\` or null). Focus on the mandatory requirements provided.
-7. **SCORES ARE MANDATORY:** The \`scores\` object with \`matchScore\`, \`companyScore\`, \`fakeScore\` MUST be included. All are integers **0-100**. Set \`matchScore\` to 0 (system recalculates) but you MUST provide a number. NEVER omit the scores object.
-8. **ANALYSIS REQUIRED:** The \`analysis\` object must exist exactly as shown in the schema. Arrays must contain strings (matching job profile wording when possible) or be \`[]\`.
-9. **Summary:** \`summary\` must be a **single string** at the root, <=140 chars. Never null/array/object. If unsure, use \`""\`.
-10. **Grounding:** Use only the job text and resume text. Do **not** invent facts. If company reputation is unclear, set \`companyScore\` to about **50**.
-11. **BE CONCISE:** Limit employment history to last 10 jobs max. Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
-
-**WRONG examples (do not do):**
-
-* \`"linkedinUrl": []\` (should be \`null\`)
-* \`"summary": ["Senior .NET dev", "React"]\` (should be \`"Senior .NET dev"\`)
-* Missing the \`scores\` object (MUST be present!)
-* Missing the \`summary\` field (MUST be present!)
-
-**Return complete JSON with resume, scores, analysis, and summary.**`;
-
-const formatList = (items: string[], max = 8) => {
-  if (!items || items.length === 0) {
-    return 'none';
-  }
-  const sliced = items.slice(0, max);
-  let text = sliced.join(', ');
-  if (items.length > sliced.length) {
-    text += ', ...';
-  }
-  return text;
-};
-
-const formatYears = (value: number | null | undefined) => {
-  if (value === null || value === undefined) {
-    return 'unspecified';
-  }
-  return `${value} years`;
-};
-
-const formatMandatoryRequirements = (items: JobContext['mandatorySkillRequirements']) => {
-  if (!items || items.length === 0) {
-    return '- None provided.';
-  }
-
-  return items
-    .slice(0, 40)
-    .map(item => {
-      const months = item.requiredMonths ?? 0;
-      const label =
-        months > 0
-          ? `${months} month${months === 1 ? '' : 's'} required`
-          : 'presence only';
-      return `- ${item.skill}: ${label}`;
-    })
-    .join('\n');
-};
-
-// Enhanced user message template with proper fencing and structure
-function buildUserMessage(jobContext: JobContext, resumeText: string): string {
-  const profile = jobContext.jobProfile;
-  const profileSection = profile
-    ? `PROFILE SNAPSHOT (AI extracted):
-- Must-have skills: ${formatList(profile.mustHaveSkills)}
-- Nice-to-have skills: ${formatList(profile.niceToHaveSkills)}
-- Target titles: ${formatList(profile.targetTitles)}
-- Responsibilities: ${formatList(profile.responsibilities)}
-- Tools & tech: ${formatList(profile.toolsAndTech)}
-- Domain keywords: ${formatList(profile.domainKeywords)}
-- Certifications: ${formatList(profile.certifications)}
-- Disqualifiers: ${formatList(profile.disqualifiers)}
-- Required experience: ${formatYears(profile.requiredExperienceYears)}
-- Preferred experience: ${formatYears(profile.preferredExperienceYears)}
-- Location constraints: ${profile.locationConstraints ?? 'unspecified'}`
-    : 'PROFILE SNAPSHOT: No structured profile available. Use job summary and description snippet.';
-
-  const mandatorySection = `MANDATORY SKILL REQUIREMENTS (feed into resume.skillExperience):
-${formatMandatoryRequirements(jobContext.mandatorySkillRequirements)}`;
-
-  return `JOB CONTEXT
-Title: ${jobContext.jobTitle}
-
-Summary:
-${jobContext.jobDescriptionShort}
-
-${profileSection}
-
-${mandatorySection}
-
-RAW DESCRIPTION SNIPPET:
-<<<JOB_DESCRIPTION
-${jobContext.jobDescriptionExcerpt}
-JOB_DESCRIPTION
-
-SCHEMA (return exactly this object; no extra keys):
-{
-  "resume": {
-    "candidate": {
-      "name": "string|null",
-      "emails": ["string"],
-      "phones": ["string"],
-      "linkedinUrl": "string|null",
-      "currentLocation": "string|null",
-      "totalExperienceYears": 0
-    },
-    "skills": ["string"],
-    "skillExperience": [
-      {"skill": "string", "months": 0, "confidence": 0.5, "evidence": "string|null", "lastUsed": "YYYY[-MM]|null"}
-    ],
-    "education": [
-      {"degree": "string", "institution": "string|null", "year": "string|null"}
-    ],
-    "employment": [
-      {"company": "string", "title": "string|null", "startDate": "YYYY[-MM]|null", "endDate": "YYYY[-MM]|null", "employmentType": "string|null"}
-    ],
-    "notes": "string|null"
-  },
-  "scores": {
-    "matchScore": 0,
-    "companyScore": 0,
-    "fakeScore": 0
-  },
-  "analysis": {
-    "mustHaveSkillsMatched": ["string"],
-    "mustHaveSkillsMissing": ["string"],
-    "niceToHaveSkillsMatched": ["string"],
-    "targetTitlesMatched": ["string"],
-    "responsibilitiesMatched": ["string"],
-    "toolsAndTechMatched": ["string"],
-    "domainKeywordsMatched": ["string"],
-    "certificationsMatched": ["string"],
-    "disqualifiersDetected": ["string"],
-    "notes": "string|null"
-  },
-  "summary": "string"
-}
-
-ANALYSIS RULES (MANDATORY):
-- List matched/missing items using EXACT wording from the job profile lists above whenever possible.
-- If nothing applies, return an empty array ([]) for that field.
-- Disqualifiers should list any risk factors (e.g., missing required documents, visa issues, location conflicts).
-- Notes may highlight nuance in <=150 chars or be null.
-
-SKILL EXPERIENCE RULES (MANDATORY):
-- Use resume.skillExperience to quantify experience for the mandatory requirements above plus other core skills that appear in the resume.
-- Derive months from timeline evidence (years × 12). Never output phrases like "8 years"—convert to months.
-- Only add a skill if the resume text clearly supports it; otherwise omit the entry.
-- Evidence should cite the role/company or project and timeframe in <=120 characters.
-- Set lastUsed to the most recent year/month mentioned for that skill, or null if unavailable. Confidence 0-1 (default 0.5 if unsure).
-
-SCORING PLACEHOLDER:
-- Set matchScore to 0 (the system will compute final points).
-- Continue estimating companyScore and fakeScore based on resume evidence only.
-
-RESUME (redacted):
-<<<RESUME_TEXT
-${resumeText}
-RESUME_TEXT
-
-REMINDER: Your response MUST include:
-1. "resume" object with all candidate data
-2. "scores" object with matchScore, companyScore, fakeScore (ALL REQUIRED!)
-3. "summary" string
-
-Return complete JSON now.`;
-}
-
 // Main parsing function - single call to gpt-4o-mini with no fallback
 async function callOpenAIForParsing(
   jobContext: JobContext,
@@ -866,8 +738,7 @@ async function callOpenAIForParsing(
     const model = process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini';
     const temperature = Number(process.env.OPENAI_TEMPERATURE || 0.1);
 
-    const systemMessage = SYSTEM_MESSAGE;
-    const userMessage = buildUserMessage(jobContext, redactedText);
+    const { systemMessage, userMessage } = getResumeParserPrompt(jobContext, redactedText);
 
     resumeLogInfo('openai request start', {
       model,
@@ -945,12 +816,6 @@ async function callOpenAIForParsing(
       };
     }
 
-    if (!parsedData?.scores) {
-      resumeLogError('openai response missing scores', {
-        keys: Object.keys(parsedData || {})
-      });
-    }
-
     return {
       success: true,
       data: parsedData,
@@ -978,21 +843,23 @@ function validateAndProcess(rawData: any): { valid: boolean; data?: EnhancedPars
 
     // Then validate with hardened schema
     const validated = EnhancedResumeParseSchema.parse(sanitized);
-    
-    // Clamp scores to 0-100 range
-    validated.scores.matchScore = Math.max(0, Math.min(100, Math.round(validated.scores.matchScore)));
-    validated.scores.companyScore = Math.max(0, Math.min(100, Math.round(validated.scores.companyScore)));
-    validated.scores.fakeScore = Math.max(0, Math.min(100, Math.round(validated.scores.fakeScore)));
+
+    // Normalize optional sections
+    validated.resume.employment = Array.isArray(validated.resume.employment)
+      ? validated.resume.employment
+      : [];
+    validated.resume.notes = typeof validated.resume.notes === 'string' ? validated.resume.notes : '';
+
+    const incomingScores = validated.scores ?? {};
+    const normalizedScores = {
+      matchScore: Math.max(0, Math.min(100, Math.round(incomingScores.matchScore ?? 0))),
+      companyScore: Math.max(0, Math.min(100, Math.round(incomingScores.companyScore ?? 0))),
+      fakeScore: Math.max(0, Math.min(100, Math.round(incomingScores.fakeScore ?? 0)))
+    };
+    validated.scores = normalizedScores;
 
     // Clamp total experience years
     validated.resume.candidate.totalExperienceYears = Math.max(0, Math.min(80, validated.resume.candidate.totalExperienceYears));
-
-    // Log final validated scores
-    resumeLogInfo('scores validated', {
-      matchScore: validated.scores.matchScore,
-      companyScore: validated.scores.companyScore,
-      fakeScore: validated.scores.fakeScore
-    });
 
     // Warn if scores are suspiciously low/default
     if (validated.scores.matchScore === 0 && validated.scores.companyScore === 0 && validated.scores.fakeScore === 0) {
@@ -1327,20 +1194,13 @@ export async function parseAndScoreResume(
       const manualSkillSet = new Set(manualSkillsCombined.map(skill => normalizeSkillKey(skill)));
       const manualToolSet = new Set(manualToolsMatches.map(tool => normalizeSkillKey(tool)));
 
-      const aiMustOriginal = Array.isArray(validatedData.analysis.mustHaveSkillsMatched)
-        ? validatedData.analysis.mustHaveSkillsMatched
-        : [];
-      const aiNiceOriginal = Array.isArray(validatedData.analysis.niceToHaveSkillsMatched)
+      const previousNiceMatches = Array.isArray(validatedData.analysis.niceToHaveSkillsMatched)
         ? validatedData.analysis.niceToHaveSkillsMatched
         : [];
-      const aiToolsOriginal = Array.isArray(validatedData.analysis.toolsAndTechMatched)
+      const previousToolsMatches = Array.isArray(validatedData.analysis.toolsAndTechMatched)
         ? validatedData.analysis.toolsAndTechMatched
         : [];
 
-      validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
-      validatedData.analysis.mustHaveSkillsMissing = (jobContext.jobProfile.mustHaveSkills ?? []).filter(
-        skill => !manualSkillSet.has(normalizeSkillKey(skill))
-      );
       validatedData.analysis.niceToHaveSkillsMatched = manualNiceMatches;
       validatedData.analysis.toolsAndTechMatched = manualToolsMatches;
 
@@ -1363,9 +1223,9 @@ export async function parseAndScoreResume(
           tool => !manualToolSet.has(normalizeSkillKey(tool))
         );
       } else {
-        const aiSkillUnion = dedupePreserveOrder([...aiMustOriginal, ...aiNiceOriginal]);
+        const aiSkillUnion = dedupePreserveOrder([...manualMustMatches, ...previousNiceMatches]);
         aiExtraSkills = aiSkillUnion.filter(skill => !manualSkillSet.has(normalizeSkillKey(skill)));
-        aiExtraTools = dedupePreserveOrder(aiToolsOriginal).filter(
+        aiExtraTools = dedupePreserveOrder(previousToolsMatches).filter(
           tool => !manualToolSet.has(normalizeSkillKey(tool))
         );
       }
@@ -1378,12 +1238,35 @@ export async function parseAndScoreResume(
 
     let aiSkillExperiences = parseAiSkillExperience(validatedData.resume.skillExperience);
 
-    const mandatoryAuditResults = await auditMandatoryRequirementsWithAI({
-      jobTitle: jobContext.jobTitle,
-      jobSummary: jobContext.jobDescriptionShort,
-      resumeText: processedText,
-      requirements: jobContext.mandatorySkillRequirements ?? []
-    });
+    let mandatoryAuditResults = extractAuditResultsFromAnalysis(validatedData.analysis);
+
+    if (mandatoryAuditResults.length === 0) {
+      const fallbackResults = await auditMandatoryRequirementsWithAI({
+        jobTitle: jobContext.jobTitle,
+        jobSummary: jobContext.jobDescriptionShort,
+        resumeText: processedText,
+        requirements: jobContext.mandatorySkillRequirements ?? []
+      });
+      mandatoryAuditResults = fallbackResults ?? [];
+
+      if (mandatoryAuditResults.length > 0) {
+        validatedData.analysis.mandatorySkillsAudit = mandatoryAuditResults.map(result => ({
+          skill: result.skill,
+          status: result.status,
+          observedMonths: result.observedMonths,
+          evidence: result.evidence,
+          confidence: result.confidence
+        }));
+      }
+    } else {
+      validatedData.analysis.mandatorySkillsAudit = mandatoryAuditResults.map(result => ({
+        skill: result.skill,
+        status: result.status,
+        observedMonths: result.observedMonths,
+        evidence: result.evidence,
+        confidence: result.confidence
+      }));
+    }
 
     if (mandatoryAuditResults && mandatoryAuditResults.length > 0) {
       const requirementMap = new Map(
@@ -1419,11 +1302,17 @@ export async function parseAndScoreResume(
                 existing.confidence ?? 0.5
               );
             }
+            if (typeof result.observedMonths === 'number') {
+              const observed = Math.max(0, Math.min(1200, Math.round(result.observedMonths)));
+              existing.months = Math.max(existing.months ?? 0, observed);
+            }
           } else {
             const months =
-              typeof requirement.requiredMonths === 'number' && Number.isFinite(requirement.requiredMonths)
-                ? Math.max(0, Math.round(requirement.requiredMonths))
-                : 0;
+              typeof result.observedMonths === 'number'
+                ? Math.max(0, Math.min(1200, Math.round(result.observedMonths)))
+                : (typeof requirement.requiredMonths === 'number' && Number.isFinite(requirement.requiredMonths)
+                    ? Math.max(0, Math.round(requirement.requiredMonths))
+                    : 0);
             const newEntry: SkillExperienceEntry = {
               skill: requirement.skill,
               months,
@@ -1465,6 +1354,7 @@ export async function parseAndScoreResume(
       ) {
         resumeLogInfo('mandatory_audit_results', {
           resumeId,
+          auditTotal: mandatoryAuditResults.length,
           removed: removedSkills,
           downgraded: downgradedSkills,
           confirmed: confirmedSkills
@@ -1490,18 +1380,6 @@ export async function parseAndScoreResume(
       mandatoryRequirements: jobContext.mandatorySkillRequirements?.length ?? 0,
       mandatoryAllMet: requirementSummary.allMet
     });
-
-    if (jobContext.mandatorySkillRequirements.length > 0) {
-      validatedData.analysis.mandatorySkillsCovered = requirementSummary.evaluations
-        .filter(item => item.manualFound || item.aiFound)
-        .map(item => item.skill);
-      validatedData.analysis.mandatorySkillsMissing = requirementSummary.unmetRequirements;
-      validatedData.analysis.mandatorySkillsManualMissed = requirementSummary.manualCoverageMissing;
-      validatedData.analysis.mustHaveSkillsMissing = dedupePreserveOrder([
-        ...(validatedData.analysis.mustHaveSkillsMissing ?? []),
-        ...requirementSummary.unmetRequirements
-      ]);
-    }
 
     let matchScoreDetails: MatchScoreDetails | null = null;
     if (jobContext.jobProfile && validatedData.analysis) {

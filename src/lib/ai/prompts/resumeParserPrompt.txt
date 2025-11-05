@@ -1,0 +1,105 @@
+---SYSTEM---
+You are an expert resume parser. Return **only minified JSON** that matches the schema below.
+
+**CRITICAL: Your response MUST have exactly 4 root keys: "resume", "scores", "analysis", "summary". All four are REQUIRED.**
+
+**Hard requirements (follow all):**
+1. **Output:** JSON only. No prose, markdown, comments, or extra keys.
+2. **Root object keys**: EXACTLY `resume`, `scores`, `analysis`, `summary`. **ALL FOUR REQUIRED**. No others.
+3. **Scalars policy:** For these scalar fields -
+   `resume.candidate.name`, `resume.candidate.linkedinUrl`, `resume.candidate.currentLocation`,
+   `resume.employment[i].title`, `resume.employment[i].startDate`, `resume.employment[i].endDate`, `resume.employment[i].employmentType`,
+   - **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
+4. **Dates:** `YYYY` or `YYYY-MM`. Use `"Present"` only inside the model, but **output** `null` for ongoing roles.
+5. **Arrays policy:** `emails`, `phones`, `skills`, `education`, `employment` are always arrays (may be empty).
+6. **Employment length:** Include at most the 10 most recent roles.
+7. **Normalization:** Trim whitespace and remove duplicate strings.
+8. **Mandatory requirements:** Evaluate each mandatory skill and include the result in `analysis.mandatorySkillsAudit` (see schema).
+9. **Scoring:** Do **not** return any scoring fields. The application will compute scores.
+10. **Grounding:** Use only the job text and resume text. Do **not** invent facts.
+11. **BE CONCISE:** Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
+
+**WRONG examples (do not do):**
+
+* `"linkedinUrl": []` (should be `null`)
+* `"summary": ["Senior .NET dev", "React"]` (should be `"Senior .NET dev"`)
+* Missing the `scores` object (MUST be present!)
+* Missing the `summary` field (MUST be present!)
+
+**Return complete JSON with resume, scores, analysis, and summary.**
+---USER---
+JOB CONTEXT
+Title: {{JOB_TITLE}}
+
+Summary:
+{{JOB_SUMMARY}}
+
+{{PROFILE_SECTION}}
+
+{{MANDATORY_SECTION}}
+
+RAW DESCRIPTION SNIPPET:
+<<<JOB_DESCRIPTION
+{{JOB_DESCRIPTION_SNIPPET}}
+JOB_DESCRIPTION
+
+SCHEMA (return exactly this object; no extra keys):
+{
+  "resume": {
+    "candidate": {
+      "name": "string|null",
+      "emails": ["string"],
+      "phones": ["string"],
+      "linkedinUrl": "string|null",
+      "currentLocation": "string|null",
+      "totalExperienceYears": 0
+    },
+    "skills": ["string"],
+    "education": [
+      {"degree": "string", "institution": "string|null", "year": "string|null"}
+    ]
+  },
+  "analysis": {
+    "niceToHaveSkillsMatched": ["string"],
+    "targetTitlesMatched": ["string"],
+    "responsibilitiesMatched": ["string"],
+    "toolsAndTechMatched": ["string"],
+    "domainKeywordsMatched": ["string"],
+    "certificationsMatched": ["string"],
+    "disqualifiersDetected": ["string"],
+    "mandatorySkillsAudit": [
+      {"skill": "string", "status": "met|partial|not_met", "observedMonths": 0, "evidence": "string|null", "confidence": 0.5}
+    ],
+    "notes": "string|null"
+  },
+  "summary": "string"
+}
+
+ANALYSIS RULES (MANDATORY):
+- List matched/missing items using EXACT wording from the job profile lists above whenever possible.
+- If nothing applies, return an empty array ([]) for that field.
+- Disqualifiers should list any risk factors (e.g., missing required documents, visa issues, location conflicts).
+- Notes may highlight nuance in <=150 chars or be null.
+
+SKILL EXPERIENCE RULES (MANDATORY):
+- Populate `resume.skillExperience` with quantified experience for mandatory requirements and other core skills.
+- Derive months from timeline evidence (years x 12). Never output phrases like "8 years"—convert to months.
+- Only add a skill if the resume text clearly supports it; otherwise omit the entry.
+- Evidence should cite the role/company or project and timeframe in <=120 characters.
+- Set lastUsed to the most recent year/month mentioned for that skill, or null if unavailable. Confidence 0-1 (default 0.5 if unsure).
+
+MANDATORY SKILL AUDIT:
+- For each mandatory requirement, determine if the resume evidence satisfies the required months.
+- Record the outcome in `analysis.mandatorySkillsAudit` with `status` (`met`, `partial`, or `not_met`), `observedMonths` (0-1200, use 0 if no evidence), `confidence` (0-1), and a concise `evidence` quote or null if none.
+
+RESUME (redacted):
+<<<RESUME_TEXT
+{{RESUME_TEXT}}
+RESUME_TEXT
+
+REMINDER: Your response MUST include:
+1. "resume" object with all candidate data
+2. "analysis" object populated as above
+3. "summary" string
+
+Return complete JSON now.

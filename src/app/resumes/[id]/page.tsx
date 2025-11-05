@@ -371,17 +371,66 @@ const ResumeDetailPage = () => {
   const analysisSections = useMemo(() => {
     const sections: Array<{ label: string; value: string[]; type: 'analysis' | 'manual' | 'aiExtra' }> = [];
     if (analysis) {
-      sections.push(
-        { label: "Must-have Skills Matched", value: analysis.mustHaveSkillsMatched ?? [], type: 'analysis' },
-        { label: "Must-have Skills Missing", value: analysis.mustHaveSkillsMissing ?? [], type: 'analysis' },
-        { label: "Nice-to-have Skills Matched", value: analysis.niceToHaveSkillsMatched ?? [], type: 'analysis' },
-        { label: "Target Titles Matched", value: analysis.targetTitlesMatched ?? [], type: 'analysis' },
-        { label: "Responsibilities Matched", value: analysis.responsibilitiesMatched ?? [], type: 'analysis' },
-        { label: "Tools & Technologies Matched", value: analysis.toolsAndTechMatched ?? [], type: 'analysis' },
-        { label: "Domain Keywords Matched", value: analysis.domainKeywordsMatched ?? [], type: 'analysis' },
-        { label: "Certifications Matched", value: analysis.certificationsMatched ?? [], type: 'analysis' },
-        { label: "Disqualifiers Detected", value: analysis.disqualifiersDetected ?? [], type: 'analysis' }
-      );
+      const auditRaw = Array.isArray(analysis.mandatorySkillsAudit)
+        ? analysis.mandatorySkillsAudit
+        : [];
+      const auditEntries: string[] = [];
+      const auditNotMet: string[] = [];
+      const auditPartial: string[] = [];
+
+      auditRaw.forEach((entry: any) => {
+        if (!entry || typeof entry.skill !== "string" || entry.skill.trim().length === 0) {
+          return;
+        }
+        const trimmedSkill = entry.skill.trim();
+        const status = typeof entry.status === "string" ? entry.status.toLowerCase() : "unknown";
+        const prefix = status === "met" ? "✅" : status === "partial" ? "⚠️" : "❌";
+        const observed =
+          typeof entry.observedMonths === "number" && entry.observedMonths > 0
+            ? `${entry.observedMonths} mo`
+            : "0 mo";
+        const parts = [`${prefix} ${trimmedSkill}`];
+        if (observed) {
+          parts.push(`(${observed})`);
+        }
+        if (typeof entry.evidence === "string" && entry.evidence.trim().length > 0) {
+          parts.push(`Evidence: ${entry.evidence.trim()}`);
+        }
+        auditEntries.push(parts.join(" – "));
+
+        if (status === "not_met") {
+          auditNotMet.push(trimmedSkill);
+        } else if (status === "partial") {
+          auditPartial.push(trimmedSkill);
+        }
+      });
+
+      const pushSection = (
+        label: string,
+        raw: unknown,
+        type: "analysis" | "manual" | "aiExtra" = "analysis"
+      ) => {
+        const values = Array.isArray(raw)
+          ? raw.filter((item) => typeof item === "string" && item.trim().length > 0)
+          : [];
+        if (values.length > 0) {
+          sections.push({ label, value: values, type });
+        }
+      };
+
+      if (auditEntries.length > 0) {
+        sections.push({ label: "Mandatory Skill Audit", value: auditEntries, type: "analysis" });
+      }
+
+      pushSection("Mandatory Skills Not Met", auditNotMet);
+      pushSection("Mandatory Skills Partially Met", auditPartial);
+      pushSection("Nice-to-have Skills Matched", analysis.niceToHaveSkillsMatched ?? []);
+      pushSection("Target Titles Matched", analysis.targetTitlesMatched ?? []);
+      pushSection("Responsibilities Matched", analysis.responsibilitiesMatched ?? []);
+      pushSection("Tools & Technologies Matched", analysis.toolsAndTechMatched ?? []);
+      pushSection("Domain Keywords Matched", analysis.domainKeywordsMatched ?? []);
+      pushSection("Certifications Matched", analysis.certificationsMatched ?? []);
+      pushSection("Disqualifiers Detected", analysis.disqualifiersDetected ?? []);
     }
     if (resume) {
       sections.push(
