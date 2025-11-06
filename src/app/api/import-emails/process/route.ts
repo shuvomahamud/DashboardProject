@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { createEmailProvider } from '@/lib/providers/msgraph-provider';
 import { processEmailItem } from '@/lib/pipeline/email-pipeline';
 import { logMetric } from '@/lib/logging/metrics';
+import { buildImportRunSummary } from '@/lib/imports/runSummary';
+import type { ImportRunSummary } from '@/types/importQueue';
 
 /**
  * POST /api/import-emails/process
@@ -558,13 +560,21 @@ export async function POST(req: NextRequest) {
 
       const finishedAt = new Date();
       const durationMs = computeDurationMs(finishedAt);
+      const summary = await buildImportRunSummary({
+        runId: run.id,
+        jobId: run.job_id,
+        totalMessages: run.total_messages ?? null,
+        processedMessages: completedCount,
+        failedMessages: failedCount
+      });
       const runUpdateData = {
         status: finalStatus,
         finished_at: finishedAt,
         processing_duration_ms: durationMs,
         progress: 1.0,
         processed_messages: completedCount,
-        last_error: lastError
+        last_error: lastError,
+        summary
       };
 
       if (timeLeft(startTime) <= 5000) {
@@ -699,7 +709,15 @@ export async function POST(req: NextRequest) {
     // Try to mark run as failed
     try {
       const run = await prisma.import_email_runs.findFirst({
-        where: { status: 'running' }
+        where: { status: 'running' },
+        select: {
+          id: true,
+          job_id: true,
+          total_messages: true,
+          processed_messages: true,
+          started_at: true,
+          created_at: true
+        }
       });
 
       if (run) {
@@ -707,13 +725,29 @@ export async function POST(req: NextRequest) {
         const runStart = run.started_at ?? run.created_at ?? new Date();
         const finishedAt = new Date();
         const durationMs = Math.max(0, finishedAt.getTime() - new Date(runStart).getTime());
+        let summary: ImportRunSummary | null = null;
+        try {
+          summary = await buildImportRunSummary({
+            runId: run.id,
+            jobId: run.job_id,
+            totalMessages: run.total_messages ?? null,
+            processedMessages: run.processed_messages ?? 0,
+            failedMessages: 0
+          });
+        } catch (summaryError: any) {
+          logWarn('failed to build summary after processor error', {
+            runId: run.id,
+            error: summaryError?.message
+          });
+        }
         await prisma.import_email_runs.update({
           where: { id: run.id },
           data: {
             status: 'failed',
             finished_at: finishedAt,
             processing_duration_ms: durationMs,
-            last_error: error.message
+            last_error: error.message,
+            summary
           }
         });
       }

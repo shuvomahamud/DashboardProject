@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { buildImportRunSummary } from '@/lib/imports/runSummary';
 
 /**
  * POST /api/import-email-runs/[runId]/cancel
@@ -24,7 +25,10 @@ export async function POST(
         id: true,
         status: true,
         started_at: true,
-        created_at: true
+        created_at: true,
+        job_id: true,
+        total_messages: true,
+        processed_messages: true
       }
     });
 
@@ -38,6 +42,18 @@ export async function POST(
     const finishedAt = new Date();
     const start = run.started_at ?? run.created_at;
     const durationMs = Math.max(0, finishedAt.getTime() - start.getTime());
+    let summary = null;
+    try {
+      summary = await buildImportRunSummary({
+        runId,
+        jobId: run.job_id,
+        totalMessages: run.total_messages ?? null,
+        processedMessages: run.processed_messages ?? 0,
+        failedMessages: 0
+      });
+    } catch (summaryError: any) {
+      console.warn('Failed to build import summary during cancel:', summaryError?.message ?? summaryError);
+    }
 
     const updated = await prisma.import_email_runs.updateMany({
       where: {
@@ -47,7 +63,8 @@ export async function POST(
       data: {
         status: 'canceled',
         finished_at: finishedAt,
-        processing_duration_ms: durationMs
+        processing_duration_ms: durationMs,
+        summary
       }
     });
 

@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
 }
 
 model AP_Report {
@@ -464,6 +465,7 @@ model import_email_runs {
   attempts           Int                  @default(0)
   last_error         String?
   processing_duration_ms Int?             @db.Integer
+  summary            Json?
   since              DateTime?            @db.Timestamptz(6)
   page_cursor        String?
   meta               Json?

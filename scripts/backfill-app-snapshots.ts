@@ -23,12 +23,8 @@ async function backfillApplicationSnapshots() {
         status: true,
         appliedDate: true,
         updatedAt: true,
-        sourceFrom: true,
-        originalName: true,
-        candidateName: true,
-        email: true,
-        phone: true,
         matchScore: true,
+        aiCompanyScore: true,
         resume: {
           select: {
             aiExtractJson: true,
@@ -38,7 +34,9 @@ async function backfillApplicationSnapshots() {
             skills: true,
             totalExperienceY: true,
             companyScore: true,
-            fakeScore: true
+            fakeScore: true,
+            originalName: true,
+            sourceFrom: true
           }
         }
       }
@@ -72,14 +70,14 @@ async function backfillApplicationSnapshots() {
           notes: null,
           updatedAt: app.updatedAt?.toISOString() ?? null,
           appliedDate: app.appliedDate?.toISOString() ?? null,
-          candidateName: app.candidateName || app.resume.candidateName || null,
-          email: app.email || app.resume.email || null,
-          phone: app.phone || app.resume.phone || null,
+          candidateName: app.resume.candidateName || null,
+          email: app.resume.email || null,
+          phone: app.resume.phone || null,
           aiMatch: matchScore,
           aiCompany: toNumber(app.resume.companyScore),
           aiFake: toNumber(app.resume.fakeScore),
-          originalName: app.originalName || null,
-          sourceFrom: app.sourceFrom || null,
+          originalName: app.resume.originalName || null,
+          sourceFrom: app.resume.sourceFrom || null,
           skills: app.resume.skills || null,
           experience: toNumber(app.resume.totalExperienceY),
           createdAt: null

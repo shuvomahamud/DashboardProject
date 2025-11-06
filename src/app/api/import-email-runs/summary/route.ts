@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma, { ensureConnection } from '@/lib/prisma';
+import type { ImportRunSummary } from '@/types/importQueue';
 
 /**
  * GET /api/import-email-runs/summary
@@ -95,7 +96,8 @@ export async function GET() {
         createdAt: run.created_at.toISOString(),
         startedAt: run.started_at?.toISOString(),
         finishedAt: run.finished_at?.toISOString(),
-        timeTakenMs: durationMs
+        timeTakenMs: durationMs,
+        summary: (run.summary ?? null) as ImportRunSummary | null
       };
     };
 

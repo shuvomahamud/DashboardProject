@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Badge, Button, ProgressBar, Spinner, Alert } from 'react-bootstrap';
 import { formatDistanceToNow } from 'date-fns';
+import type { ImportRunSummary } from '@/types/importQueue';
 
 interface ImportRun {
   id: string;
@@ -17,6 +18,7 @@ interface ImportRun {
   startedAt?: string;
   finishedAt?: string;
   timeTakenMs?: number | null;
+  summary?: ImportRunSummary | null;
 }
 
 interface ImportQueueSummary {
@@ -30,6 +32,7 @@ export default function ImportQueueStatus() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [canceling, setCanceling] = useState<string | null>(null);
+  const [clearingSummary, setClearingSummary] = useState<string | null>(null);
 
   const fetchSummary = async () => {
     try {
@@ -82,6 +85,23 @@ export default function ImportQueueStatus() {
       alert(err instanceof Error ? err.message : 'Failed to cancel import');
     } finally {
       setCanceling(null);
+    }
+  };
+
+  const handleClearSummary = async (runId: string) => {
+    setClearingSummary(runId);
+    try {
+      const response = await fetch(`/api/import-email-runs/${runId}/summary`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to clear diagnostics');
+      }
+      await fetchSummary();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to clear diagnostics');
+    } finally {
+      setClearingSummary(null);
     }
   };
 
@@ -306,7 +326,7 @@ export default function ImportQueueStatus() {
               const timeTakenLabel = formatDuration(deriveTimeTaken(run));
               return (
                 <div key={run.id} className="border rounded p-2 mb-2">
-                  <div className="d-flex justify-content-between align-items-start">
+                  <div className="d-flex justify-content-between align-items-start gap-2">
                     <div className="flex-grow-1">
                       <div className="d-flex align-items-center gap-2">
                         <strong>{run.jobTitle}</strong>
@@ -334,7 +354,90 @@ export default function ImportQueueStatus() {
                           {run.lastError.length > 100 && '...'}
                         </div>
                       )}
+                      {run.summary && (
+                        <details className="small mt-2">
+                          <summary>Diagnostics</summary>
+                          <div className="mt-2">
+                            <div>
+                              Total messages: {run.summary.totals.totalMessages ?? '—'} | Processed:{' '}
+                              {run.summary.totals.processedMessages} | Failed:{' '}
+                              {run.summary.totals.failedMessages}
+                            </div>
+                            {run.summary.resumeParsing.failed > 0 && (
+                              <div className="text-danger mt-1">
+                                <strong>Resume parsing failed ({run.summary.resumeParsing.failed}):</strong>
+                                <ul className="mb-1">
+                                  {run.summary.resumeParsing.failedResumes.map((entry, idx) => (
+                                    <li key={`fail-${run.id}-${entry.resumeId ?? idx}`}>
+                                      Resume #{entry.resumeId ?? 'unknown'} ({entry.status}) –{' '}
+                                      {entry.error || 'Unknown error'}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {run.summary.resumeParsing.retryResumes.length > 0 && (
+                              <div className="text-warning mt-1">
+                                <strong>
+                                  Pending retries ({run.summary.resumeParsing.retryResumes.length}):
+                                </strong>
+                                <ul className="mb-1">
+                                  {run.summary.resumeParsing.retryResumes.map((entry, idx) => (
+                                    <li key={`retry-${run.id}-${entry.resumeId ?? idx}`}>
+                                      Resume #{entry.resumeId ?? 'unknown'} – pending retry
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {run.summary.itemFailures.length > 0 && (
+                              <div className="text-muted mt-1">
+                                <strong>Email failures:</strong>
+                                <ul className="mb-1">
+                                  {run.summary.itemFailures.map((item, idx) => (
+                                    <li key={`item-${run.id}-${item.messageId}-${idx}`}>
+                                      {item.messageId}: {item.error || 'Unknown error'}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {run.summary.warnings.length > 0 && (
+                              <div className="text-warning mt-1">
+                                <strong>Warnings:</strong>
+                                <ul className="mb-0">
+                                  {run.summary.warnings.map((warning, idx) => (
+                                    <li key={`warning-${run.id}-${idx}`}>{warning}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
                     </div>
+                    {run.summary && (
+                      <div className="flex-shrink-0">
+                        <Button
+                          variant="outline-secondary"
+                          size="sm"
+                          onClick={() => handleClearSummary(run.id)}
+                          disabled={clearingSummary === run.id}
+                        >
+                          {clearingSummary === run.id ? (
+                            <>
+                              <Spinner animation="border" size="sm" className="me-1" />
+                              Clearing...
+                            </>
+                          ) : (
+                            <>
+                              <i className="bi bi-trash me-1"></i>
+                              Clear Diagnostics
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

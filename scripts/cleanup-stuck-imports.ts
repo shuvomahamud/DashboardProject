@@ -5,13 +5,21 @@
  */
 
 import prisma from '../src/lib/prisma';
+import { buildImportRunSummary } from '../src/lib/imports/runSummary';
 
 async function cleanupStuckImports() {
   console.log('?? Looking for stuck imports...');
 
   const stuck = await prisma.import_email_runs.findMany({
     where: { status: 'running' },
-    select: { id: true, job_id: true, created_at: true, started_at: true }
+    select: {
+      id: true,
+      job_id: true,
+      created_at: true,
+      started_at: true,
+      total_messages: true,
+      processed_messages: true
+    }
   });
 
   if (stuck.length === 0) {
@@ -33,6 +41,18 @@ async function cleanupStuckImports() {
   for (const run of stuck) {
     const start = run.started_at ?? run.created_at;
     const durationMs = Math.max(0, finishedAt.getTime() - start.getTime());
+    let summary = null;
+    try {
+      summary = await buildImportRunSummary({
+        runId: run.id,
+        jobId: run.job_id,
+        totalMessages: run.total_messages ?? null,
+        processedMessages: run.processed_messages ?? 0,
+        failedMessages: 0
+      });
+    } catch (error: any) {
+      console.warn('Failed to build summary for stuck run', { runId: run.id, error: error?.message });
+    }
 
     await prisma.import_email_runs.update({
       where: { id: run.id },
@@ -40,6 +60,7 @@ async function cleanupStuckImports() {
         status: 'failed',
         finished_at: finishedAt,
         processing_duration_ms: durationMs,
+        summary,
         last_error: 'Manually canceled - stuck in running state (processor never started)'
       }
     });
@@ -58,4 +79,3 @@ cleanupStuckImports()
   .finally(() => {
     prisma.$disconnect();
   });
-
