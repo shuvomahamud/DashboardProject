@@ -13,6 +13,8 @@ interface ImportRun {
   progress?: number;
   processedMessages?: number;
   totalMessages?: number;
+  aiCompletedMessages?: number;
+  aiTotalMessages?: number;
   lastError?: string;
   createdAt: string;
   startedAt?: string;
@@ -26,6 +28,11 @@ interface ImportQueueSummary {
   enqueued: ImportRun[];
   recentDone: ImportRun[];
 }
+
+const toPercent = (value?: number) => {
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return Math.max(0, Math.min(100, numeric * 100));
+};
 
 export default function ImportQueueStatus() {
   const [summary, setSummary] = useState<ImportQueueSummary | null>(null);
@@ -54,8 +61,8 @@ export default function ImportQueueStatus() {
   useEffect(() => {
     fetchSummary();
 
-    // Poll every 5 minutes (300 seconds)
-    const pollInterval = 5 * 60 * 1000; // 5 minutes
+    // Poll every 10 seconds for near-real-time updates
+    const pollInterval = 10 * 1000; // 10 seconds
 
     const interval = setInterval(() => {
       fetchSummary();
@@ -109,12 +116,16 @@ export default function ImportQueueStatus() {
     const variants: Record<string, string> = {
       enqueued: 'secondary',
       running: 'primary',
+      waiting_ai: 'info',
       succeeded: 'success',
       failed: 'danger',
       canceled: 'warning'
     };
     return <Badge bg={variants[status] || 'secondary'}>{status}</Badge>;
   };
+
+  const activeRun = summary?.inProgress ?? null;
+  const activeProgressPercent = toPercent(activeRun?.progress);
 
   if (loading) {
     return (
@@ -246,20 +257,26 @@ export default function ImportQueueStatus() {
               {summary.inProgress.progress !== undefined && (
                 <div className="mb-2">
                   <ProgressBar
-                    now={summary.inProgress.progress}
-                    label={`${Math.round(summary.inProgress.progress)}%`}
+                    now={activeProgressPercent}
+                    label={`${Math.round(activeProgressPercent)}%`}
                     variant="primary"
                     animated
                   />
                 </div>
               )}
 
-              {summary.inProgress.processedMessages !== undefined && (
-                <div className="text-muted small">
-                  Processed: {summary.inProgress.processedMessages}
-                  {summary.inProgress.totalMessages && ` / ${summary.inProgress.totalMessages}`} messages
-                </div>
-              )}
+              <div className="text-muted small">
+                Emails processed (10%): {summary.inProgress.processedMessages ?? 0}
+                {summary.inProgress.totalMessages
+                  ? ` / ${summary.inProgress.totalMessages}`
+                  : ''}
+              </div>
+              <div className="text-muted small">
+                AI responses saved (90%): {summary.inProgress.aiCompletedMessages ?? 0}
+                {summary.inProgress.aiTotalMessages
+                  ? ` / ${summary.inProgress.aiTotalMessages}`
+                  : ''}
+              </div>
 
               {summary.inProgress.startedAt && (
                 <div className="text-muted small mt-1">
@@ -348,6 +365,10 @@ export default function ImportQueueStatus() {
                           Processed {run.processedMessages} messages
                         </div>
                       )}
+                      <div className="text-muted small">
+                        AI responses saved: {run.aiCompletedMessages ?? 0}
+                        {run.aiTotalMessages ? ` / ${run.aiTotalMessages}` : ''}
+                      </div>
                       {run.status === 'failed' && run.lastError && (
                         <div className="text-danger small mt-1">
                           Error: {run.lastError.substring(0, 100)}

@@ -14,10 +14,9 @@ export interface DimensionBreakdown {
 
 export interface MandatoryContribution {
   skill: string;
-  requiredMonths: number;
-  candidateMonths: number;
-  meetsRequirement: boolean;
-  deficitMonths: number;
+  matched: boolean;
+  manualFound: boolean;
+  aiFound: boolean;
   maxContribution: number;
   contribution: number;
   ratio: number;
@@ -88,28 +87,19 @@ function computeMandatoryContribution(
   let completed = 0;
 
   const breakdown = evaluations.map<MandatoryContribution>(evaluation => {
-    const { requiredMonths, candidateMonths, meetsRequirement, deficitMonths } = evaluation;
-    let ratio = 0;
-    if (requiredMonths <= 0) {
-      ratio = evaluation.manualFound || evaluation.aiFound ? 1 : 0;
-    } else if (candidateMonths <= 0) {
-      ratio = 0;
-    } else {
-      ratio = Math.min(1, Math.max(0, candidateMonths / requiredMonths));
-    }
-
-    const contribution = perRequirement * ratio;
-    if (meetsRequirement) {
+    const matched = evaluation.meetsRequirement;
+    const ratio = matched ? 1 : 0;
+    const contribution = matched ? perRequirement : 0;
+    if (matched) {
       completed += 1;
+      score += contribution;
     }
-    score += contribution;
 
     return {
       skill: evaluation.skill,
-      requiredMonths,
-      candidateMonths,
-      meetsRequirement,
-      deficitMonths,
+      matched,
+      manualFound: evaluation.manualFound,
+      aiFound: evaluation.aiFound,
       maxContribution: perRequirement,
       contribution,
       ratio

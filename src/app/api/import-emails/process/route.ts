@@ -5,6 +5,7 @@ import { processEmailItem } from '@/lib/pipeline/email-pipeline';
 import { logMetric } from '@/lib/logging/metrics';
 import { buildImportRunSummary } from '@/lib/imports/runSummary';
 import type { ImportRunSummary } from '@/types/importQueue';
+import { calculateImportProgress, getAiStatsForRun, finalizeRunIfComplete } from '@/lib/imports/progress';
 
 /**
  * POST /api/import-emails/process
@@ -422,16 +423,22 @@ export async function POST(req: NextRequest) {
 
       if (timeLeft(startTime) > 4000) {
         try {
-          const totalProcessed = await prisma.import_email_items.count({
-            where: {
-              run_id: run.id,
-              status: { in: ['completed', 'failed'] }
-            }
-          });
+          const [totalProcessed, aiStats] = await Promise.all([
+            prisma.import_email_items.count({
+              where: {
+                run_id: run.id,
+                status: { in: ['completed', 'failed'] }
+              }
+            }),
+            getAiStatsForRun(run.id)
+          ]);
 
-          const progress = run.total_messages && run.total_messages > 0
-            ? totalProcessed / run.total_messages
-            : 0;
+          const progress = calculateImportProgress({
+            totalMessages: run.total_messages,
+            processedMessages: totalProcessed,
+            totalAiJobs: aiStats.total,
+            completedAiJobs: aiStats.completed
+          });
 
           await prisma.import_email_runs.update({
             where: { id: run.id },
@@ -544,140 +551,86 @@ export async function POST(req: NextRequest) {
     }
 
     if (pendingCount === 0) {
-      const finalStatus = completedCount > 0 ? 'succeeded' : 'failed';
-      const lastError = finalStatus === 'failed'
-        ? `All ${failedCount} items failed. Check item errors for details.`
-        : null;
+      const finalizeResult = await finalizeRunIfComplete(run.id);
+      const elapsed = Date.now() - startTime;
 
-      logInfo(`? [RUN:${run.id}] Import finished: ${finalStatus} (completed: ${completedCount}, failed: ${failedCount})`);
-      logMetric('processor_run_summary', {
-        runId: run.id,
-        status: finalStatus,
-        completedCount,
-        failedCount,
-        processedInSlice: processedCount
-      });
-
-      const finishedAt = new Date();
-      const durationMs = computeDurationMs(finishedAt);
-      const summary = await buildImportRunSummary({
-        runId: run.id,
-        jobId: run.job_id,
-        totalMessages: run.total_messages ?? null,
-        processedMessages: completedCount,
-        failedMessages: failedCount
-      });
-      const runUpdateData = {
-        status: finalStatus,
-        finished_at: finishedAt,
-        processing_duration_ms: durationMs,
-        progress: 1.0,
-        processed_messages: completedCount,
-        last_error: lastError,
-        summary
-      };
-
-      if (timeLeft(startTime) <= 5000) {
-        await prisma.import_email_runs.update({
-          where: { id: run.id },
-          data: runUpdateData
-        });
-
-        const elapsed = Date.now() - startTime;
-        logInfo('cleanup deferred due to low remaining time', {
+      if (finalizeResult.finalized) {
+        logInfo(`? [RUN:${run.id}] Import finished: ${finalizeResult.status} (completed: ${finalizeResult.completedCount ?? 0}, failed: ${finalizeResult.failedCount ?? 0})`);
+        logMetric('processor_run_summary', {
           runId: run.id,
-          remainingMs: timeLeft(startTime)
+          status: finalizeResult.status ?? 'unknown',
+          completedCount: finalizeResult.completedCount ?? 0,
+          failedCount: finalizeResult.failedCount ?? 0,
+          processedInSlice: processedCount
         });
-        logMetric('processor_cleanup_deferred', {
-          runId: run.id,
-          reason: 'low_time_after_completion',
-          remainingMs: timeLeft(startTime)
-        });
+
+        if (timeLeft(startTime) > 4000) {
+          const oldRuns = await prisma.import_email_runs.findMany({
+            where: {
+              job_id: run.job_id,
+              status: { in: ['succeeded', 'failed', 'canceled'] }
+            },
+            orderBy: { finished_at: 'desc' },
+            skip: 10,
+            select: { id: true }
+          });
+
+          if (oldRuns.length > 0) {
+            logInfo('cleanup old runs', {
+              runId: run.id,
+              jobId: run.job_id,
+              removed: oldRuns.length
+            });
+            await prisma.import_email_runs.deleteMany({
+              where: {
+                id: { in: oldRuns.map(r => r.id) }
+              }
+            });
+          }
+        } else {
+          logMetric('processor_old_runs_skipped', {
+            runId: run.id,
+            remainingMs: timeLeft(startTime)
+          });
+        }
+
         logMetric('processor_slice_end', {
           runId: run.id,
-          outcome: finalStatus,
+          outcome: finalizeResult.status ?? 'unknown',
           elapsedMs: elapsed,
-          cleaned: false
+          cleaned: true
         });
 
         return NextResponse.json({
-          status: finalStatus,
+          status: finalizeResult.status ?? 'unknown',
           runId: run.id,
           processedItems: processedCount,
-          completed: completedCount,
-          failed: failedCount,
+          completed: finalizeResult.completedCount ?? 0,
+          failed: finalizeResult.failedCount ?? 0,
           elapsed
         });
       }
 
-      logInfo('cleanup processed items', {
+      logInfo('email stage complete, awaiting AI parsing', {
         runId: run.id,
-        processedItems: completedCount + failedCount
+        pendingAiJobs: finalizeResult.pendingAiJobs ?? 0
       });
-      await prisma.import_email_items.deleteMany({
-        where: {
-          run_id: run.id,
-          status: { in: ['completed', 'failed'] }
-        }
-      });
-
-      await prisma.import_email_runs.update({
-        where: { id: run.id },
-        data: runUpdateData
-      });
-
-      if (timeLeft(startTime) > 4000) {
-        const oldRuns = await prisma.import_email_runs.findMany({
-          where: {
-            job_id: run.job_id,
-            status: { in: ['succeeded', 'failed', 'canceled'] }
-          },
-          orderBy: { finished_at: 'desc' },
-          skip: 10,
-          select: { id: true }
-        });
-
-        if (oldRuns.length > 0) {
-          logInfo('cleanup old runs', {
-            runId: run.id,
-            jobId: run.job_id,
-            removed: oldRuns.length
-          });
-          await prisma.import_email_runs.deleteMany({
-            where: {
-              id: { in: oldRuns.map(r => r.id) }
-            }
-          });
-        }
-      } else {
-        logMetric('processor_old_runs_skipped', {
-          runId: run.id,
-          remainingMs: timeLeft(startTime)
-        });
-      }
-
-      const elapsed = Date.now() - startTime;
-      logInfo('import slice completed', {
+      logMetric('processor_waiting_ai', {
         runId: run.id,
-        status: finalStatus,
-        elapsedMs: elapsed,
-        processedInSlice: processedCount,
-        completed: completedCount,
-        failed: failedCount
+        pendingAiJobs: finalizeResult.pendingAiJobs ?? 0,
+        pendingItems: finalizeResult.pendingItems ?? 0
       });
       logMetric('processor_slice_end', {
         runId: run.id,
-        outcome: finalStatus,
+        outcome: 'waiting_ai',
         elapsedMs: elapsed,
-        cleaned: true
+        cleaned: false
       });
 
       return NextResponse.json({
-        status: finalStatus,
+        status: 'waiting_ai',
         runId: run.id,
-        processedItems: processedCount,
-        completed: completedCount,
-        failed: failedCount,
+        pendingAiJobs: finalizeResult.pendingAiJobs ?? 0,
         elapsed
       });
     }

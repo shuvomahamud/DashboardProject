@@ -101,6 +101,7 @@ export interface SkillRequirementEvaluationSummary {
   allMet: boolean;
   manualCoverageMissing: string[];
   unmetRequirements: string[];
+  metRequirements: string[];
   aiDetectedWithoutManual: string[];
 }
 
@@ -199,7 +200,8 @@ export function evaluateSkillRequirements(
       allMet: true,
       manualCoverageMissing: [],
       unmetRequirements: [],
-      aiDetectedWithoutManual: []
+      aiDetectedWithoutManual: [],
+      metRequirements: []
     };
   }
 
@@ -230,6 +232,7 @@ export function evaluateSkillRequirements(
   const evaluations: SkillRequirementEvaluation[] = [];
   const manualCoverageMissing: string[] = [];
   const unmetRequirements: string[] = [];
+  const metRequirements: string[] = [];
   const aiDetectedWithoutManual: string[] = [];
 
   for (const requirement of requirements) {
@@ -240,12 +243,7 @@ export function evaluateSkillRequirements(
     const aiMonths = ai?.months ?? null;
     const candidateMonths = Math.max(manualMonths ?? 0, aiMonths ?? 0);
 
-    let meetsRequirement = false;
-    if (requirement.requiredMonths <= 0) {
-      meetsRequirement = Boolean(manual || ai);
-    } else {
-      meetsRequirement = candidateMonths >= requirement.requiredMonths;
-    }
+    const meetsRequirement = Boolean(manual || ai);
 
     if (!manual) {
       manualCoverageMissing.push(requirement.skill);
@@ -254,7 +252,9 @@ export function evaluateSkillRequirements(
       }
     }
 
-    if (!meetsRequirement) {
+    if (meetsRequirement) {
+      metRequirements.push(requirement.skill);
+    } else {
       unmetRequirements.push(requirement.skill);
     }
 
@@ -267,9 +267,7 @@ export function evaluateSkillRequirements(
       meetsRequirement,
       manualFound: Boolean(manual),
       aiFound: Boolean(ai),
-      deficitMonths: meetsRequirement
-        ? 0
-        : Math.max(0, requirement.requiredMonths - candidateMonths)
+      deficitMonths: meetsRequirement ? 0 : Math.max(0, requirement.requiredMonths)
     });
   }
 
@@ -278,6 +276,7 @@ export function evaluateSkillRequirements(
     allMet: evaluations.every(item => item.meetsRequirement),
     manualCoverageMissing: dedupeSkillList(manualCoverageMissing),
     unmetRequirements: dedupeSkillList(unmetRequirements),
+    metRequirements: dedupeSkillList(metRequirements),
     aiDetectedWithoutManual: dedupeSkillList(aiDetectedWithoutManual)
   };
 }

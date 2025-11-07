@@ -37,22 +37,10 @@ type SkillExperienceEntry = {
   source?: string | null;
 };
 
-type SkillRequirementEvaluationRow = {
-  skill: string;
-  requiredMonths: number;
-  manualMonths: number | null;
-  aiMonths: number | null;
-  candidateMonths: number;
-  meetsRequirement: boolean;
-  manualFound: boolean;
-  aiFound: boolean;
-  deficitMonths: number;
-};
-
 type SkillRequirementEvaluation = {
   evaluatedAt?: string;
   requirements?: Array<{ skill: string; requiredMonths: number }>;
-  evaluations?: SkillRequirementEvaluationRow[];
+  metRequirements?: string[];
   manualCoverageMissing?: string[];
   unmetRequirements?: string[];
   aiDetectedWithoutManual?: string[];
@@ -175,41 +163,6 @@ const parseSkillRequirementEvaluation = (value: unknown): SkillRequirementEvalua
     return null;
   }
   const data = raw as Record<string, unknown>;
-  const evaluationsRaw = Array.isArray(data.evaluations) ? data.evaluations : [];
-  const evaluations: SkillRequirementEvaluationRow[] = evaluationsRaw
-    .map((row) => {
-      if (!row || typeof row !== "object") return null;
-      const record = row as Record<string, unknown>;
-      const skill = typeof record.skill === "string" ? record.skill.trim() : null;
-      if (!skill) return null;
-      const requiredMonths = Number(record.requiredMonths ?? 0);
-      const manualMonths =
-        record.manualMonths === null || record.manualMonths === undefined
-          ? null
-          : Math.max(0, Math.round(Number(record.manualMonths) || 0));
-      const aiMonths =
-        record.aiMonths === null || record.aiMonths === undefined
-          ? null
-          : Math.max(0, Math.round(Number(record.aiMonths) || 0));
-      const candidateMonths = Math.max(0, Math.round(Number(record.candidateMonths) || 0));
-      const meetsRequirement = Boolean(record.meetsRequirement);
-      const manualFound = Boolean(record.manualFound);
-      const aiFound = Boolean(record.aiFound);
-      const deficitMonths = Math.max(0, Math.round(Number(record.deficitMonths) || 0));
-
-      return {
-        skill,
-        requiredMonths: Math.max(0, Math.round(requiredMonths)),
-        manualMonths,
-        aiMonths,
-        candidateMonths,
-        meetsRequirement,
-        manualFound,
-        aiFound,
-        deficitMonths
-      };
-    })
-    .filter((row): row is SkillRequirementEvaluationRow => Boolean(row));
 
   const toStringArray = (input: unknown): string[] =>
     Array.isArray(input) ? input.map((item) => String(item)).filter(Boolean) : [];
@@ -229,7 +182,7 @@ const parseSkillRequirementEvaluation = (value: unknown): SkillRequirementEvalua
   return {
     evaluatedAt: typeof data.evaluatedAt === "string" ? data.evaluatedAt : undefined,
     requirements,
-    evaluations,
+    metRequirements: toStringArray(data.metRequirements),
     manualCoverageMissing: toStringArray(data.manualCoverageMissing),
     unmetRequirements: toStringArray(data.unmetRequirements),
     aiDetectedWithoutManual: toStringArray(data.aiDetectedWithoutManual),
@@ -745,96 +698,70 @@ const ResumeDetailPage = () => {
         </Card.Header>
         <Card.Body className="p-4">
           {skillEvaluation ? (
-            (skillEvaluation.evaluations && skillEvaluation.evaluations.length > 0) ? (
+            (skillEvaluation.requirements && skillEvaluation.requirements.length > 0) ? (
               <>
                 <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
                   <div className="d-flex align-items-center gap-2">
-                    <Badge bg={skillEvaluation.allMet ? "success" : "danger"}>
-                      {skillEvaluation.allMet ? "All requirements met" : "Requirements pending"}
+                    <Badge bg={skillEvaluation.allMet ? "success" : "warning"}>
+                      {skillEvaluation.allMet ? "All mandatory skills covered" : "Mandatory skills missing"}
                     </Badge>
                     {skillEvaluation.evaluatedAt && (
                       <span className="text-muted small">
-                        Evaluated {formatDate(skillEvaluation.evaluatedAt)}
+                        Last checked {formatDate(skillEvaluation.evaluatedAt)}
                       </span>
                     )}
                   </div>
                   <div className="text-muted small">
-                    {(skillEvaluation.requirements?.length ?? 0)} mandatory skill
+                    {(skillEvaluation.requirements?.length ?? 0)} total required skill
                     {(skillEvaluation.requirements?.length ?? 0) === 1 ? "" : "s"}
                   </div>
                 </div>
 
-                <Table hover responsive className="mb-0">
-                  <thead>
-                    <tr>
-                      <th>Skill</th>
-                      <th>Required</th>
-                      <th>Manual</th>
-                      <th>AI</th>
-                      <th>Credited</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(skillEvaluation.evaluations ?? []).map((row) => {
-                      const statusVariant = row.meetsRequirement
-                        ? "success"
-                        : row.requiredMonths === 0
-                          ? "warning"
-                          : "danger";
-                      const statusLabel = row.meetsRequirement
-                        ? "Met"
-                        : row.requiredMonths === 0
-                          ? "Not found"
-                          : row.deficitMonths > 0
-                            ? `Short ${row.deficitMonths} mo`
-                            : "Not met";
-                      return (
-                        <tr key={row.skill}>
-                          <td>{row.skill}</td>
-                          <td>{formatMonths(row.requiredMonths)}</td>
-                          <td>
-                            {row.manualFound
-                              ? formatMonths(row.manualMonths)
-                              : <span className="text-muted">Not noted</span>}
-                          </td>
-                          <td>
-                            {row.aiFound
-                              ? formatMonths(row.aiMonths)
-                              : <span className="text-muted">Not detected</span>}
-                          </td>
-                          <td>{formatMonths(row.candidateMonths)}</td>
-                          <td>
-                            <Badge bg={statusVariant}>{statusLabel}</Badge>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </Table>
-
-                {skillEvaluation.unmetRequirements && skillEvaluation.unmetRequirements.length > 0 ? (
-                  <Alert variant="danger" className="mt-3 mb-0">
-                    Missing mandatory coverage: {skillEvaluation.unmetRequirements.join(", ")}
-                  </Alert>
-                ) : (
-                  <Alert variant="success" className="mt-3 mb-0">
-                    All mandatory skills meet the required experience thresholds.
-                  </Alert>
-                )}
+                <Row className="g-4">
+                  <Col md={6}>
+                    <h6 className="fw-semibold text-muted mb-2">
+                      Matched ({skillEvaluation.metRequirements?.length ?? 0})
+                    </h6>
+                    {skillEvaluation.metRequirements && skillEvaluation.metRequirements.length > 0 ? (
+                      <div className="d-flex flex-wrap gap-2">
+                        {skillEvaluation.metRequirements.map((skill) => (
+                          <Badge bg="success" key={skill} className="fw-normal">
+                            {skill}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted mb-0">No matches detected yet.</p>
+                    )}
+                  </Col>
+                  <Col md={6}>
+                    <h6 className="fw-semibold text-muted mb-2">
+                      Missing ({skillEvaluation.unmetRequirements?.length ?? 0})
+                    </h6>
+                    {skillEvaluation.unmetRequirements && skillEvaluation.unmetRequirements.length > 0 ? (
+                      <div className="d-flex flex-wrap gap-2">
+                        {skillEvaluation.unmetRequirements.map((skill) => (
+                          <Badge bg="danger" key={skill} className="fw-normal">
+                            {skill}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted mb-0">No missing skills — great coverage!</p>
+                    )}
+                  </Col>
+                </Row>
 
                 {skillEvaluation.manualCoverageMissing && skillEvaluation.manualCoverageMissing.length > 0 && (
-                  <div className="mt-3 text-warning small">
-                    <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                  <Alert variant="warning" className="mt-3 mb-0">
                     Manual review missed: {skillEvaluation.manualCoverageMissing.join(", ")}
-                  </div>
+                  </Alert>
                 )}
 
                 {skillEvaluation.aiDetectedWithoutManual && skillEvaluation.aiDetectedWithoutManual.length > 0 && (
-                  <div className="mt-2 text-info small">
-                    <i className="bi bi-lightbulb-fill me-2"></i>
-                    AI detected evidence for: {skillEvaluation.aiDetectedWithoutManual.join(", ")}
-                  </div>
+                  <Alert variant="info" className="mt-3 mb-0">
+                    AI matched synonyms / related phrasing for: {skillEvaluation.aiDetectedWithoutManual.join(", ")}
+                  </Alert>
                 )}
 
                 {aiSkillExperienceList.length > 0 && (

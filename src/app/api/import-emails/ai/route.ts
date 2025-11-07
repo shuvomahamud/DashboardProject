@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { tryGPTParsing } from '@/lib/pipeline/email-pipeline';
 import { logMetric } from '@/lib/logging/metrics';
 import { buildJobContext as buildJobContextFromData } from '@/lib/ai/jobContext';
+import { refreshRunProgressForAi } from '@/lib/imports/progress';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -234,6 +235,10 @@ export async function POST(req: NextRequest) {
         results.timeoutSucceeded += 1;
       }
 
+      if (job.runId) {
+        await refreshRunProgressForAi(job.runId);
+      }
+
       logMetric('gpt_worker_job_succeeded', {
         jobId: job.id,
         resumeId,
@@ -286,6 +291,9 @@ export async function POST(req: NextRequest) {
           status,
           error: errorMessage
         });
+        if (job.runId) {
+          await refreshRunProgressForAi(job.runId);
+        }
       } else {
         results.retried += 1;
         logMetric('gpt_worker_job_retry', {

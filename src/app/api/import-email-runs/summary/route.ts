@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma, { ensureConnection } from '@/lib/prisma';
 import type { ImportRunSummary } from '@/types/importQueue';
+import { getAiStatsForRuns, type AiStats, DEFAULT_AI_STATS } from '@/lib/imports/progress';
 
 /**
  * GET /api/import-email-runs/summary
@@ -74,8 +75,16 @@ export async function GET() {
       })
     ]);
 
+    const runIds = [
+      ...inProgressRuns.map(run => run.id),
+      ...enqueuedRuns.map(run => run.id),
+      ...recentDoneRuns.map(run => run.id)
+    ].filter(Boolean);
+
+    const aiStatsByRun = await getAiStatsForRuns(runIds);
+
     // Format for UI
-    const formatRun = (run: any) => {
+    const formatRun = (run: any, aiStats: Record<string, AiStats>) => {
       const rawDuration = run.processing_duration_ms;
       const durationMs =
         typeof rawDuration === 'number'
@@ -83,6 +92,7 @@ export async function GET() {
           : (run.started_at && run.finished_at
               ? Math.max(0, run.finished_at.getTime() - run.started_at.getTime())
               : null);
+      const aiStat = aiStats[run.id] ?? DEFAULT_AI_STATS;
 
       return {
         id: run.id,
@@ -92,6 +102,8 @@ export async function GET() {
         progress: run.progress ? parseFloat(run.progress.toString()) : 0,
         processedMessages: run.processed_messages,
         totalMessages: run.total_messages,
+        aiCompletedMessages: aiStat.completed,
+        aiTotalMessages: aiStat.total,
         lastError: run.last_error,
         createdAt: run.created_at.toISOString(),
         startedAt: run.started_at?.toISOString(),
@@ -102,9 +114,9 @@ export async function GET() {
     };
 
     return NextResponse.json({
-      inProgress: inProgressRuns[0] ? formatRun(inProgressRuns[0]) : null,
-      enqueued: enqueuedRuns.map(formatRun),
-      recentDone: recentDoneRuns.map(formatRun)
+      inProgress: inProgressRuns[0] ? formatRun(inProgressRuns[0], aiStatsByRun) : null,
+      enqueued: enqueuedRuns.map(run => formatRun(run, aiStatsByRun)),
+      recentDone: recentDoneRuns.map(run => formatRun(run, aiStatsByRun))
     });
 
   } catch (error: any) {

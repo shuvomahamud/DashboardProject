@@ -25,7 +25,8 @@ describe('skillRequirements helpers', () => {
     const requirements = parseSkillRequirementConfig([
       { skill: 'React', requiredMonths: 24 },
       { skill: 'Node.js', requiredMonths: 0 },
-      { skill: 'PostgreSQL', requiredMonths: 12 }
+      { skill: 'PostgreSQL', requiredMonths: 12 },
+      { skill: 'Azure', requiredMonths: 36 }
     ]);
 
     const manualAssessments = parseManualSkillAssessments([
@@ -41,19 +42,23 @@ describe('skillRequirements helpers', () => {
 
     const summary = evaluateSkillRequirements(requirements, manualAssessments, aiExperiences);
 
-    expect(summary.evaluations).toHaveLength(3);
+    expect(summary.evaluations).toHaveLength(4);
 
     const reactEval = summary.evaluations.find(item => item.skill === 'React');
     expect(reactEval?.meetsRequirement).toBe(true);
     expect(reactEval?.candidateMonths).toBe(30);
 
     const postgresEval = summary.evaluations.find(item => item.skill === 'PostgreSQL');
-    expect(postgresEval?.meetsRequirement).toBe(false);
-    expect(postgresEval?.deficitMonths).toBe(2);
+    expect(postgresEval?.meetsRequirement).toBe(true);
+
+    const azureEval = summary.evaluations.find(item => item.skill === 'Azure');
+    expect(azureEval?.meetsRequirement).toBe(false);
 
     expect(summary.manualCoverageMissing).toContain('PostgreSQL');
     expect(summary.aiDetectedWithoutManual).toContain('PostgreSQL');
-    expect(summary.unmetRequirements).toContain('PostgreSQL');
+    expect(summary.unmetRequirements).toContain('Azure');
+    expect(summary.metRequirements).toContain('React');
+    expect(summary.metRequirements).toContain('PostgreSQL');
     expect(summary.allMet).toBe(false);
   });
 

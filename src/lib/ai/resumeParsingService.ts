@@ -1131,6 +1131,7 @@ export async function parseAndScoreResume(
             evaluations: requirementSummary.evaluations,
             manualCoverageMissing: requirementSummary.manualCoverageMissing,
             unmetRequirements: requirementSummary.unmetRequirements,
+            metRequirements: requirementSummary.metRequirements,
             aiDetectedWithoutManual: requirementSummary.aiDetectedWithoutManual,
             allMet: requirementSummary.allMet
           }
