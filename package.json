@@ -31,7 +31,8 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.10.0",
-    "@prisma/client": "^6.11.1",
+    "@prisma/client": "^6.16.2",
+    "@napi-rs/canvas": "^0.1.53",
     "@supabase/supabase-js": "^2.56.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/pdf-parse": "^1.1.5",

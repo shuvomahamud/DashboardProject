@@ -14,6 +14,7 @@ const BASE_BACKOFF_MS = parseInt(process.env.GPT_BASE_BACKOFF_MS || '15000', 10)
 const MAX_BACKOFF_MS = parseInt(process.env.GPT_MAX_BACKOFF_MS || '300000', 10);
 const SLICE_SOFT_LIMIT_MS = 50_000;
 const MIN_REMAINING_MS_FOR_NEW_TASK = 25_000;
+const RETRY_TIMEOUT_MS = 30_000;
 const PRISMA_MAX_RETRIES = 3;
 const PRISMA_RETRY_BASE_DELAY_MS = 500;
 
@@ -182,7 +183,161 @@ export async function POST(req: NextRequest) {
     const results = {
       succeeded: 0,
       failed: 0,
-      retried: 0
+      retried: 0,
+      timeoutQueued: 0,
+      timeoutSucceeded: 0,
+      timeoutFailed: 0,
+      timeoutDeferred: 0
+    };
+
+    type TimeoutRetryJob = {
+      job: ResumeJob;
+      jobContext: JobContext;
+      resumeId: number;
+      runId: string;
+      attempts: number;
+    };
+
+    const timeoutRetryQueue: TimeoutRetryJob[] = [];
+
+    const markJobSuccess = async (
+      job: ResumeJob,
+      resumeId: number,
+      attempts: number,
+      finishedAt: Date,
+      options?: { timeoutRetry?: boolean }
+    ) => {
+      await runWithPrismaRetry('job.mark_success', () => prisma.resume_ai_jobs.update({
+        where: { id: job.id },
+        data: {
+          status: 'succeeded',
+          lastFinishedAt: finishedAt,
+          lastError: null,
+          nextRetryAt: null,
+          attempts
+        }
+      }));
+
+      await runWithPrismaRetry('items.mark_success', () => prisma.import_email_items.updateMany({
+        where: { resume_id: resumeId },
+        data: {
+          gpt_status: 'succeeded',
+          gpt_last_finished_at: finishedAt,
+          gpt_last_error: null,
+          gpt_next_retry_at: null,
+          gpt_attempts: attempts
+        }
+      }));
+
+      results.succeeded += 1;
+      if (options?.timeoutRetry) {
+        results.timeoutSucceeded += 1;
+      }
+
+      logMetric('gpt_worker_job_succeeded', {
+        jobId: job.id,
+        resumeId,
+        attempts,
+        elapsedMs: Date.now() - start,
+        status: 'succeeded',
+        timeoutRetry: options?.timeoutRetry ?? false
+      });
+    };
+
+    const scheduleJobFailure = async (
+      job: ResumeJob,
+      resumeId: number,
+      attempts: number,
+      finishedAt: Date,
+      errorMessage: string
+    ) => {
+      const shouldFail = attempts >= MAX_ATTEMPTS;
+      const backoff = computeBackoffMs(attempts);
+      const nextRetryAt = shouldFail ? null : new Date(Date.now() + backoff);
+      const status = shouldFail ? 'parse_failed' : 'retry';
+
+      await runWithPrismaRetry('job.mark_failure', () => prisma.resume_ai_jobs.update({
+        where: { id: job.id },
+        data: {
+          status,
+          lastFinishedAt: finishedAt,
+          lastError: errorMessage,
+          nextRetryAt,
+          attempts
+        }
+      }));
+
+      await runWithPrismaRetry('items.mark_failure', () => prisma.import_email_items.updateMany({
+        where: { resume_id: resumeId },
+        data: {
+          gpt_status: shouldFail ? 'failed' : 'queued',
+          gpt_attempts: attempts,
+          gpt_last_error: errorMessage,
+          gpt_next_retry_at: nextRetryAt
+        }
+      }));
+
+      if (shouldFail) {
+        results.failed += 1;
+        logMetric('gpt_worker_job_failed', {
+          jobId: job.id,
+          resumeId,
+          attempts,
+          status,
+          error: errorMessage
+        });
+      } else {
+        results.retried += 1;
+        logMetric('gpt_worker_job_retry', {
+          jobId: job.id,
+          resumeId,
+          attempts,
+          backoffMs: backoff,
+          nextRetryAt: nextRetryAt?.toISOString() ?? null,
+          status,
+          error: errorMessage
+        });
+      }
+    };
+
+    const processTimeoutRetries = async () => {
+      for (const entry of timeoutRetryQueue) {
+        if (timeLeftMs() <= MIN_REMAINING_MS_FOR_NEW_TASK) {
+          results.timeoutDeferred += 1;
+          await scheduleJobFailure(
+            entry.job,
+            entry.resumeId,
+            entry.attempts,
+            new Date(),
+            'GPT parsing timeout'
+          );
+          continue;
+        }
+
+        const retryAttempts = Math.min(entry.attempts + 1, MAX_ATTEMPTS);
+        const retryResult = await tryGPTParsing(
+          entry.resumeId,
+          entry.jobContext,
+          RETRY_TIMEOUT_MS,
+          entry.runId
+        );
+        const finishedAt = new Date();
+
+        if (retryResult.success) {
+          await markJobSuccess(entry.job, entry.resumeId, retryAttempts, finishedAt, {
+            timeoutRetry: true
+          });
+        } else {
+          results.timeoutFailed += 1;
+          await scheduleJobFailure(
+            entry.job,
+            entry.resumeId,
+            retryAttempts,
+            finishedAt,
+            retryResult.error || 'GPT parsing failed'
+          );
+        }
+      }
     };
 
     const processClaimedJob = async ({ job, attempts }: ClaimedJob) => {
@@ -197,88 +352,34 @@ export async function POST(req: NextRequest) {
       const resumeId = job.resumeId;
       const runId = job.runId || 'worker';
 
-      const success = await tryGPTParsing(resumeId, jobContext, timeoutMs, runId);
+      const parseResult = await tryGPTParsing(resumeId, jobContext, timeoutMs, runId);
       const finishedAt = new Date();
 
-      if (success) {
-        await runWithPrismaRetry('job.mark_success', () => prisma.resume_ai_jobs.update({
-          where: { id: job.id },
-          data: {
-            status: 'succeeded',
-            lastFinishedAt: finishedAt,
-            lastError: null,
-            nextRetryAt: null,
-            attempts
-          }
-        }));
+      if (parseResult.success) {
+        await markJobSuccess(job, resumeId, attempts, finishedAt);
+        return;
+      }
 
-        await runWithPrismaRetry('items.mark_success', () => prisma.import_email_items.updateMany({
-          where: { resume_id: resumeId },
-          data: {
-            gpt_status: 'succeeded',
-            gpt_last_finished_at: finishedAt,
-            gpt_last_error: null,
-            gpt_next_retry_at: null
-          }
-        }));
-
-        results.succeeded += 1;
-        logMetric('gpt_worker_job_succeeded', {
+      if (parseResult.code === 'timeout' && attempts < MAX_ATTEMPTS) {
+        timeoutRetryQueue.push({ job, jobContext, resumeId, runId, attempts });
+        results.timeoutQueued += 1;
+        logMetric('gpt_worker_timeout_queued', {
           jobId: job.id,
           resumeId,
           attempts,
-          elapsedMs: Date.now() - start,
-          status: 'succeeded'
+          timeoutMs,
+          remainingMs: timeLeftMs()
         });
         return;
       }
 
-      const nextAttempts = attempts;
-      const shouldFail = nextAttempts >= MAX_ATTEMPTS;
-      const backoff = computeBackoffMs(nextAttempts);
-      const nextRetryAt = shouldFail ? null : new Date(Date.now() + backoff);
-      const status = shouldFail ? 'parse_failed' : 'retry';
-
-      await runWithPrismaRetry('job.mark_failure', () => prisma.resume_ai_jobs.update({
-        where: { id: job.id },
-        data: {
-          status,
-          lastFinishedAt: finishedAt,
-          lastError: 'GPT parsing failed',
-          nextRetryAt,
-          attempts
-        }
-      }));
-
-      await runWithPrismaRetry('items.mark_failure', () => prisma.import_email_items.updateMany({
-        where: { resume_id: resumeId },
-        data: {
-          gpt_status: shouldFail ? 'failed' : 'queued',
-          gpt_attempts: attempts,
-          gpt_last_error: 'GPT parsing failed',
-          gpt_next_retry_at: nextRetryAt
-        }
-      }));
-
-      if (shouldFail) {
-        results.failed += 1;
-        logMetric('gpt_worker_job_failed', {
-          jobId: job.id,
-          resumeId,
-          attempts: nextAttempts,
-          status
-        });
-      } else {
-        results.retried += 1;
-        logMetric('gpt_worker_job_retry', {
-          jobId: job.id,
-          resumeId,
-          attempts: nextAttempts,
-          backoffMs: backoff,
-          nextRetryAt: nextRetryAt?.toISOString() ?? null,
-          status
-        });
-      }
+      await scheduleJobFailure(
+        job,
+        resumeId,
+        attempts,
+        finishedAt,
+        parseResult.error || 'GPT parsing failed'
+      );
     };
 
     const active: Promise<void>[] = [];
@@ -333,6 +434,10 @@ export async function POST(req: NextRequest) {
     while (active.length > 0) {
       await Promise.race(active);
       await fillPool();
+    }
+
+    if (timeoutRetryQueue.length > 0) {
+      await processTimeoutRetries();
     }
 
     const elapsed = Date.now() - start;

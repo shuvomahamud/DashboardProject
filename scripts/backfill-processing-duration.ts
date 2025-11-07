@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import type { ImportRunSummary } from '../src/types/importQueue';
 
 const prisma = new PrismaClient();
@@ -11,8 +11,8 @@ async function backfillProcessingDuration() {
     const runsToUpdate = await prisma.import_email_runs.findMany({
       where: {
         OR: [
-          { processing_duration_ms: null },
-          { summary: null }
+          { processing_duration_ms: { equals: null } },
+          { summary: { equals: Prisma.JsonNull } }
         ],
         started_at: { not: null },
         finished_at: { not: null },
@@ -109,7 +109,7 @@ async function backfillProcessingDuration() {
           warnings: [],
         };
 
-        updateData.summary = summary;
+        updateData.summary = summary as unknown as Prisma.InputJsonValue;
       }
 
       // Update if there's data to update

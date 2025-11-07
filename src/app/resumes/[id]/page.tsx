@@ -80,6 +80,8 @@ type ResumeData = {
   manualSkillAssessments: Array<{ skill: string; months: number | null; source?: string | null }> | null;
   aiSkillExperience: SkillExperienceEntry[] | null;
   skillRequirementEvaluation: SkillRequirementEvaluation | null;
+  companyScore: number | string | null;
+  fakeScore: number | string | null;
   createdAt: string;
   updatedAt: string;
   fileName: string;
@@ -133,6 +135,12 @@ const coerceJson = (value: unknown): unknown => {
     }
   }
   return value;
+};
+
+const toNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  const num = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(num) ? num : null;
 };
 
 const parseSkillExperienceEntries = (value: unknown): SkillExperienceEntry[] => {
@@ -353,8 +361,11 @@ const ResumeDetailPage = () => {
 
   const aiExtract = useMemo(() => parseAiExtract(resume?.aiExtractJson), [resume]);
   const analysis = aiExtract?.analysis;
-  const scores = aiExtract?.scores;
   const matchDetails = aiExtract?.computedMatchScore;
+  const legacyScores = aiExtract?.scores;
+  const matchScore = toNumber(matchDetails?.finalScore) ?? toNumber(legacyScores?.matchScore);
+  const companyScore = toNumber(resume?.companyScore) ?? toNumber(legacyScores?.companyScore);
+  const fakeScore = toNumber(resume?.fakeScore) ?? toNumber(legacyScores?.fakeScore);
 
   const matchBreakdown = useMemo<MatchBreakdownRow[]>(() => {
     if (!matchDetails?.breakdown) return [];
@@ -371,40 +382,6 @@ const ResumeDetailPage = () => {
   const analysisSections = useMemo(() => {
     const sections: Array<{ label: string; value: string[]; type: 'analysis' | 'manual' | 'aiExtra' }> = [];
     if (analysis) {
-      const auditRaw = Array.isArray(analysis.mandatorySkillsAudit)
-        ? analysis.mandatorySkillsAudit
-        : [];
-      const auditEntries: string[] = [];
-      const auditNotMet: string[] = [];
-      const auditPartial: string[] = [];
-
-      auditRaw.forEach((entry: any) => {
-        if (!entry || typeof entry.skill !== "string" || entry.skill.trim().length === 0) {
-          return;
-        }
-        const trimmedSkill = entry.skill.trim();
-        const status = typeof entry.status === "string" ? entry.status.toLowerCase() : "unknown";
-        const prefix = status === "met" ? "✅" : status === "partial" ? "⚠️" : "❌";
-        const observed =
-          typeof entry.observedMonths === "number" && entry.observedMonths > 0
-            ? `${entry.observedMonths} mo`
-            : "0 mo";
-        const parts = [`${prefix} ${trimmedSkill}`];
-        if (observed) {
-          parts.push(`(${observed})`);
-        }
-        if (typeof entry.evidence === "string" && entry.evidence.trim().length > 0) {
-          parts.push(`Evidence: ${entry.evidence.trim()}`);
-        }
-        auditEntries.push(parts.join(" – "));
-
-        if (status === "not_met") {
-          auditNotMet.push(trimmedSkill);
-        } else if (status === "partial") {
-          auditPartial.push(trimmedSkill);
-        }
-      });
-
       const pushSection = (
         label: string,
         raw: unknown,
@@ -418,12 +395,8 @@ const ResumeDetailPage = () => {
         }
       };
 
-      if (auditEntries.length > 0) {
-        sections.push({ label: "Mandatory Skill Audit", value: auditEntries, type: "analysis" });
-      }
-
-      pushSection("Mandatory Skills Not Met", auditNotMet);
-      pushSection("Mandatory Skills Partially Met", auditPartial);
+      pushSection("Mandatory Skills Matched", analysis.mustHaveSkillsMatched ?? []);
+      pushSection("Mandatory Skills Missing", analysis.mustHaveSkillsMissing ?? []);
       pushSection("Nice-to-have Skills Matched", analysis.niceToHaveSkillsMatched ?? []);
       pushSection("Target Titles Matched", analysis.targetTitlesMatched ?? []);
       pushSection("Responsibilities Matched", analysis.responsibilitiesMatched ?? []);
@@ -506,9 +479,9 @@ const ResumeDetailPage = () => {
   }
 
   const headerScores: Array<{ label: string; value: number | null }> = [
-    { label: "Match Score", value: scores?.matchScore ?? null },
-    { label: "Company Score", value: scores?.companyScore ?? null },
-    { label: "Fake Score", value: scores?.fakeScore ?? null }
+    { label: "Match Score", value: matchScore },
+    { label: "Company Score", value: companyScore },
+    { label: "Fake Score", value: fakeScore }
   ];
 
   return (

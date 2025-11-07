@@ -5,6 +5,7 @@
  */
 
 import prisma from '../src/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { buildImportRunSummary } from '../src/lib/imports/runSummary';
 
 async function cleanupStuckImports() {
@@ -60,7 +61,7 @@ async function cleanupStuckImports() {
         status: 'failed',
         finished_at: finishedAt,
         processing_duration_ms: durationMs,
-        summary,
+        summary: summary ? (summary as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
         last_error: 'Manually canceled - stuck in running state (processor never started)'
       }
     });

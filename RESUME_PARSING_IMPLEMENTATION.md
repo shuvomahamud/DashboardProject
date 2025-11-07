@@ -17,20 +17,20 @@ This document summarizes the implementation of the comprehensive resume parsing 
 - **Numbered Requirements**: 9 explicit hard rules model must follow
 - **Scalar Policy**: Specific fields that must be string|null (never arrays)
 - **Wrong Examples**: Explicit anti-patterns shown to model
-- **Root Keys**: Exactly `resume`, `scores`, `summary` - no others
+- **Root Keys**: Exactly `resume`, `analysis`, `summary` - no others
 - **Summary Rules**: Must be single string ≤140 chars at root level
 
 ### 3. Hardened Schema Validation
 - **Coercion Helpers**: `stringOrNull`, `number0to100`, `stringArray`
 - **Array Normalization**: Single strings → arrays, arrays preserved
-- **Score Clamping**: Automatic 0-100 range enforcement
+- **Skill Months Bounds**: Automatic 0-1200 range enforcement
 - **Optional Fields**: All scalars optional + nullable for flexibility
 
 ### 4. Pre-Sanitizer Functions
 - **`fixScalar()`**: Converts arrays/objects/booleans → `null` for scalars
 - **`coerceSummary()`**: Handles nested summaries, arrays, objects, fallbacks
 - **`sanitizeModelOutput()`**: Comprehensive cleanup before Zod validation
-- **Score Clamping**: Pre-validation range enforcement
+- **Skill Months Bounds**: Pre-validation enforcement for quantified skills
 
 ### 5. Enhanced User Prompt
 - **Proper Fencing**: `<<<BLOCK...BLOCK` delimiters
@@ -85,9 +85,11 @@ All acceptance criteria met:
 - [x] Model never uses arrays for scalar fields
 - [x] Summary always present, root-level, string ≤140 chars
 - [x] Dates properly formatted, ongoing roles → `endDate: null`
-- [x] Scores are integers 0–100
+- [x] AI output contains zero scoring fields (scores computed locally)
 - [x] No extra keys beyond required schema
 - [x] Sanitizer does minimal work (excellent sign!)
 - [x] Zod validation passes consistently
 
 **The resume parsing pipeline is now bulletproof!** 🎯
+
+

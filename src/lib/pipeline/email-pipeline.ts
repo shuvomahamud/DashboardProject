@@ -652,30 +652,49 @@ async function enqueueResumeForAI(
 /**
  * Try GPT parsing with configurable timeout (used by the worker).
  */
+export interface GPTParsingResult {
+  success: boolean;
+  error?: string;
+  code?: 'timeout' | 'error';
+}
+
 export async function tryGPTParsing(
   resumeId: number,
   jobContext: JobContext,
   timeoutMs: number,
   runId: string
-): Promise<boolean> {
+): Promise<GPTParsingResult> {
   try {
-    await parseAndScoreResume(resumeId, jobContext, false, timeoutMs);
-    pipelineInfo('gpt parsing completed', {
-      runId,
-      resumeId,
-      timeoutMs
-    });
-    logMetric('gpt_worker_success', { runId, resumeId, timeoutMs });
-    return true;
-  } catch (error: any) {
-    const message = error.message || 'Unknown error';
+    const result = await parseAndScoreResume(resumeId, jobContext, false, timeoutMs);
+    if (result.success) {
+      pipelineInfo('gpt parsing completed', {
+        runId,
+        resumeId,
+        timeoutMs
+      });
+      logMetric('gpt_worker_success', { runId, resumeId, timeoutMs });
+      return { success: true };
+    }
+
+    const message = result.error || 'Unknown parsing error';
+    const code: GPTParsingResult['code'] =
+      message.toLowerCase().includes('timeout') ? 'timeout' : 'error';
     pipelineWarn('gpt parsing failed', {
       runId,
       resumeId,
       error: message
     });
-    logMetric('gpt_worker_failure', { runId, resumeId, error: message });
-    return false;
+    logMetric('gpt_worker_failure', { runId, resumeId, error: message, code });
+    return { success: false, error: message, code };
+  } catch (error: any) {
+    const message = error?.message || 'Unknown error';
+    pipelineWarn('gpt parsing failed', {
+      runId,
+      resumeId,
+      error: message
+    });
+    logMetric('gpt_worker_failure', { runId, resumeId, error: message, code: 'error' });
+    return { success: false, error: message, code: 'error' };
   }
 }
 

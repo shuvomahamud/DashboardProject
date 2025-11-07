@@ -55,7 +55,9 @@ async function backfillApplicationSnapshots() {
         if (matchScore == null && app.resume.aiExtractJson) {
           try {
             const resumeJson = JSON.parse(app.resume.aiExtractJson as string);
-            matchScore = toNumber(resumeJson?.scores?.matchScore);
+            matchScore =
+              toNumber(resumeJson?.computedMatchScore?.finalScore) ??
+              toNumber(resumeJson?.scores?.matchScore);
           } catch (parseError) {
             console.warn(`Failed to parse aiExtractJson for resume ${app.resumeId}:`, parseError);
           }
