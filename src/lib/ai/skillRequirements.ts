@@ -67,11 +67,22 @@ const aiSkillExperienceSchema = z.object({
     .transform(value => value ?? 'ai')
 });
 
+const requiredMonthsSchema = z
+  .union([z.number(), z.string(), z.null(), z.undefined()])
+  .transform(value => {
+    if (value === null || value === undefined || value === '') {
+      return 0;
+    }
+    const numeric = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return 0;
+    }
+    return Math.min(1200, Math.round(numeric));
+  });
+
 const skillRequirementSchema = z.object({
   skill: skillNameSchema,
-  requiredMonths: z
-    .union([z.number(), z.string()])
-    .transform(value => Math.max(0, Math.min(1200, Math.round(Number(value) || 0))))
+  requiredMonths: requiredMonthsSchema
 });
 
 const skillRequirementArraySchema = z

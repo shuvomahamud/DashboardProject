@@ -78,14 +78,7 @@ const formatMandatoryRequirements = (items: JobContext['mandatorySkillRequiremen
 
   return items
     .slice(0, 40)
-    .map(item => {
-      const months = item.requiredMonths ?? 0;
-      const label =
-        months > 0
-          ? `${months} month${months === 1 ? '' : 's'} required`
-          : 'presence only';
-      return `- ${item.skill}: ${label}`;
-    })
+    .map(item => `- ${item.skill}`)
     .join('\n');
 };
 
@@ -143,4 +136,3 @@ export function getResumeParserPrompt(
     userMessage
   };
 }
-

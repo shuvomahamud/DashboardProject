@@ -1047,6 +1047,9 @@ export async function parseAndScoreResume(
       aiSkillExperiences
     );
 
+    validatedData.analysis.mustHaveSkillsMatched = requirementSummary.metRequirements ?? [];
+    validatedData.analysis.mustHaveSkillsMissing = requirementSummary.unmetRequirements ?? [];
+
     resumeLogInfo('skill_match_summary', {
       resumeId,
       manualMustHave: manualMustMatches.length,

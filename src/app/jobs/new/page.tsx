@@ -68,59 +68,6 @@ interface MandatorySkillRequirement {
   requiredMonths: number;
 }
 
-
-const extractSuggestedMonths = (skill: string, context: string): number | null => {
-  if (!skill || !context) return null;
-  const normalizedContext = context.toLowerCase();
-  const normalizedSkill = skill.toLowerCase();
-
-  const windows: Array<[number, number]> = [];
-  let index = normalizedContext.indexOf(normalizedSkill);
-  while (index !== -1) {
-    windows.push([
-      Math.max(0, index - 80),
-      Math.min(normalizedContext.length, index + normalizedSkill.length + 80)
-    ]);
-    index = normalizedContext.indexOf(normalizedSkill, index + normalizedSkill.length);
-  }
-
-  if (windows.length === 0) {
-    windows.push([0, Math.min(normalizedContext.length, 200)]);
-  }
-
-  const evaluateSnippet = (snippet: string): number | null => {
-    const patterns = [
-      /(\d{1,2})\s*\+?\s*(years?|yrs?|yr|y)\b/g,
-      /(\d{1,2})\s*\+?\s*(months?|mos?|mo)\b/g,
-      /(\d{1,2})\s*-\s*year\b/g
-    ];
-
-    for (const pattern of patterns) {
-      let match: RegExpExecArray | null;
-      while ((match = pattern.exec(snippet)) !== null) {
-        const raw = Number(match[1]);
-        if (!Number.isFinite(raw)) continue;
-        const token = (match[2] ?? '').toLowerCase();
-        const months = /year|yr|y/.test(token) ? raw * 12 : raw;
-        if (months > 0) {
-          return Math.min(1200, Math.max(1, months));
-        }
-      }
-    }
-    return null;
-  };
-
-  for (const [start, end] of windows) {
-    const snippet = normalizedContext.slice(start, end);
-    const months = evaluateSnippet(snippet);
-    if (months !== null) {
-      return months;
-    }
-  }
-
-  return null;
-};
-
 export default function NewJobPage() {
   const router = useRouter();
   const { showToast } = useToast();
@@ -134,7 +81,6 @@ export default function NewJobPage() {
   const [mandatorySkills, setMandatorySkills] = useState<MandatorySkillRequirement[]>([]);
   const [addingMandatorySkill, setAddingMandatorySkill] = useState(false);
   const [newMandatorySkill, setNewMandatorySkill] = useState('');
-  const [newMandatoryMonths, setNewMandatoryMonths] = useState('');
   const [aiMustHaveSkills, setAiMustHaveSkills] = useState<string[]>([]);
 
   const listToMultiline = (items?: string[] | null) =>
@@ -148,68 +94,31 @@ export default function NewJobPage() {
 
   const normalizeSkillKey = (value: string) => value.trim().toLowerCase();
 
-  const computeDefaultMonths = (profile: any | null | undefined) => {
-    const years =
-      (typeof profile?.requiredExperienceYears === 'number' && profile.requiredExperienceYears > 0
-        ? profile.requiredExperienceYears
-        : null) ??
-      (typeof profile?.preferredExperienceYears === 'number' && profile.preferredExperienceYears > 0
-        ? profile.preferredExperienceYears
-        : null);
-
-    if (!years || !Number.isFinite(years)) {
-      return 12;
-    }
-
-    const months = Math.round(years * 12);
-    return Math.max(6, Math.min(1200, months));
-  };
-
-  const syncMandatorySkillsFromList = (
-    skills: string[],
-    options?: { defaultMonths?: number; contextText?: string }
-  ) => {
-    const defaultMonths = options?.defaultMonths ?? 0;
-    const contextText = options?.contextText ?? '';
-    setMandatorySkills(prev => {
-      const prevMap = new Map(prev.map(item => [normalizeSkillKey(item.skill), item]));
+  const syncMandatorySkillsFromList = (skills: string[]) => {
+    setMandatorySkills(() => {
+      const seen = new Set<string>();
       const next: MandatorySkillRequirement[] = [];
       for (const rawSkill of skills) {
         const skill = rawSkill.trim();
         if (!skill) continue;
+        const key = normalizeSkillKey(skill);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        next.push({ skill, requiredMonths: 0 });
         if (next.length >= 30) break;
-        const existing = prevMap.get(normalizeSkillKey(skill));
-        const suggestedMonths = contextText ? extractSuggestedMonths(skill, contextText) : null;
-        const months = existing
-          ? (existing.requiredMonths > 0 ? existing.requiredMonths : (suggestedMonths ?? defaultMonths))
-          : (suggestedMonths ?? defaultMonths);
-        next.push({ skill, requiredMonths: months });
       }
       return next;
     });
   };
 
-  const handleMandatorySkillChange = (
-    index: number,
-    field: 'skill' | 'requiredMonths',
-    value: string
-  ) => {
+  const handleMandatorySkillChange = (index: number, value: string) => {
     setMandatorySkills(prev => {
       if (!prev[index]) return prev;
       const next = [...prev];
-      if (field === 'skill') {
-        next[index] = {
-          ...next[index],
-          skill: value
-        };
-      } else {
-        const numeric = Number(value);
-        const sanitized = Number.isFinite(numeric) && numeric >= 0 ? Math.min(1200, Math.round(numeric)) : 0;
-        next[index] = {
-          ...next[index],
-          requiredMonths: sanitized
-        };
-      }
+      next[index] = {
+        ...next[index],
+        skill: value
+      };
       return next;
     });
   };
@@ -220,7 +129,6 @@ export default function NewJobPage() {
 
   const resetNewMandatoryInputs = () => {
     setNewMandatorySkill('');
-    setNewMandatoryMonths('');
   };
 
   const handleAddMandatorySkill = () => {
@@ -230,20 +138,15 @@ export default function NewJobPage() {
       return;
     }
 
-    const monthsNumber = (() => {
-      const numeric = Number(newMandatoryMonths);
-      if (!Number.isFinite(numeric) || numeric < 0) return 0;
-      return Math.min(1200, Math.round(numeric));
-    })();
-
     let additionMade = false;
 
     setMandatorySkills(prev => {
-      const existingIndex = prev.findIndex(item => normalizeSkillKey(item.skill) === normalizeSkillKey(skill));
+      const normalized = normalizeSkillKey(skill);
+      const existingIndex = prev.findIndex(item => normalizeSkillKey(item.skill) === normalized);
       if (existingIndex >= 0) {
         additionMade = true;
         const next = [...prev];
-        next[existingIndex] = { skill, requiredMonths: monthsNumber };
+        next[existingIndex] = { skill, requiredMonths: 0 };
         return next;
       }
 
@@ -254,7 +157,7 @@ export default function NewJobPage() {
       }
 
       additionMade = true;
-      return [...prev, { skill, requiredMonths: monthsNumber }];
+      return [...prev, { skill, requiredMonths: 0 }];
     });
 
     if (additionMade) {
@@ -307,20 +210,7 @@ export default function NewJobPage() {
       locationConstraints: profile?.locationConstraints ?? ''
     });
     setProfileVersion(profile.version ?? 'v1');
-    const defaultMonths = computeDefaultMonths(profile);
-    const contextText = [
-      formData.description,
-      formData.requirements,
-      profile.summary,
-      Array.isArray(profile.responsibilities) ? profile.responsibilities.join('\n') : '',
-      Array.isArray(profile.toolsAndTech) ? profile.toolsAndTech.join('\n') : ''
-    ]
-      .filter(Boolean)
-      .join('\n');
-    syncMandatorySkillsFromList(profile.mustHaveSkills ?? [], {
-      defaultMonths,
-      contextText
-    });
+    syncMandatorySkillsFromList(profile.mustHaveSkills ?? []);
   };
 
   const handleRunProfile = async () => {
@@ -417,7 +307,7 @@ const aiJobProfile = {
       let mandatorySkillRequirementsPayload = mandatorySkills
         .map(item => ({
           skill: item.skill.trim(),
-          requiredMonths: Math.max(0, Math.min(1200, Math.round(item.requiredMonths ?? 0)))
+          requiredMonths: 0
         }))
         .filter(item => item.skill.length > 0)
         .slice(0, 30);
@@ -831,9 +721,9 @@ const aiJobProfile = {
                 <div className="mt-4">
                   <div className="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3 mb-3">
                     <div>
-                      <h5 className="fw-semibold mb-1">Mandatory Skills & Experience Checks</h5>
+                      <h5 className="fw-semibold mb-1">Mandatory Skills</h5>
                       <p className="text-muted small mb-0">
-                        Add up to 30 critical skills and the minimum months of experience required. Leave months at 0 to track presence only.
+                        Add up to 30 critical skills for AI + manual review to verify.
                       </p>
                     </div>
                     <div>
@@ -856,7 +746,7 @@ const aiJobProfile = {
                   {addingMandatorySkill && (
                     <div className="border rounded bg-light p-3 mb-3">
                       <Row className="g-3 align-items-end">
-                        <Col md={6}>
+                        <Col md={8}>
                           <Form.Group className="mb-0">
                             <Form.Label className="small fw-semibold">Skill *</Form.Label>
                             <Form.Control
@@ -869,21 +759,7 @@ const aiJobProfile = {
                             />
                           </Form.Group>
                         </Col>
-                        <Col md={3}>
-                          <Form.Group className="mb-0">
-                            <Form.Label className="small fw-semibold">Required Months</Form.Label>
-                            <Form.Control
-                              size="sm"
-                              type="number"
-                              min={0}
-                              max={1200}
-                              value={newMandatoryMonths}
-                              onChange={(e) => setNewMandatoryMonths(e.target.value)}
-                              placeholder="0"
-                            />
-                          </Form.Group>
-                        </Col>
-                        <Col md={3} className="d-flex gap-2">
+                        <Col md={4} className="d-flex gap-2">
                           <Button size="sm" variant="primary" type="button" onClick={handleAddMandatorySkill}>
                             Save
                           </Button>
@@ -902,7 +778,6 @@ const aiJobProfile = {
                           <tr>
                             <th style={{ width: '4rem' }}>#</th>
                             <th>Skill</th>
-                            <th style={{ width: '12rem' }}>Required Months</th>
                             <th style={{ width: '5rem' }}></th>
                           </tr>
                         </thead>
@@ -915,17 +790,7 @@ const aiJobProfile = {
                                   size="sm"
                                   type="text"
                                   value={item.skill}
-                                  onChange={(e) => handleMandatorySkillChange(index, 'skill', e.target.value)}
-                                />
-                              </td>
-                              <td>
-                                <Form.Control
-                                  size="sm"
-                                  type="number"
-                                  min={0}
-                                  max={1200}
-                                  value={item.requiredMonths}
-                                  onChange={(e) => handleMandatorySkillChange(index, 'requiredMonths', e.target.value)}
+                                  onChange={(e) => handleMandatorySkillChange(index, e.target.value)}
                                 />
                               </td>
                               <td className="text-end">

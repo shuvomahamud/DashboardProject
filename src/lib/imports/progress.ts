@@ -193,7 +193,10 @@ export async function finalizeRunIfComplete(runId: string): Promise<FinalizeRunR
     };
   }
 
-  const finalStatus: 'succeeded' | 'failed' = completedCount > 0 ? 'succeeded' : 'failed';
+  const processedItems = completedCount + failedCount;
+  const hadAnyItems = processedItems > 0;
+  const finalStatus: 'succeeded' | 'failed' =
+    !hadAnyItems ? 'succeeded' : completedCount > 0 ? 'succeeded' : 'failed';
   const finishedAt = new Date();
   const startedAt = run.started_at ?? run.created_at ?? finishedAt;
   const durationMs = Math.max(0, finishedAt.getTime() - new Date(startedAt).getTime());
@@ -201,7 +204,7 @@ export async function finalizeRunIfComplete(runId: string): Promise<FinalizeRunR
     runId,
     jobId: run.job_id,
     totalMessages: run.total_messages ?? null,
-    processedMessages: completedCount,
+    processedMessages: processedItems,
     failedMessages: failedCount
   });
 
@@ -213,8 +216,8 @@ export async function finalizeRunIfComplete(runId: string): Promise<FinalizeRunR
   });
 
   const lastError =
-    finalStatus === 'failed'
-      ? `All ${failedCount} items failed. Check item errors for details.`
+    finalStatus === 'failed' && failedCount > 0
+      ? `All ${failedCount} item(s) failed. Check item errors for details.`
       : null;
 
   await prisma.import_email_runs.update({
@@ -224,7 +227,7 @@ export async function finalizeRunIfComplete(runId: string): Promise<FinalizeRunR
       finished_at: finishedAt,
       processing_duration_ms: durationMs,
       progress: 1.0,
-      processed_messages: completedCount,
+      processed_messages: processedItems,
       last_error: lastError,
       summary
     }

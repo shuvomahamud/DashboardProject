@@ -52,23 +52,6 @@ interface MandatorySkillRequirement {
   requiredMonths: number;
 }
 
-const computeDefaultMonths = (profile: JobProfile | null | undefined) => {
-  const years =
-    (typeof profile?.requiredExperienceYears === 'number' && profile.requiredExperienceYears > 0
-      ? profile.requiredExperienceYears
-      : null) ??
-    (typeof profile?.preferredExperienceYears === 'number' && profile.preferredExperienceYears > 0
-      ? profile.preferredExperienceYears
-      : null);
-
-  if (!years || !Number.isFinite(years)) {
-    return 12;
-  }
-
-  const months = Math.round(years * 12);
-  return Math.max(6, Math.min(1200, months));
-};
-
 const coerceMandatorySkillRequirements = (input: unknown): MandatorySkillRequirement[] => {
   if (!Array.isArray(input)) return [];
   const seen = new Set<string>();
@@ -178,8 +161,7 @@ export default function JobDetailPage() {
     if (fallbackSkills.length === 0) {
       return [];
     }
-    const defaultMonths = computeDefaultMonths(jobProfile);
-    return fallbackSkills.slice(0, 30).map(skill => ({ skill, requiredMonths: defaultMonths }));
+    return fallbackSkills.slice(0, 30).map(skill => ({ skill, requiredMonths: 0 }));
   }, [job?.mandatorySkillRequirements, jobProfile?.mustHaveSkills]);
   const hasMandatoryRequirements = mandatoryRequirements.length > 0;
 
@@ -425,8 +407,6 @@ export default function JobDetailPage() {
                       <tr>
                         <th style={{ width: '4rem' }}>#</th>
                         <th>Skill</th>
-                        <th style={{ width: '12rem' }}>Required Months</th>
-                        <th style={{ width: '12rem' }}>Check Type</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -434,26 +414,6 @@ export default function JobDetailPage() {
                         <tr key={`${req.skill}-${index}`}>
                           <td className="text-muted">{index + 1}</td>
                           <td>{req.skill}</td>
-                          <td>
-                            {req.requiredMonths > 0 ? (
-                              <Badge bg="info" text="dark" className="fw-normal">
-                                {req.requiredMonths} months
-                              </Badge>
-                            ) : (
-                              <span className="text-muted">0 (presence)</span>
-                            )}
-                          </td>
-                          <td>
-                            {req.requiredMonths > 0 ? (
-                              <Badge bg="success" className="fw-normal">
-                                Duration match
-                              </Badge>
-                            ) : (
-                              <Badge bg="secondary" className="fw-normal">
-                                Presence only
-                              </Badge>
-                            )}
-                          </td>
                         </tr>
                       ))}
                     </tbody>

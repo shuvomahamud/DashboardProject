@@ -69,26 +69,6 @@ function formatSalaryRange(min: unknown, max: unknown): string | null {
   return `Maximum ${maxText}`;
 }
 
-function formatRequiredMonths(months: number): string | null {
-  if (!Number.isFinite(months) || months <= 0) {
-    return null;
-  }
-
-  const wholeMonths = Math.round(months);
-  const years = Math.floor(wholeMonths / 12);
-  const remainingMonths = wholeMonths % 12;
-
-  const parts: string[] = [];
-  if (years > 0) {
-    parts.push(years === 1 ? '1 year' : `${years} years`);
-  }
-  if (remainingMonths > 0 || years === 0) {
-    parts.push(remainingMonths === 1 ? '1 month' : `${remainingMonths} months`);
-  }
-
-  return parts.join(' ');
-}
-
 function formatMandatorySkills(input: unknown): string | null {
   const requirements = parseSkillRequirementConfig(input);
   if (requirements.length === 0) {
@@ -96,10 +76,7 @@ function formatMandatorySkills(input: unknown): string | null {
   }
 
   const skillText = requirements
-    .map(req => {
-      const duration = formatRequiredMonths(req.requiredMonths);
-      return duration ? `${req.skill} (${duration})` : req.skill;
-    })
+    .map(req => req.skill)
     .join(', ');
 
   return skillText.length > 0 ? skillText : null;
