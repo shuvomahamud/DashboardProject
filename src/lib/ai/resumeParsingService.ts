@@ -258,7 +258,7 @@ function sanitizeModelOutput(raw: any) {
 
 const TOKEN_REGEX = /[A-Za-z0-9+#]+/g;
 const MIN_PREFIX_MATCH = 4;
-const PHRASE_WINDOW = 5;
+const PHRASE_WINDOW = 8;
 
 interface ResumeToken {
   value: string;
@@ -417,17 +417,18 @@ const dedupePreserveOrder = (values: string[]): string[] => {
 };
 
 interface SkillVerificationResult {
-  extraMustHave: string[];
+  confirmedMustHave: string[];
   extraNiceToHave: string[];
   extraTools: string[];
 }
 
 async function verifySkillMatchesWithAI(params: {
   resumeText: string;
-  jobProfile: JobProfile;
+  jobProfile: JobProfile | null;
   manualMustHave: string[];
   manualNiceToHave: string[];
   manualTools: string[];
+  targetMustHave: string[];
 }): Promise<SkillVerificationResult | null> {
   if (!process.env.OPENAI_API_KEY) {
     return null;
@@ -448,17 +449,19 @@ async function verifySkillMatchesWithAI(params: {
   const listSection = (title: string, items: string[]) =>
     `${title}:\n${items.length > 0 ? items.map(item => `- ${item}`).join('\n') : '- (none)'}`;
 
+  const mustHaveTargets = dedupePreserveOrder(params.targetMustHave ?? []);
+
   const userMessage = [
-    'You review manual resume-skill matches and add any additional skills that the resume covers semantically. '
-    + 'Consider synonyms, equivalent phrases, and contextual descriptions, not just exact keyword matches. '
-    + 'If the manual list already covers every mention, return empty arrays. '
-    + 'Only add items that are listed in the corresponding job profile category and supported by resume evidence.',
+    'Review the resume carefully and determine which mandatory skills are explicitly demonstrated. '
+    + 'Only confirm a skill if the resume clearly describes experience, responsibilities, or deliverables for it. '
+    + 'Do not guess or hallucinate; omit any skill that lacks direct evidence.',
     '',
-    listSection('Job profile must-have skills', jobProfile.mustHaveSkills ?? []),
-    listSection('Job profile nice-to-have skills', jobProfile.niceToHaveSkills ?? []),
-    listSection('Job profile tools & tech', jobProfile.toolsAndTech ?? []),
+    listSection('Mandatory skills to verify', mustHaveTargets),
+    listSection('Manual matches detected earlier', params.manualMustHave),
     '',
-    listSection('Manual must-have matches', params.manualMustHave),
+    listSection('Job profile nice-to-have skills', jobProfile?.niceToHaveSkills ?? []),
+    listSection('Job profile tools & tech', jobProfile?.toolsAndTech ?? []),
+    '',
     listSection('Manual nice-to-have matches', params.manualNiceToHave),
     listSection('Manual tools matches', params.manualTools),
     '',
@@ -476,9 +479,10 @@ async function verifySkillMatchesWithAI(params: {
         {
           role: 'system',
           content:
-            'You verify resume evidence with semantic matching. Respond ONLY with JSON of shape '
-            + '{"extraMustHave":["skill"],"extraNiceToHave":["skill"],"extraTools":["tool"]}. '
-            + 'Do not invent new skills; only list items present (even if paraphrased) in the resume text and in the provided job profile lists.'
+            'You are an evidence-focused resume screener. Respond ONLY with minified JSON of shape '
+            + '{"confirmedMustHave":["skill"],"extraNiceToHave":["skill"],"extraTools":["tool"]}. '
+            + 'All items must appear in the provided job profile lists AND be explicitly supported by the resume text. '
+            + 'If you are unsure, leave the arrays empty. Never hallucinate.'
         },
         {
           role: 'user',
@@ -505,14 +509,12 @@ async function verifySkillMatchesWithAI(params: {
       );
     };
 
-    const allowedMust = new Set(
-      (jobProfile.mustHaveSkills ?? []).map(normalizeValue)
-    );
+    const allowedMust = new Set(mustHaveTargets.map(normalizeValue));
     const allowedNice = new Set(
-      (jobProfile.niceToHaveSkills ?? []).map(normalizeValue)
+      (jobProfile?.niceToHaveSkills ?? []).map(normalizeValue)
     );
     const allowedTools = new Set(
-      (jobProfile.toolsAndTech ?? []).map(normalizeValue)
+      (jobProfile?.toolsAndTech ?? []).map(normalizeValue)
     );
 
     const manualMustSet = new Set(params.manualMustHave.map(normalizeValue));
@@ -520,7 +522,7 @@ async function verifySkillMatchesWithAI(params: {
     const manualToolSet = new Set(params.manualTools.map(normalizeValue));
 
     return {
-      extraMustHave: sanitizeExtras(parsed.extraMustHave, allowedMust, manualMustSet),
+      confirmedMustHave: sanitizeExtras(parsed.confirmedMustHave, allowedMust, manualMustSet),
       extraNiceToHave: sanitizeExtras(parsed.extraNiceToHave, allowedNice, manualNiceSet),
       extraTools: sanitizeExtras(parsed.extraTools, allowedTools, manualToolSet)
     };
@@ -959,6 +961,8 @@ export async function parseAndScoreResume(
     let aiExtraSkills: string[] = [];
     let aiExtraTools: string[] = [];
 
+    let verification: SkillVerificationResult | null = null;
+
     if (jobContext.jobProfile && resume.rawText) {
       const tokens = buildResumeTokens(resume.rawText);
       const profileMust = jobContext.jobProfile.mustHaveSkills ?? [];
@@ -1005,19 +1009,26 @@ export async function parseAndScoreResume(
       validatedData.analysis.niceToHaveSkillsMatched = manualNiceMatches;
       validatedData.analysis.toolsAndTechMatched = manualToolsMatches;
 
-      const verification = await verifySkillMatchesWithAI({
+      const mandatorySkillTargets = dedupePreserveOrder([
+        ...(jobContext.mandatorySkillRequirements ?? []).map(requirement => requirement.skill),
+        ...(jobContext.jobProfile?.mustHaveSkills ?? [])
+      ]);
+
+      verification = await verifySkillMatchesWithAI({
         resumeText: processedText,
         jobProfile: jobContext.jobProfile,
         manualMustHave: manualMustMatches,
         manualNiceToHave: manualNiceMatches,
-        manualTools: manualToolsMatches
+        manualTools: manualToolsMatches,
+        targetMustHave: mandatorySkillTargets
       });
 
       if (verification) {
-        const combinedExtras = dedupePreserveOrder([
-          ...(verification.extraMustHave ?? []),
-          ...(verification.extraNiceToHave ?? [])
-        ]);
+        const aiOnlyMust = (verification.confirmedMustHave ?? []).filter(
+          skill => !manualSkillSet.has(normalizeSkillKey(skill))
+        );
+        const extraNice = verification.extraNiceToHave ?? [];
+        const combinedExtras = dedupePreserveOrder([...aiOnlyMust, ...extraNice]);
 
         aiExtraSkills = combinedExtras.filter(skill => !manualSkillSet.has(normalizeSkillKey(skill)));
         aiExtraTools = dedupePreserveOrder(verification.extraTools ?? []).filter(
@@ -1037,7 +1048,26 @@ export async function parseAndScoreResume(
       aiExtraTools = [];
     }
 
+    const aiVerifierMustHave = verification?.confirmedMustHave ?? [];
+
     let aiSkillExperiences = parseAiSkillExperience(validatedData.resume.skillExperience);
+
+    if (aiVerifierMustHave.length > 0) {
+      const aiSkillSet = new Set(aiSkillExperiences.map(entry => normalizeSkillKey(entry.skill)));
+      for (const skill of aiVerifierMustHave) {
+        const normalized = normalizeSkillKey(skill);
+        if (!normalized || aiSkillSet.has(normalized)) continue;
+        aiSkillExperiences.push({
+          skill,
+          months: 0,
+          confidence: 0.6,
+          evidence: null,
+          lastUsed: null,
+          source: 'ai_verifier'
+        });
+        aiSkillSet.add(normalized);
+      }
+    }
 
     validatedData.resume.skillExperience = aiSkillExperiences;
 
