@@ -1130,7 +1130,7 @@ export async function parseAndScoreResume(
       jobContext.mandatorySkillRequirements.length > 0
         ? {
             evaluatedAt: new Date().toISOString(),
-            requirements: jobContext.mandatorySkillRequirements,
+            requirements: jobContext.mandatorySkillRequirements.map(req => req.skill),
             evaluations: requirementSummary.evaluations,
             manualCoverageMissing: requirementSummary.manualCoverageMissing,
             unmetRequirements: requirementSummary.unmetRequirements,

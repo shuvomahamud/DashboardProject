@@ -7,27 +7,20 @@ import {
 } from '../skillRequirements';
 
 describe('skillRequirements helpers', () => {
-  it('parses skill requirement config from various shapes', () => {
-    const fromArray = parseSkillRequirementConfig([
-      { skill: 'React', requiredMonths: 24 },
-      { skill: 'Node.js', requiredMonths: '12' }
-    ]);
+  it('parses skill requirement config from arrays and JSON strings', () => {
+    const fromArray = parseSkillRequirementConfig(['React', 'Node.js']);
     expect(fromArray).toHaveLength(2);
     expect(fromArray[0].skill).toBe('React');
-    expect(fromArray[1].requiredMonths).toBe(12);
 
-    const fromObject = parseSkillRequirementConfig({ SQL: 18, 'Data Analysis': 0 });
-    expect(fromObject).toHaveLength(2);
-    expect(fromObject.find(item => item.skill === 'SQL')?.requiredMonths).toBe(18);
+    const fromString = parseSkillRequirementConfig(
+      JSON.stringify(['SQL', 'Data Analysis'])
+    );
+    expect(fromString).toHaveLength(2);
+    expect(fromString.find(item => item.skill === 'SQL')).toBeTruthy();
   });
 
   it('evaluates mandatory skills using manual and AI evidence', () => {
-    const requirements = parseSkillRequirementConfig([
-      { skill: 'React', requiredMonths: 24 },
-      { skill: 'Node.js', requiredMonths: 0 },
-      { skill: 'PostgreSQL', requiredMonths: 12 },
-      { skill: 'Azure', requiredMonths: 36 }
-    ]);
+    const requirements = parseSkillRequirementConfig(['React', 'Node.js', 'PostgreSQL', 'Azure']);
 
     const manualAssessments = parseManualSkillAssessments([
       { skill: 'React', months: 18 },
@@ -45,14 +38,13 @@ describe('skillRequirements helpers', () => {
     expect(summary.evaluations).toHaveLength(4);
 
     const reactEval = summary.evaluations.find(item => item.skill === 'React');
-    expect(reactEval?.meetsRequirement).toBe(true);
-    expect(reactEval?.candidateMonths).toBe(30);
+    expect(reactEval?.matched).toBe(true);
 
     const postgresEval = summary.evaluations.find(item => item.skill === 'PostgreSQL');
-    expect(postgresEval?.meetsRequirement).toBe(true);
+    expect(postgresEval?.matched).toBe(true);
 
     const azureEval = summary.evaluations.find(item => item.skill === 'Azure');
-    expect(azureEval?.meetsRequirement).toBe(false);
+    expect(azureEval?.matched).toBe(false);
 
     expect(summary.manualCoverageMissing).toContain('PostgreSQL');
     expect(summary.aiDetectedWithoutManual).toContain('PostgreSQL');

@@ -6,6 +6,16 @@ import { parseSkillRequirementConfig } from '@/lib/ai/skillRequirements';
 
 export const dynamic = 'force-dynamic';
 
+type SearchMode = 'bulk' | 'graph-search' | null;
+
+const extractSearchMode = (meta: unknown): SearchMode => {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return null;
+  }
+  const mode = (meta as Record<string, unknown>).searchMode;
+  return mode === 'bulk' || mode === 'graph-search' ? mode : null;
+};
+
 async function GET(req: NextRequest) {
   try {
     // Extract params from URL path
@@ -39,9 +49,46 @@ async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     }
 
+    const normalizedMandatorySkills = parseSkillRequirementConfig(job.mandatorySkillRequirements).map(
+      item => item.skill
+    );
+
+    const importRuns = await prisma.import_email_runs.findMany({
+      where: { job_id: jobId },
+      orderBy: { created_at: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        mailbox: true,
+        search_text: true,
+        max_emails: true,
+        status: true,
+        created_at: true,
+        started_at: true,
+        finished_at: true,
+        meta: true
+      }
+    });
+
     return NextResponse.json({
       ...job,
-      aiJobProfile: parseJobProfile(job.aiJobProfileJson)
+      mandatorySkillRequirements: normalizedMandatorySkills,
+      aiJobProfile: parseJobProfile(job.aiJobProfileJson),
+      importRuns: importRuns.map(run => {
+        const searchMode = extractSearchMode(run.meta);
+        return {
+          id: run.id,
+          mailbox: run.mailbox,
+          searchText: run.search_text,
+          maxEmails: run.max_emails,
+          status: run.status,
+          createdAt: run.created_at,
+          startedAt: run.started_at,
+          finishedAt: run.finished_at,
+          highVolume: searchMode === 'bulk',
+          searchMode
+        };
+      })
     });
 
   } catch (error) {
@@ -119,8 +166,11 @@ async function PUT(req: NextRequest) {
       updateData.aiSummary = manualProfile.summary;
     }
 
-    const mandatorySkillRequirements = parseSkillRequirementConfig(body.mandatorySkillRequirements);
-    updateData.mandatorySkillRequirements = mandatorySkillRequirements.length > 0 ? mandatorySkillRequirements : null;
+    const mandatorySkillRequirements = parseSkillRequirementConfig(body.mandatorySkillRequirements).map(
+      item => item.skill
+    );
+    updateData.mandatorySkillRequirements =
+      mandatorySkillRequirements.length > 0 ? mandatorySkillRequirements : null;
 
     const job = await prisma.job.update({
       where: { id: jobId },

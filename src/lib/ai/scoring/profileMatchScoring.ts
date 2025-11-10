@@ -87,7 +87,7 @@ function computeMandatoryContribution(
   let completed = 0;
 
   const breakdown = evaluations.map<MandatoryContribution>(evaluation => {
-    const matched = evaluation.meetsRequirement;
+    const matched = evaluation.matched;
     const ratio = matched ? 1 : 0;
     const contribution = matched ? perRequirement : 0;
     if (matched) {

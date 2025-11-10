@@ -29,7 +29,8 @@ interface Job {
   aiJobProfileUpdatedAt?: string | null;
   aiJobProfileVersion?: string | null;
   aiJobProfile?: JobProfile | null;
-  mandatorySkillRequirements?: MandatorySkillRequirement[] | null;
+  mandatorySkillRequirements?: string[] | null;
+  importRuns?: ImportRun[] | null;
 }
 
 interface JobProfile {
@@ -47,26 +48,38 @@ interface JobProfile {
   toolsAndTech: string[];
 }
 
-interface MandatorySkillRequirement {
-  skill: string;
-  requiredMonths: number;
+interface ImportRun {
+  id: string;
+  mailbox: string | null;
+  searchText: string | null;
+  maxEmails: number | null;
+  status: string;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  highVolume: boolean;
+  searchMode?: 'bulk' | 'graph-search' | null;
 }
 
-const coerceMandatorySkillRequirements = (input: unknown): MandatorySkillRequirement[] => {
+const coerceMandatorySkillRequirements = (input: unknown): string[] => {
   if (!Array.isArray(input)) return [];
   const seen = new Set<string>();
-  const result: MandatorySkillRequirement[] = [];
+  const result: string[] = [];
   for (const item of input) {
-    if (!item || typeof item !== 'object') continue;
-    const record = item as Record<string, unknown>;
-    const skill = typeof record.skill === 'string' ? record.skill.trim() : '';
+    let skill: string | null = null;
+    if (typeof item === 'string') {
+      skill = item.trim();
+    } else if (item && typeof item === 'object') {
+      const record = item as Record<string, unknown>;
+      if (typeof record.skill === 'string') {
+        skill = record.skill.trim();
+      }
+    }
     if (!skill) continue;
     const key = skill.toLowerCase();
     if (seen.has(key)) continue;
-    const numeric = Number(record.requiredMonths ?? record.months ?? 0);
-    const months = Number.isFinite(numeric) && numeric >= 0 ? Math.min(1200, Math.round(numeric)) : 0;
-    result.push({ skill, requiredMonths: months });
     seen.add(key);
+    result.push(skill);
     if (result.length >= 30) break;
   }
   return result;
@@ -152,6 +165,7 @@ export default function JobDetailPage() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [importRuns, setImportRuns] = useState<ImportRun[]>([]);
   const mandatoryRequirements = useMemo(() => {
     const parsed = coerceMandatorySkillRequirements(job?.mandatorySkillRequirements ?? null);
     if (parsed.length > 0) {
@@ -161,7 +175,7 @@ export default function JobDetailPage() {
     if (fallbackSkills.length === 0) {
       return [];
     }
-    return fallbackSkills.slice(0, 30).map(skill => ({ skill, requiredMonths: 0 }));
+    return fallbackSkills.slice(0, 30);
   }, [job?.mandatorySkillRequirements, jobProfile?.mustHaveSkills]);
   const hasMandatoryRequirements = mandatoryRequirements.length > 0;
 
@@ -183,6 +197,7 @@ export default function JobDetailPage() {
       
       const jobData: Job = await response.json();
       setJob(jobData);
+      setImportRuns(jobData.importRuns ?? []);
 
       const profileFromResponse: JobProfile | null =
         (jobData as any).aiJobProfile ??
@@ -213,6 +228,15 @@ export default function JobDetailPage() {
     if (min) return `$${minSalary.toLocaleString()}+`;
     if (max) return `Up to $${maxSalary.toLocaleString()}`;
     return 'Not specified';
+  };
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    try {
+      return new Date(value).toLocaleString();
+    } catch {
+      return value;
+    }
   };
 
 
@@ -410,10 +434,10 @@ export default function JobDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {mandatoryRequirements.map((req, index) => (
-                        <tr key={`${req.skill}-${index}`}>
+                      {mandatoryRequirements.map((skill, index) => (
+                        <tr key={`${skill}-${index}`}>
                           <td className="text-muted">{index + 1}</td>
-                          <td>{req.skill}</td>
+                          <td>{skill}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -474,6 +498,63 @@ export default function JobDetailPage() {
                     <code className="text-dark">{job.applicationQuery}</code>
                   </div>
                 </div>
+              )}
+            </Card.Body>
+          </Card>
+
+          {/* Import History */}
+          <Card className="mb-4 border-0 shadow-sm">
+            <Card.Header className="bg-light border-0 py-3 d-flex justify-content-between align-items-center">
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-inboxes text-primary"></i>
+                <h5 className="mb-0 fw-semibold">Recent Import History</h5>
+              </div>
+            </Card.Header>
+            <Card.Body className="p-0">
+              {importRuns.length > 0 ? (
+                <div className="table-responsive">
+                  <table className="table table-sm mb-0 align-middle">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '12rem' }}>Requested</th>
+                        <th>Mailbox</th>
+                        <th style={{ minWidth: '16rem' }}>Search Text</th>
+                        <th style={{ width: '8rem' }}>High Volume</th>
+                        <th style={{ width: '8rem' }}>Max Emails</th>
+                        <th style={{ width: '8rem' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importRuns.map(run => (
+                        <tr key={run.id}>
+                          <td>{formatDateTime(run.createdAt)}</td>
+                          <td className="text-break">{run.mailbox || '—'}</td>
+                          <td style={{ maxWidth: '300px' }}>
+                            <span className="text-truncate d-inline-block" style={{ maxWidth: '280px' }} title={run.searchText || undefined}>
+                              {run.searchText || '—'}
+                            </span>
+                          </td>
+                          <td>
+                            <Badge bg={run.highVolume ? 'warning' : 'secondary'} text={run.highVolume ? 'dark' : undefined}>
+                              {run.highVolume ? 'Yes' : 'No'}
+                            </Badge>
+                          </td>
+                          <td>{run.maxEmails ?? '—'}</td>
+                          <td>
+                            <Badge bg={run.status === 'succeeded' ? 'success' : run.status === 'failed' ? 'danger' : 'info'} className="fw-normal text-uppercase">
+                              {run.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Alert variant="light" className="border border-secondary-subtle text-muted mb-0 rounded-0 rounded-bottom">
+                  <i className="bi bi-info-circle me-2" />
+                  No imports queued yet for this job. Use “Import Applications” above to start a scan.
+                </Alert>
               )}
             </Card.Body>
           </Card>

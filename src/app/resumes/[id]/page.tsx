@@ -39,7 +39,7 @@ type SkillExperienceEntry = {
 
 type SkillRequirementEvaluation = {
   evaluatedAt?: string;
-  requirements?: Array<{ skill: string; requiredMonths: number }>;
+  requirements?: string[];
   metRequirements?: string[];
   manualCoverageMissing?: string[];
   unmetRequirements?: string[];
@@ -167,17 +167,27 @@ const parseSkillRequirementEvaluation = (value: unknown): SkillRequirementEvalua
   const toStringArray = (input: unknown): string[] =>
     Array.isArray(input) ? input.map((item) => String(item)).filter(Boolean) : [];
 
-  const requirementsRaw = Array.isArray(data.requirements) ? data.requirements : [];
-  const requirements = requirementsRaw
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const record = item as Record<string, unknown>;
-      const skill = typeof record.skill === "string" ? record.skill.trim() : null;
-      if (!skill) return null;
-      const requiredMonths = Number(record.requiredMonths ?? 0);
-      return { skill, requiredMonths: Math.max(0, Math.round(requiredMonths)) };
-    })
-    .filter((item): item is { skill: string; requiredMonths: number } => Boolean(item));
+  const toSkillList = (input: unknown): string[] => {
+    if (!Array.isArray(input)) return [];
+    const result: string[] = [];
+    for (const item of input) {
+      let skill: string | null = null;
+      if (typeof item === "string") {
+        skill = item.trim();
+      } else if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        if (typeof record.skill === "string") {
+          skill = record.skill.trim();
+        }
+      }
+      if (skill && skill.length > 0) {
+        result.push(skill);
+      }
+    }
+    return result;
+  };
+
+  const requirements = toSkillList(data.requirements);
 
   return {
     evaluatedAt: typeof data.evaluatedAt === "string" ? data.evaluatedAt : undefined,

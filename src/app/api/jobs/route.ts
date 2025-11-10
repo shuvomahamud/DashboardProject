@@ -131,12 +131,11 @@ async function POST(req: NextRequest) {
       jobData.aiSummary = manualProfile.summary;
     }
 
-    const mandatorySkillRequirements = parseSkillRequirementConfig(body.mandatorySkillRequirements);
-    if (mandatorySkillRequirements.length > 0) {
-      jobData.mandatorySkillRequirements = mandatorySkillRequirements;
-    } else {
-      jobData.mandatorySkillRequirements = null;
-    }
+    const mandatorySkillRequirements = parseSkillRequirementConfig(body.mandatorySkillRequirements).map(
+      item => item.skill
+    );
+    jobData.mandatorySkillRequirements =
+      mandatorySkillRequirements.length > 0 ? mandatorySkillRequirements : null;
 
     const job = await prisma.job.create({
       data: jobData

@@ -20,7 +20,7 @@ interface Job {
   companyName: string;
   applicationQuery: string;
   aiJobProfile?: JobProfile | null;
-  mandatorySkillRequirements?: MandatorySkillRequirement[] | null;
+  mandatorySkillRequirements?: string[] | null;
 }
 
 interface JobProfile {
@@ -97,7 +97,7 @@ const initialProfileFormData: JobProfileFormData = {
   locationConstraints: ''
 };
 
-const coerceMandatorySkillRequirements = (input: unknown): MandatorySkillRequirement[] => {
+const coerceMandatorySkillRequirements = (input: unknown): string[] => {
   if (!input) return [];
 
   if (typeof input === 'string') {
@@ -112,27 +112,26 @@ const coerceMandatorySkillRequirements = (input: unknown): MandatorySkillRequire
   if (!Array.isArray(input)) return [];
 
   const seen = new Set<string>();
-  const result: MandatorySkillRequirement[] = [];
+  const result: string[] = [];
   for (const item of input) {
-    if (!item || typeof item !== 'object') continue;
-    const record = item as Record<string, unknown>;
-    const skill = typeof record.skill === 'string' ? record.skill.trim() : '';
+    let skill: string | null = null;
+    if (typeof item === 'string') {
+      skill = item.trim();
+    } else if (item && typeof item === 'object') {
+      const record = item as Record<string, unknown>;
+      if (typeof record.skill === 'string') {
+        skill = record.skill.trim();
+      }
+    }
     if (!skill) continue;
     const key = skill.toLowerCase();
     if (seen.has(key)) continue;
-    const monthsRaw = Number(record.requiredMonths ?? record.months ?? 0);
-    const months = Number.isFinite(monthsRaw) && monthsRaw >= 0 ? Math.min(1200, Math.round(monthsRaw)) : 0;
-    result.push({ skill, requiredMonths: months });
     seen.add(key);
+    result.push(skill);
     if (result.length >= 30) break;
   }
   return result;
 };
-
-interface MandatorySkillRequirement {
-  skill: string;
-  requiredMonths: number;
-}
 
 
 export default function EditJobPage() {
@@ -148,7 +147,7 @@ export default function EditJobPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshingProfile, setRefreshingProfile] = useState(false);
   const [loadingJob, setLoadingJob] = useState(true);
-  const [mandatorySkills, setMandatorySkills] = useState<MandatorySkillRequirement[]>([]);
+  const [mandatorySkills, setMandatorySkills] = useState<string[]>([]);
   const [aiMustHaveSkills, setAiMustHaveSkills] = useState<string[]>([]);
   const [addingMandatorySkill, setAddingMandatorySkill] = useState(false);
   const [newMandatorySkill, setNewMandatorySkill] = useState('');
@@ -167,14 +166,14 @@ export default function EditJobPage() {
   const syncMandatorySkillsFromList = (skills: string[]) => {
     setMandatorySkills(() => {
       const seen = new Set<string>();
-      const next: MandatorySkillRequirement[] = [];
+      const next: string[] = [];
       for (const rawSkill of skills) {
         const skill = rawSkill.trim();
         if (!skill) continue;
         const key = normalizeSkillKey(skill);
         if (seen.has(key)) continue;
         seen.add(key);
-        next.push({ skill, requiredMonths: 0 });
+        next.push(skill);
         if (next.length >= 30) break;
       }
       return next;
@@ -185,10 +184,7 @@ export default function EditJobPage() {
     setMandatorySkills(prev => {
       if (!prev[index]) return prev;
       const next = [...prev];
-      next[index] = {
-        ...next[index],
-        skill: value
-      };
+      next[index] = value;
       return next;
     });
   };
@@ -211,11 +207,12 @@ export default function EditJobPage() {
     let additionMade = false;
 
     setMandatorySkills(prev => {
-      const existingIndex = prev.findIndex(item => normalizeSkillKey(item.skill) === normalizeSkillKey(skill));
+      const normalized = normalizeSkillKey(skill);
+      const existingIndex = prev.findIndex(item => normalizeSkillKey(item) === normalized);
       if (existingIndex >= 0) {
         additionMade = true;
         const next = [...prev];
-        next[existingIndex] = { skill, requiredMonths: 0 };
+        next[existingIndex] = skill;
         return next;
       }
 
@@ -226,7 +223,7 @@ export default function EditJobPage() {
       }
 
       additionMade = true;
-      return [...prev, { skill, requiredMonths: 0 }];
+      return [...prev, skill];
     });
 
     if (additionMade) {
@@ -247,7 +244,7 @@ export default function EditJobPage() {
     }));
   };
 
-  const applyProfileToForm = (profile: JobProfile | null, override?: MandatorySkillRequirement[] | null) => {
+  const applyProfileToForm = (profile: JobProfile | null, override?: string[] | null) => {
     if (!profile) {
       setProfileFormData(initialProfileFormData);
       setProfileVersion('v1');
@@ -277,12 +274,7 @@ export default function EditJobPage() {
     const overrideList = override && override.length > 0 ? override : null;
 
     if (overrideList) {
-      setMandatorySkills(
-        overrideList.slice(0, 30).map(item => ({
-          skill: item.skill,
-          requiredMonths: 0
-        }))
-      );
+      setMandatorySkills(overrideList.slice(0, 30));
     } else {
       syncMandatorySkillsFromList(mustHaveList);
     }
@@ -416,18 +408,15 @@ export default function EditJobPage() {
       };
 
       let mandatorySkillRequirementsPayload = mandatorySkills
-        .map(item => ({
-          skill: item.skill.trim(),
-          requiredMonths: 0
-        }))
-        .filter(item => item.skill.length > 0)
+        .map(skill => skill.trim())
+        .filter(skill => skill.length > 0)
         .slice(0, 30);
 
       if (mandatorySkillRequirementsPayload.length === 0 && aiMustHaveSkills.length > 0) {
-        mandatorySkillRequirementsPayload = aiMustHaveSkills.slice(0, 30).map(skill => ({
-          skill,
-          requiredMonths: 0
-        }));
+        mandatorySkillRequirementsPayload = aiMustHaveSkills
+          .slice(0, 30)
+          .map(skill => skill.trim())
+          .filter(skill => skill.length > 0);
       }
 
       const jobData = {
@@ -808,14 +797,14 @@ export default function EditJobPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {mandatorySkills.map((item, index) => (
-                            <tr key={`${item.skill}-${index}`}>
+                          {mandatorySkills.map((skill, index) => (
+                            <tr key={`${skill}-${index}`}>
                               <td className="text-muted">{index + 1}</td>
                               <td>
                                 <Form.Control
                                   size="sm"
                                   type="text"
-                                  value={item.skill}
+                                  value={skill}
                                   onChange={(e) => handleMandatorySkillChange(index, e.target.value)}
                                 />
                               </td>

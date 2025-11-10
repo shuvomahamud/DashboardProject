@@ -67,28 +67,20 @@ const aiSkillExperienceSchema = z.object({
     .transform(value => value ?? 'ai')
 });
 
-const requiredMonthsSchema = z
-  .union([z.number(), z.string(), z.null(), z.undefined()])
-  .transform(value => {
-    if (value === null || value === undefined || value === '') {
-      return 0;
-    }
-    const numeric = typeof value === 'number' ? value : Number(value);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-      return 0;
-    }
-    return Math.min(1200, Math.round(numeric));
-  });
-
 const skillRequirementSchema = z.object({
-  skill: skillNameSchema,
-  requiredMonths: requiredMonthsSchema
+  skill: skillNameSchema
 });
 
+const skillRequirementUnionSchema = z.union([skillRequirementSchema, skillNameSchema]);
+
 const skillRequirementArraySchema = z
-  .array(skillRequirementSchema)
+  .array(skillRequirementUnionSchema)
   .max(100)
-  .transform(list => dedupeBySkill(list));
+  .transform(list =>
+    dedupeBySkill(
+      list.map(item => (typeof item === 'string' ? { skill: item } : item))
+    )
+  );
 
 export type SkillRequirement = z.infer<typeof skillRequirementSchema>;
 
@@ -97,14 +89,9 @@ export interface SkillExperienceEntry extends z.infer<typeof aiSkillExperienceSc
 
 export interface SkillRequirementEvaluation {
   skill: string;
-  requiredMonths: number;
-  manualMonths: number | null;
-  aiMonths: number | null;
-  candidateMonths: number;
-  meetsRequirement: boolean;
+  matched: boolean;
   manualFound: boolean;
   aiFound: boolean;
-  deficitMonths: number;
 }
 
 export interface SkillRequirementEvaluationSummary {
@@ -127,9 +114,9 @@ function dedupeBySkill<T extends { skill: string }>(list: T[]): T[] {
       continue;
     }
     const existing = seen.get(key)!;
-    // Prefer entry with higher months if available
-    const existingMonths = (existing as any).months ?? (existing as any).requiredMonths ?? 0;
-    const incomingMonths = (entry as any).months ?? (entry as any).requiredMonths ?? 0;
+    // Prefer entry with higher inferred months if available
+    const existingMonths = (existing as any).months ?? 0;
+    const incomingMonths = (entry as any).months ?? 0;
     if (incomingMonths > existingMonths) {
       seen.set(key, entry);
     }
@@ -151,13 +138,6 @@ function coerceToArray(input: unknown): unknown[] {
     } catch {
       return [];
     }
-  }
-  if (typeof input === 'object') {
-    // Support record { skill: months }
-    const entries = Object.entries(input as Record<string, unknown>);
-    return entries
-      .filter(([skill]) => typeof skill === 'string')
-      .map(([skill, months]) => ({ skill, requiredMonths: months ?? 0 }));
   }
   return [];
 }
@@ -219,14 +199,7 @@ export function evaluateSkillRequirements(
   const manualMap = new Map<string, ManualSkillAssessment>();
   for (const assessment of manualAssessments) {
     const key = normalizeSkillKey(assessment.skill);
-    const existing = manualMap.get(key);
-    if (!existing) {
-      manualMap.set(key, assessment);
-      continue;
-    }
-    const existingMonths = existing.months ?? 0;
-    const candidateMonths = assessment.months ?? 0;
-    if (candidateMonths > existingMonths) {
+    if (!manualMap.has(key)) {
       manualMap.set(key, assessment);
     }
   }
@@ -248,22 +221,18 @@ export function evaluateSkillRequirements(
 
   for (const requirement of requirements) {
     const key = normalizeSkillKey(requirement.skill);
-    const manual = manualMap.get(key) ?? null;
-    const ai = aiMap.get(key) ?? null;
-    const manualMonths = manual?.months ?? null;
-    const aiMonths = ai?.months ?? null;
-    const candidateMonths = Math.max(manualMonths ?? 0, aiMonths ?? 0);
+    const manualFound = manualMap.has(key);
+    const aiFound = aiMap.has(key);
+    const matched = manualFound || aiFound;
 
-    const meetsRequirement = Boolean(manual || ai);
-
-    if (!manual) {
+    if (!manualFound) {
       manualCoverageMissing.push(requirement.skill);
-      if (ai) {
+      if (aiFound) {
         aiDetectedWithoutManual.push(requirement.skill);
       }
     }
 
-    if (meetsRequirement) {
+    if (matched) {
       metRequirements.push(requirement.skill);
     } else {
       unmetRequirements.push(requirement.skill);
@@ -271,20 +240,15 @@ export function evaluateSkillRequirements(
 
     evaluations.push({
       skill: requirement.skill,
-      requiredMonths: requirement.requiredMonths,
-      manualMonths,
-      aiMonths,
-      candidateMonths,
-      meetsRequirement,
-      manualFound: Boolean(manual),
-      aiFound: Boolean(ai),
-      deficitMonths: meetsRequirement ? 0 : Math.max(0, requirement.requiredMonths)
+      matched,
+      manualFound,
+      aiFound
     });
   }
 
   return {
     evaluations,
-    allMet: evaluations.every(item => item.meetsRequirement),
+    allMet: evaluations.every(item => item.matched),
     manualCoverageMissing: dedupeSkillList(manualCoverageMissing),
     unmetRequirements: dedupeSkillList(unmetRequirements),
     metRequirements: dedupeSkillList(metRequirements),

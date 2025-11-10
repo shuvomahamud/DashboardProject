@@ -63,11 +63,6 @@ const initialProfileFormData: JobProfileFormData = {
   locationConstraints: ''
 };
 
-interface MandatorySkillRequirement {
-  skill: string;
-  requiredMonths: number;
-}
-
 export default function NewJobPage() {
   const router = useRouter();
   const { showToast } = useToast();
@@ -78,7 +73,7 @@ export default function NewJobPage() {
   const [runningProfile, setRunningProfile] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mandatorySkills, setMandatorySkills] = useState<MandatorySkillRequirement[]>([]);
+  const [mandatorySkills, setMandatorySkills] = useState<string[]>([]);
   const [addingMandatorySkill, setAddingMandatorySkill] = useState(false);
   const [newMandatorySkill, setNewMandatorySkill] = useState('');
   const [aiMustHaveSkills, setAiMustHaveSkills] = useState<string[]>([]);
@@ -97,14 +92,14 @@ export default function NewJobPage() {
   const syncMandatorySkillsFromList = (skills: string[]) => {
     setMandatorySkills(() => {
       const seen = new Set<string>();
-      const next: MandatorySkillRequirement[] = [];
+      const next: string[] = [];
       for (const rawSkill of skills) {
         const skill = rawSkill.trim();
         if (!skill) continue;
         const key = normalizeSkillKey(skill);
         if (seen.has(key)) continue;
         seen.add(key);
-        next.push({ skill, requiredMonths: 0 });
+        next.push(skill);
         if (next.length >= 30) break;
       }
       return next;
@@ -115,10 +110,7 @@ export default function NewJobPage() {
     setMandatorySkills(prev => {
       if (!prev[index]) return prev;
       const next = [...prev];
-      next[index] = {
-        ...next[index],
-        skill: value
-      };
+      next[index] = value;
       return next;
     });
   };
@@ -142,11 +134,11 @@ export default function NewJobPage() {
 
     setMandatorySkills(prev => {
       const normalized = normalizeSkillKey(skill);
-      const existingIndex = prev.findIndex(item => normalizeSkillKey(item.skill) === normalized);
+      const existingIndex = prev.findIndex(item => normalizeSkillKey(item) === normalized);
       if (existingIndex >= 0) {
         additionMade = true;
         const next = [...prev];
-        next[existingIndex] = { skill, requiredMonths: 0 };
+        next[existingIndex] = skill;
         return next;
       }
 
@@ -157,7 +149,7 @@ export default function NewJobPage() {
       }
 
       additionMade = true;
-      return [...prev, { skill, requiredMonths: 0 }];
+      return [...prev, skill];
     });
 
     if (additionMade) {
@@ -305,18 +297,15 @@ const aiJobProfile = {
       };
 
       let mandatorySkillRequirementsPayload = mandatorySkills
-        .map(item => ({
-          skill: item.skill.trim(),
-          requiredMonths: 0
-        }))
-        .filter(item => item.skill.length > 0)
+        .map(skill => skill.trim())
+        .filter(skill => skill.length > 0)
         .slice(0, 30);
 
       if (mandatorySkillRequirementsPayload.length === 0) {
-        mandatorySkillRequirementsPayload = aiMustHaveSkills.slice(0, 30).map(skill => ({
-          skill,
-          requiredMonths: 0
-        }));
+        mandatorySkillRequirementsPayload = aiMustHaveSkills
+          .slice(0, 30)
+          .map(skill => skill.trim())
+          .filter(skill => skill.length > 0);
       }
 
       const jobData = {
@@ -782,14 +771,14 @@ const aiJobProfile = {
                           </tr>
                         </thead>
                         <tbody>
-                          {mandatorySkills.map((item, index) => (
-                            <tr key={`${item.skill}-${index}`}>
+                          {mandatorySkills.map((skill, index) => (
+                            <tr key={`${skill}-${index}`}>
                               <td className="text-muted">{index + 1}</td>
                               <td>
                                 <Form.Control
                                   size="sm"
                                   type="text"
-                                  value={item.skill}
+                                  value={skill}
                                   onChange={(e) => handleMandatorySkillChange(index, e.target.value)}
                                 />
                               </td>
