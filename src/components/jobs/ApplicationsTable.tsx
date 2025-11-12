@@ -46,7 +46,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   const [total, setTotal] = useState(0);
   const [updating, setUpdating] = useState<number | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
-  const [sortField, setSortField] = useState<string>('updatedAt');
+  const [sortField, setSortField] = useState<string>('matchScore');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Search/Filter state

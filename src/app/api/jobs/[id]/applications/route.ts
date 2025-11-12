@@ -13,7 +13,7 @@ function parsePaging(url: string) {
   const status = (sp.get("status") || "").trim();
   const minMatch = sp.get("minMatch") ? Number(sp.get("minMatch")) : null;
   const maxFake = sp.get("maxFake") ? Number(sp.get("maxFake")) : null;
-  const sortField = (sp.get("sortField") || "updatedAt").trim();
+  const sortField = (sp.get("sortField") || "matchScore").trim();
   const directionParam = (sp.get("sortDirection") || "desc").toLowerCase();
   const sortDirection = directionParam === 'asc' ? 'asc' : 'desc';
   return { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection };
