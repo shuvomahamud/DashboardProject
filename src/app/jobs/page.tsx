@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Alert, Badge } from 'react-bootstrap';
+import { Button, Alert, Badge, Form, InputGroup } from 'react-bootstrap';
 import DataTable from '@/components/DataTable';
 import ImportQueueStatus from '@/components/jobs/ImportQueueStatus';
 
@@ -38,31 +38,55 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalJobs, setTotalJobs] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  const fetchJobs = async () => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const fetchJobs = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/jobs');
-      
+      setError(null);
+
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(pageSize)
+      });
+
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch);
+      }
+
+      const response = await fetch(`/api/jobs?${params.toString()}`);
+
       if (!response.ok) {
         throw new Error('Failed to fetch jobs');
       }
-      
+
       const data: JobsResponse = await response.json();
       setJobs(data.jobs || []);
+      setTotalJobs(data.pagination?.total || 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load jobs');
       console.error('Error fetching jobs:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, debouncedSearch]);
 
   useEffect(() => {
     fetchJobs();
-  }, []);
+  }, [fetchJobs]);
 
-  const handleDelete = async (jobId: number) => {
+  const handleDelete = useCallback(async (jobId: number) => {
     if (!confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
       return;
     }
@@ -76,23 +100,20 @@ export default function JobsPage() {
         throw new Error('Failed to delete job');
       }
 
-      // Remove the deleted job from the list
-      setJobs(prevJobs => prevJobs.filter(job => job.id !== jobId));
-      
-      // Show success message (you can implement a toast notification here)
+      await fetchJobs();
       console.log('Job deleted successfully');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete job');
     }
-  };
+  }, [fetchJobs]);
 
-  const handleEdit = (jobId: number) => {
+  const handleEdit = useCallback((jobId: number) => {
     router.push(`/jobs/${jobId}/edit`);
-  };
+  }, [router]);
 
-  const handleView = (jobId: number) => {
+  const handleView = useCallback((jobId: number) => {
     router.push(`/jobs/${jobId}`);
-  };
+  }, [router]);
 
   const columns = useMemo(() => [
     {
@@ -199,7 +220,16 @@ export default function JobsPage() {
       button: true,
       width: '140px'
     }
-  ], []);
+  ], [handleView, handleEdit, handleDelete]);
+
+  const pageSummary = useMemo(() => {
+    if (totalJobs === 0 || jobs.length === 0) {
+      return loading ? 'Loading…' : 'No jobs to display';
+    }
+    const start = (page - 1) * pageSize + 1;
+    const end = start + jobs.length - 1;
+    return `Showing ${start}-${Math.min(end, totalJobs)} of ${totalJobs}`;
+  }, [jobs.length, page, pageSize, totalJobs, loading]);
 
   if (error) {
     return (
@@ -256,13 +286,60 @@ export default function JobsPage() {
           </Button>
         </div>
       ) : (
-        <DataTable
-          columns={columns}
-          data={jobs}
-          pagination={true}
-          paginationPerPage={10}
-          title={`${jobs.length} Job${jobs.length !== 1 ? 's' : ''}`}
-        />
+        <>
+          <div className="d-flex flex-wrap gap-3 align-items-center mb-3">
+            <InputGroup style={{ maxWidth: '320px' }}>
+              <InputGroup.Text>
+                <i className="bi bi-search"></i>
+              </InputGroup.Text>
+              <Form.Control
+                type="text"
+                placeholder="Search jobs..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  if (page !== 1) {
+                    setPage(1);
+                  }
+                }}
+              />
+              {searchTerm && (
+                <InputGroup.Text
+                  role="button"
+                  onClick={() => {
+                    setSearchTerm('');
+                    if (page !== 1) {
+                      setPage(1);
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                  title="Clear search"
+                >
+                  <i className="bi bi-x-circle"></i>
+                </InputGroup.Text>
+              )}
+            </InputGroup>
+            <div className="ms-auto text-muted small">
+              {pageSummary}
+            </div>
+          </div>
+          <DataTable
+            columns={columns}
+            data={jobs}
+            pagination={true}
+            paginationServer={true}
+            paginationPerPage={pageSize}
+            paginationTotalRows={totalJobs}
+            onChangeRowsPerPage={(rowsPerPage: number) => {
+              setPageSize(rowsPerPage);
+              setPage(1);
+            }}
+            onChangePage={(nextPage: number) => {
+              setPage(nextPage);
+            }}
+            title={`${totalJobs} Job${totalJobs !== 1 ? 's' : ''}`}
+          />
+        </>
       )}
     </div>
   );

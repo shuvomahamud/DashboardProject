@@ -19,6 +19,26 @@ function parsePaging(url: string) {
   return { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection };
 }
 
+function extractSearchTokens(value: string): string[] {
+  if (!value) {
+    return [];
+  }
+
+  const matches = value.match(/"([^"]+)"|[^\s,]+/g) || [];
+  return matches
+    .map(token => {
+      const trimmed = token.trim();
+      if (!trimmed) return '';
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        return trimmed.slice(1, -1).trim();
+      }
+      return trimmed.replace(/^[,\s]+|[,\s]+$/g, '');
+    })
+    .map(token => token.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
 // GET /api/jobs/[id]/applications?q=&page=&pageSize=
 async function _GET(req: NextRequest) {
   // Extract jobId from URL path
@@ -33,40 +53,44 @@ async function _GET(req: NextRequest) {
   const { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection } = parsePaging(req.url);
 
   let whereClause: any = { jobId };
-  const resumeFilters: any[] = [];
+  const andFilters: any[] = [];
 
   // Handle legacy 'q' parameter and new 'search' parameter
   const searchTerm = search || q;
+  const searchTokens = extractSearchTokens(searchTerm);
 
-  // If search query exists, search in resume fields and contactInfo JSON
-  if (searchTerm) {
-    resumeFilters.push({
-      OR: [
-        { candidateName: { contains: searchTerm, mode: "insensitive" } },
-        { email: { contains: searchTerm, mode: "insensitive" } },
-        { phone: { contains: searchTerm, mode: "insensitive" } },
-        { originalName: { contains: searchTerm, mode: "insensitive" } },
-        { contactInfo: { contains: searchTerm, mode: "insensitive" } },
-        { skills: { contains: searchTerm, mode: "insensitive" } },
-        { experience: { contains: searchTerm, mode: "insensitive" } },
-        { sourceFrom: { contains: searchTerm, mode: "insensitive" } },
-        { rawText: { contains: searchTerm, mode: "insensitive" } }
-      ]
+  if (searchTokens.length > 0) {
+    searchTokens.forEach(token => {
+      andFilters.push({
+        OR: [
+          { resume: { candidateName: { contains: token, mode: "insensitive" } } },
+          { resume: { email: { contains: token, mode: "insensitive" } } },
+          { resume: { phone: { contains: token, mode: "insensitive" } } },
+          { resume: { originalName: { contains: token, mode: "insensitive" } } },
+          { resume: { contactInfo: { contains: token, mode: "insensitive" } } },
+          { resume: { skills: { contains: token, mode: "insensitive" } } },
+          { resume: { experience: { contains: token, mode: "insensitive" } } },
+          { resume: { sourceFrom: { contains: token, mode: "insensitive" } } },
+          { resume: { rawText: { contains: token, mode: "insensitive" } } },
+          { resume: { companies: { contains: token, mode: "insensitive" } } },
+          { notes: { contains: token, mode: "insensitive" } },
+          { status: { contains: token, mode: "insensitive" } }
+        ]
+      });
     });
   }
 
   // Filter by fake score (max)
   if (maxFake !== null && !isNaN(maxFake)) {
-    resumeFilters.push({
-      fakeScore: { lte: maxFake }
+    andFilters.push({
+      resume: {
+        fakeScore: { lte: maxFake }
+      }
     });
   }
 
-  // Apply resume filters
-  if (resumeFilters.length > 0) {
-    whereClause.resume = {
-      AND: resumeFilters
-    };
+  if (andFilters.length > 0) {
+    whereClause.AND = andFilters;
   }
 
   // Filter by status
