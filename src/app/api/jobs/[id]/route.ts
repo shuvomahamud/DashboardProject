@@ -3,6 +3,7 @@ import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import prisma from '@/lib/prisma';
 import { refreshJobProfile, parseJobProfile, JobProfileSchema, sanitizeProfile, JobProfile } from '@/lib/ai/jobProfileService';
 import { parseSkillRequirementConfig } from '@/lib/ai/skillRequirements';
+import { resolveExperiencePayload } from '@/lib/jobs/experience';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,6 +134,18 @@ async function PUT(req: NextRequest) {
       }
       salaryMax = maxVal;
     }
+
+    let experienceFields: {
+      requiredExperienceYears: number;
+      preferredExperienceMinYears: number | null;
+      preferredExperienceMaxYears: number | null;
+    };
+    try {
+      experienceFields = resolveExperiencePayload(body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid experience requirements.';
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
     
     const updateData: any = {
       title: body.title,
@@ -146,6 +159,9 @@ async function PUT(req: NextRequest) {
       status: body.status,
       expiryDate: body.expiryDate ? new Date(body.expiryDate) : null,
       companyName: body.companyName,
+      requiredExperienceYears: experienceFields.requiredExperienceYears,
+      preferredExperienceMinYears: experienceFields.preferredExperienceMinYears,
+      preferredExperienceMaxYears: experienceFields.preferredExperienceMaxYears,
       aiExtractJson: body.aiExtractJson,
       aiSummary: body.aiSummary
     };

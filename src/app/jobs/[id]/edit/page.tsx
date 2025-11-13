@@ -4,6 +4,11 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Form, Button, Card, Row, Col, Alert, Spinner, Badge } from 'react-bootstrap';
 import { useToast } from '@/contexts/ToastContext';
+import {
+  formatPreferredExperienceRange,
+  parsePreferredExperienceInput,
+  parseRequiredExperienceInput
+} from '@/lib/jobs/experience';
 
 interface Job {
   id: number;
@@ -19,6 +24,9 @@ interface Job {
   expiryDate: string;
   companyName: string;
   applicationQuery: string;
+  requiredExperienceYears: number | null;
+  preferredExperienceMinYears: number | null;
+  preferredExperienceMaxYears: number | null;
   aiJobProfile?: JobProfile | null;
   mandatorySkillRequirements?: string[] | null;
 }
@@ -244,7 +252,15 @@ export default function EditJobPage() {
     }));
   };
 
-  const applyProfileToForm = (profile: JobProfile | null, override?: string[] | null) => {
+  const applyProfileToForm = (
+    profile: JobProfile | null,
+    override?: string[] | null,
+    experienceOverride?: {
+      required?: number | null;
+      preferredMin?: number | null;
+      preferredMax?: number | null;
+    }
+  ) => {
     if (!profile) {
       setProfileFormData(initialProfileFormData);
       setProfileVersion('v1');
@@ -256,6 +272,30 @@ export default function EditJobPage() {
     const mustHaveList = Array.isArray(profile.mustHaveSkills) ? profile.mustHaveSkills : [];
     setAiMustHaveSkills(mustHaveList);
 
+    const requiredOverride =
+      typeof experienceOverride?.required === 'number' ? experienceOverride.required : null;
+    const preferredMinOverride =
+      typeof experienceOverride?.preferredMin === 'number' ? experienceOverride.preferredMin : null;
+    const preferredMaxOverride =
+      typeof experienceOverride?.preferredMax === 'number' ? experienceOverride.preferredMax : null;
+
+    const requiredExperienceValue =
+      requiredOverride !== null
+        ? String(requiredOverride)
+        : profile.requiredExperienceYears != null
+        ? String(profile.requiredExperienceYears)
+        : '';
+
+    let preferredExperienceValue = '';
+    if (preferredMinOverride !== null || preferredMaxOverride !== null) {
+      preferredExperienceValue = formatPreferredExperienceRange(
+        preferredMinOverride ?? preferredMaxOverride,
+        preferredMaxOverride ?? preferredMinOverride
+      );
+    } else if (profile.preferredExperienceYears != null) {
+      preferredExperienceValue = String(profile.preferredExperienceYears);
+    }
+
     setProfileFormData({
       summary: profile.summary ?? '',
       niceToHaveSkills: listToMultiline(profile.niceToHaveSkills),
@@ -265,8 +305,8 @@ export default function EditJobPage() {
       domainKeywords: listToMultiline(profile.domainKeywords),
       certifications: listToMultiline(profile.certifications),
       disqualifiers: listToMultiline(profile.disqualifiers),
-      requiredExperienceYears: profile.requiredExperienceYears != null ? String(profile.requiredExperienceYears) : '',
-      preferredExperienceYears: profile.preferredExperienceYears != null ? String(profile.preferredExperienceYears) : '',
+      requiredExperienceYears: requiredExperienceValue,
+      preferredExperienceYears: preferredExperienceValue,
       locationConstraints: profile.locationConstraints ?? ''
     });
     setProfileVersion(profile.version ?? 'v1');
@@ -321,7 +361,11 @@ export default function EditJobPage() {
 
       const profile = job.aiJobProfile || null;
       const override = coerceMandatorySkillRequirements(job.mandatorySkillRequirements ?? null);
-      applyProfileToForm(profile, override.length > 0 ? override : null);
+      applyProfileToForm(profile, override.length > 0 ? override : null, {
+        required: job.requiredExperienceYears ?? null,
+        preferredMin: job.preferredExperienceMinYears ?? null,
+        preferredMax: job.preferredExperienceMaxYears ?? null
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load job');
     } finally {
@@ -385,12 +429,13 @@ export default function EditJobPage() {
         throw new Error('Company name is required');
       }
 
-      const parseYears = (value: string) => {
-        const trimmed = value.trim();
-        if (!trimmed) return null;
-        const parsed = Number(trimmed);
-        return Number.isFinite(parsed) ? parsed : null;
-      };
+      const requiredExperienceYears = parseRequiredExperienceInput(
+        profileFormData.requiredExperienceYears
+      );
+      const preferredExperience = parsePreferredExperienceInput(
+        profileFormData.preferredExperienceYears,
+        requiredExperienceYears
+      );
 
       const aiJobProfile = {
         version: profileVersion || 'v1',
@@ -402,8 +447,8 @@ export default function EditJobPage() {
         domainKeywords: multilineToList(profileFormData.domainKeywords),
         certifications: multilineToList(profileFormData.certifications),
         disqualifiers: multilineToList(profileFormData.disqualifiers),
-        requiredExperienceYears: parseYears(profileFormData.requiredExperienceYears),
-        preferredExperienceYears: parseYears(profileFormData.preferredExperienceYears),
+        requiredExperienceYears,
+        preferredExperienceYears: preferredExperience.min,
         locationConstraints: profileFormData.locationConstraints.trim() || null
       };
 
@@ -432,6 +477,9 @@ export default function EditJobPage() {
         expiryDate: formData.expiryDate ? new Date(formData.expiryDate).toISOString() : null,
         companyName: formData.companyName.trim(),
         applicationQuery: formData.applicationQuery.trim() || null,
+        requiredExperienceYears,
+        preferredExperienceMinYears: preferredExperience.min,
+        preferredExperienceMaxYears: preferredExperience.max,
         aiJobProfile,
         aiSummary: aiJobProfile.summary,
         mandatorySkillRequirements: mandatorySkillRequirementsPayload
@@ -686,20 +734,25 @@ export default function EditJobPage() {
                           value={profileFormData.requiredExperienceYears}
                           onChange={(e) => handleProfileChange('requiredExperienceYears', e.target.value)}
                           placeholder="e.g., 8"
+                          required
                         />
+                        <Form.Text className="text-muted">
+                          Whole years between 0 and 80.
+                        </Form.Text>
                       </Form.Group>
                     </Col>
                     <Col md={6}>
                       <Form.Group>
                         <Form.Label>Preferred Experience (years)</Form.Label>
                         <Form.Control
-                          type="number"
-                          min="0"
-                          step="1"
+                          type="text"
                           value={profileFormData.preferredExperienceYears}
                           onChange={(e) => handleProfileChange('preferredExperienceYears', e.target.value)}
-                          placeholder="e.g., 10"
+                          placeholder="e.g., 10 or 10-12"
                         />
+                        <Form.Text className="text-muted">
+                          Leave blank or enter a range like 10-12.
+                        </Form.Text>
                       </Form.Group>
                     </Col>
 

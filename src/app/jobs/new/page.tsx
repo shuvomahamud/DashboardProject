@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Form, Button, Card, Row, Col, Alert, Spinner, Badge } from 'react-bootstrap';
 import { useToast } from '@/contexts/ToastContext';
+import { parsePreferredExperienceInput, parseRequiredExperienceInput } from '@/lib/jobs/experience';
 
 interface JobFormData {
   title: string;
@@ -274,25 +275,26 @@ export default function NewJobPage() {
         throw new Error('Company name is required');
       }
 
-      const parseYears = (value: string) => {
-        const trimmed = value.trim();
-        if (!trimmed) return null;
-        const parsed = Number(trimmed);
-        return Number.isFinite(parsed) ? parsed : null;
-      };
+      const requiredExperienceYears = parseRequiredExperienceInput(
+        profileFormData.requiredExperienceYears
+      );
+      const preferredExperience = parsePreferredExperienceInput(
+        profileFormData.preferredExperienceYears,
+        requiredExperienceYears
+      );
 
-const aiJobProfile = {
-  version: profileVersion || 'v1',
-  summary: profileFormData.summary.trim(),
-  niceToHaveSkills: multilineToList(profileFormData.niceToHaveSkills),
-  targetTitles: multilineToList(profileFormData.targetTitles),
+      const aiJobProfile = {
+        version: profileVersion || 'v1',
+        summary: profileFormData.summary.trim(),
+        niceToHaveSkills: multilineToList(profileFormData.niceToHaveSkills),
+        targetTitles: multilineToList(profileFormData.targetTitles),
         responsibilities: multilineToList(profileFormData.responsibilities),
         toolsAndTech: multilineToList(profileFormData.toolsAndTech),
         domainKeywords: multilineToList(profileFormData.domainKeywords),
         certifications: multilineToList(profileFormData.certifications),
         disqualifiers: multilineToList(profileFormData.disqualifiers),
-        requiredExperienceYears: parseYears(profileFormData.requiredExperienceYears),
-        preferredExperienceYears: parseYears(profileFormData.preferredExperienceYears),
+        requiredExperienceYears,
+        preferredExperienceYears: preferredExperience.min,
         locationConstraints: profileFormData.locationConstraints.trim() || null
       };
 
@@ -321,6 +323,9 @@ const aiJobProfile = {
         expiryDate: formData.expiryDate ? new Date(formData.expiryDate).toISOString() : null,
         companyName: formData.companyName.trim(),
         applicationQuery: formData.applicationQuery.trim() || null,
+        requiredExperienceYears,
+        preferredExperienceMinYears: preferredExperience.min,
+        preferredExperienceMaxYears: preferredExperience.max,
         aiJobProfile,
         aiSummary: aiJobProfile.summary,
         mandatorySkillRequirements: mandatorySkillRequirementsPayload
@@ -664,19 +669,25 @@ const aiJobProfile = {
                           value={profileFormData.requiredExperienceYears}
                           onChange={(e) => handleProfileChange('requiredExperienceYears', e.target.value)}
                           placeholder="e.g., 5"
+                          required
                         />
+                        <Form.Text className="text-muted">
+                          Whole years between 0 and 80.
+                        </Form.Text>
                       </Form.Group>
                     </Col>
                     <Col md={6}>
                       <Form.Group>
                         <Form.Label>Preferred Experience (years)</Form.Label>
                         <Form.Control
-                          type="number"
-                          min={0}
+                          type="text"
                           value={profileFormData.preferredExperienceYears}
                           onChange={(e) => handleProfileChange('preferredExperienceYears', e.target.value)}
-                          placeholder="e.g., 8"
+                          placeholder="e.g., 8 or 8-10"
                         />
+                        <Form.Text className="text-muted">
+                          Leave blank or enter a range like 8-10.
+                        </Form.Text>
                       </Form.Group>
                     </Col>
 

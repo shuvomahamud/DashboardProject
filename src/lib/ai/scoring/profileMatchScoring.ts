@@ -1,6 +1,8 @@
 import type { JobProfile } from '../jobProfileService';
 import type { ProfileAnalysis } from '../resumeParsingService';
 import type { SkillRequirementEvaluationSummary } from '../skillRequirements';
+import type { ExperienceRequirements } from '@/lib/jobs/experience';
+import { clampExperienceYears, mergeExperienceRequirements, normalizeExperienceRequirements } from '@/lib/jobs/experience';
 
 export interface DimensionBreakdown {
   label: string;
@@ -29,6 +31,10 @@ export interface MatchScoreDetails {
   mandatoryMaxPoints: number;
   profileScore: number;
   profileMaxPoints: number;
+  experienceScore: number;
+  experienceMaxPoints: number;
+  candidateExperienceYears: number | null;
+  experienceRequirements: ExperienceRequirements;
   penalties: {
     disqualifierPenalty: number;
   };
@@ -37,6 +43,11 @@ export interface MatchScoreDetails {
   disqualifiersDetected: string[];
   notes: string | null;
   mandatorySkills?: SkillRequirementEvaluationSummary;
+}
+
+interface MatchScoreOptions {
+  candidateExperienceYears?: number | null;
+  experienceRequirements?: ExperienceRequirements | null;
 }
 
 const DIMENSION_CONFIG: Array<{
@@ -54,7 +65,9 @@ const DIMENSION_CONFIG: Array<{
 
 const DISQUALIFIER_PENALTY = 25;
 const MANDATORY_TOTAL_POINTS = 70;
-const PROFILE_TOTAL_POINTS = 30;
+const PROFILE_TOTAL_POINTS = 15;
+const EXPERIENCE_TOTAL_POINTS = 15;
+const EXPERIENCE_BREAKDOWN_LABEL = 'Experience Alignment';
 
 const normalize = (value: string) => value.trim().toLowerCase();
 
@@ -115,10 +128,98 @@ function computeMandatoryContribution(
   };
 }
 
+function computeExperienceContribution(
+  candidateExperienceYears: number | null | undefined,
+  requirements: ExperienceRequirements
+): {
+  candidateYears: number | null;
+  rawScore: number;
+  ratio: number;
+  available: number;
+  matched: number;
+  maxPoints: number;
+} {
+  const candidateYears = clampExperienceYears(candidateExperienceYears);
+  if (requirements.requiredYears === null) {
+    return {
+      candidateYears,
+      rawScore: 0,
+      ratio: 0,
+      available: 0,
+      matched: 0,
+      maxPoints: 0
+    };
+  }
+
+  const hasPreferred = requirements.preferredMinYears !== null;
+  const requiredWeight = hasPreferred ? EXPERIENCE_TOTAL_POINTS * 0.6 : EXPERIENCE_TOTAL_POINTS;
+  const preferredWeight = hasPreferred ? EXPERIENCE_TOTAL_POINTS - requiredWeight : 0;
+  let requiredScore = 0;
+  let preferredScore = 0;
+  let matched = 0;
+  const available = hasPreferred ? 2 : 1;
+
+  if (candidateYears !== null) {
+    const meetsRequired = candidateYears >= requirements.requiredYears;
+    if (meetsRequired) {
+      matched += 1;
+      requiredScore = requiredWeight;
+    } else {
+      const grace = Math.min(2, Math.max(0.5, requirements.requiredYears * 0.25));
+      const lowerBound = Math.max(0, requirements.requiredYears - grace);
+      const span = Math.max(1, requirements.requiredYears - lowerBound);
+      if (candidateYears > lowerBound) {
+        const progress = Math.min(1, Math.max(0, (candidateYears - lowerBound) / span));
+        requiredScore = requiredWeight * progress;
+      }
+    }
+
+    if (hasPreferred && meetsRequired) {
+      const preferredMin = Math.max(requirements.requiredYears, requirements.preferredMinYears!);
+      const preferredMax = Math.max(preferredMin, requirements.preferredMaxYears ?? preferredMin);
+
+      if (candidateYears >= preferredMin && candidateYears <= preferredMax) {
+        matched = 2;
+        preferredScore = preferredWeight;
+      } else if (candidateYears < preferredMin) {
+        const span = Math.max(1, preferredMin - requirements.requiredYears);
+        const distance = Math.max(0, candidateYears - requirements.requiredYears);
+        const progress = Math.min(1, distance / span);
+        preferredScore = preferredWeight * (0.5 + 0.5 * progress);
+      } else {
+        const buffer = Math.max(2, preferredMax * 0.5);
+        const overage = candidateYears - preferredMax;
+        if (overage >= buffer) {
+          preferredScore = preferredWeight * 0.6;
+        } else {
+          const decay = overage / buffer;
+          preferredScore = preferredWeight * (0.6 + 0.4 * (1 - decay));
+        }
+      }
+    }
+  }
+
+  const rawScore = Math.min(
+    EXPERIENCE_TOTAL_POINTS,
+    Math.max(0, requiredScore + preferredScore)
+  );
+  const ratio = EXPERIENCE_TOTAL_POINTS > 0 ? rawScore / EXPERIENCE_TOTAL_POINTS : 0;
+
+  return {
+    candidateYears,
+    rawScore,
+    ratio,
+    available,
+    matched,
+    maxPoints: EXPERIENCE_TOTAL_POINTS
+  };
+}
+
 export function computeProfileMatchScore(
   profile: JobProfile,
   analysis: ProfileAnalysis,
-  mandatorySummary?: SkillRequirementEvaluationSummary | null
+  mandatorySummary?: SkillRequirementEvaluationSummary | null,
+  options?: MatchScoreOptions
 ): MatchScoreDetails {
   const breakdown: Record<string, DimensionBreakdown> = {};
 
@@ -186,7 +287,36 @@ export function computeProfileMatchScore(
     };
   }
 
-  const baseScore = mandatoryScore + profileScore;
+  const profileExperience = normalizeExperienceRequirements({
+    requiredYears: profile.requiredExperienceYears ?? null,
+    preferredMinYears: profile.preferredExperienceYears ?? null,
+    preferredMaxYears: profile.preferredExperienceYears ?? null
+  });
+  const contextualExperience = options?.experienceRequirements
+    ? normalizeExperienceRequirements(options.experienceRequirements)
+    : null;
+  const experienceRequirements = mergeExperienceRequirements(
+    contextualExperience,
+    profileExperience
+  );
+  const experienceResult = computeExperienceContribution(
+    options?.candidateExperienceYears ?? null,
+    experienceRequirements
+  );
+
+  if (experienceResult.maxPoints > 0) {
+    breakdown[EXPERIENCE_BREAKDOWN_LABEL] = {
+      label: EXPERIENCE_BREAKDOWN_LABEL,
+      available: experienceResult.available,
+      matched: experienceResult.matched,
+      weight: EXPERIENCE_TOTAL_POINTS,
+      scaledWeight: experienceResult.maxPoints,
+      ratio: experienceResult.ratio,
+      score: experienceResult.rawScore
+    };
+  }
+
+  const baseScore = mandatoryScore + profileScore + experienceResult.rawScore;
 
   let finalScore = baseScore;
   let disqualifierPenalty = 0;
@@ -199,6 +329,10 @@ export function computeProfileMatchScore(
 
   finalScore = Math.max(0, Math.min(100, Math.round(finalScore)));
   const roundedBase = Math.max(0, Math.min(100, Math.round(baseScore)));
+  const roundedExperienceScore = Math.max(
+    0,
+    Math.min(EXPERIENCE_TOTAL_POINTS, Math.round(experienceResult.rawScore))
+  );
 
   return {
     baseScore: roundedBase,
@@ -207,6 +341,10 @@ export function computeProfileMatchScore(
     mandatoryMaxPoints,
     profileScore: Math.max(0, Math.min(PROFILE_TOTAL_POINTS, Math.round(profileScore))),
     profileMaxPoints: PROFILE_TOTAL_POINTS,
+    experienceScore: roundedExperienceScore,
+    experienceMaxPoints: experienceResult.maxPoints,
+    candidateExperienceYears: experienceResult.candidateYears,
+    experienceRequirements,
     penalties: {
       disqualifierPenalty
     },

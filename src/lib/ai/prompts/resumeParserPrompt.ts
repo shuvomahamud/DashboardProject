@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { JobContext } from '../jobContext';
+import { formatPreferredExperienceRange } from '@/lib/jobs/experience';
 
 interface PromptTemplate {
   systemMessage: string;
@@ -71,6 +72,26 @@ const formatYears = (value: number | null | undefined) => {
   return `${value} years`;
 };
 
+const formatRequiredExperienceLine = (jobContext: JobContext): string => {
+  const years = jobContext.experience.requiredYears ?? jobContext.jobProfile?.requiredExperienceYears ?? null;
+  if (years === null) {
+    return 'unspecified';
+  }
+  return `${years}+ years`;
+};
+
+const formatPreferredExperienceLine = (jobContext: JobContext): string => {
+  const preferredText = formatPreferredExperienceRange(
+    jobContext.experience.preferredMinYears,
+    jobContext.experience.preferredMaxYears
+  );
+  if (preferredText) {
+    return `${preferredText} years`;
+  }
+  const fallback = jobContext.jobProfile?.preferredExperienceYears ?? null;
+  return fallback !== null && fallback !== undefined ? `${fallback} years` : 'unspecified';
+};
+
 const formatMandatoryRequirements = (items: JobContext['mandatorySkillRequirements']) => {
   if (!items || items.length === 0) {
     return '- None provided.';
@@ -97,8 +118,8 @@ const buildProfileSection = (jobContext: JobContext): string => {
 - Domain keywords: ${formatList(profile.domainKeywords)}
 - Certifications: ${formatList(profile.certifications)}
 - Disqualifiers: ${formatList(profile.disqualifiers)}
-- Required experience: ${formatYears(profile.requiredExperienceYears)}
-- Preferred experience: ${formatYears(profile.preferredExperienceYears)}
+- Required experience: ${formatRequiredExperienceLine(jobContext)}
+- Preferred experience: ${formatPreferredExperienceLine(jobContext)}
 - Location constraints: ${profile.locationConstraints ?? 'unspecified'}`;
 };
 

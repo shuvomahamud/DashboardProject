@@ -6,6 +6,7 @@ import { Card, Row, Col, Badge, Button, Alert, Spinner } from 'react-bootstrap';
 import DataTable from '@/components/DataTable';
 import ImportApplicationsModal from '@/components/jobs/ImportApplicationsModal';
 import ApplicationsTable from '@/components/jobs/ApplicationsTable';
+import { formatPreferredExperienceRange } from '@/lib/jobs/experience';
 
 interface Job {
   id: number;
@@ -25,6 +26,9 @@ interface Job {
   createdAt: string;
   updatedAt: string;
   companyName: string;
+  requiredExperienceYears: number | null;
+  preferredExperienceMinYears: number | null;
+  preferredExperienceMaxYears: number | null;
   aiJobProfileJson?: string | null;
   aiJobProfileUpdatedAt?: string | null;
   aiJobProfileVersion?: string | null;
@@ -135,14 +139,26 @@ const renderChipSection = (label: string, items: string[] | null | undefined) =>
   </section>
 );
 
-const ExperienceBadge = ({ label, value }: { label: string; value: number | null }) => (
-  <div className="d-flex flex-column">
-    <span className="text-muted small">{label}</span>
-    <Badge bg="info" text="dark" className="mt-1 px-3 py-2">
-      {value !== null && value !== undefined ? `${value} years` : 'Not specified'}
-    </Badge>
-  </div>
-);
+const ExperienceBadge = ({
+  label,
+  value,
+  display
+}: {
+  label: string;
+  value?: number | null;
+  display?: string | null;
+}) => {
+  const text =
+    display ?? (value !== null && value !== undefined ? `${value} years` : 'Not specified');
+  return (
+    <div className="d-flex flex-column">
+      <span className="text-muted small">{label}</span>
+      <Badge bg="info" text="dark" className="mt-1 px-3 py-2">
+        {text}
+      </Badge>
+    </div>
+  );
+};
 
 const LocationBadge = ({ location }: { location: string | null }) => (
   <div className="d-flex flex-column">
@@ -178,6 +194,36 @@ export default function JobDetailPage() {
     return fallbackSkills.slice(0, 30);
   }, [job?.mandatorySkillRequirements, jobProfile?.mustHaveSkills]);
   const hasMandatoryRequirements = mandatoryRequirements.length > 0;
+  const experienceInfo = useMemo(() => {
+    const required =
+      job?.requiredExperienceYears ?? jobProfile?.requiredExperienceYears ?? null;
+    const profilePreferred = jobProfile?.preferredExperienceYears ?? null;
+    const jobPreferredMin = job?.preferredExperienceMinYears ?? null;
+    const jobPreferredMax = job?.preferredExperienceMaxYears ?? null;
+    const preferredMin =
+      jobPreferredMin !== null
+        ? jobPreferredMin
+        : profilePreferred !== null
+        ? profilePreferred
+        : null;
+    const preferredMax =
+      jobPreferredMax !== null
+        ? jobPreferredMax
+        : profilePreferred !== null
+        ? profilePreferred
+        : null;
+    const preferredLabel = formatPreferredExperienceRange(preferredMin, preferredMax);
+    return {
+      requiredExperienceYears: required,
+      preferredExperienceText: preferredLabel ? `${preferredLabel} years` : null
+    };
+  }, [
+    job?.preferredExperienceMaxYears,
+    job?.preferredExperienceMinYears,
+    job?.requiredExperienceYears,
+    jobProfile?.preferredExperienceYears,
+    jobProfile?.requiredExperienceYears
+  ]);
 
   useEffect(() => {
     if (jobId) {
@@ -395,8 +441,14 @@ export default function JobDetailPage() {
                   {renderChipSection('Disqualifiers', jobProfile.disqualifiers)}
 
                   <section className="d-flex flex-wrap gap-4">
-                    <ExperienceBadge label="Required Experience" value={jobProfile.requiredExperienceYears} />
-                    <ExperienceBadge label="Preferred Experience" value={jobProfile.preferredExperienceYears} />
+                    <ExperienceBadge
+                      label="Required Experience"
+                      value={experienceInfo.requiredExperienceYears}
+                    />
+                    <ExperienceBadge
+                      label="Preferred Experience"
+                      display={experienceInfo.preferredExperienceText}
+                    />
                     <LocationBadge location={jobProfile.locationConstraints} />
                   </section>
                 </div>

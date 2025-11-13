@@ -1097,7 +1097,11 @@ export async function parseAndScoreResume(
         matchScoreDetails = computeProfileMatchScore(
           jobContext.jobProfile,
           validatedData.analysis,
-          requirementSummary
+          requirementSummary,
+          {
+            candidateExperienceYears: validatedData.resume.candidate.totalExperienceYears,
+            experienceRequirements: jobContext.experience
+          }
         );
         scores.matchScore = matchScoreDetails.finalScore;
         (validatedData as any).computedMatchScore = matchScoreDetails;

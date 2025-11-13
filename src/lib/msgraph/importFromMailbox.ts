@@ -388,7 +388,10 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
                     requirements: true,
                     aiSummary: true,
                     aiJobProfileJson: true,
-                    mandatorySkillRequirements: true
+                    mandatorySkillRequirements: true,
+                    requiredExperienceYears: true,
+                    preferredExperienceMinYears: true,
+                    preferredExperienceMaxYears: true
                   }
                 });
 
@@ -398,7 +401,10 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
                     description: job.description ?? '',
                     aiJobProfileJson: job.aiJobProfileJson ?? null,
                     fallbackSummary: job.aiSummary ?? job.requirements ?? '',
-                    mandatorySkillRequirements: job.mandatorySkillRequirements ?? null
+                    mandatorySkillRequirements: job.mandatorySkillRequirements ?? null,
+                    requiredExperienceYears: job.requiredExperienceYears ?? null,
+                    preferredExperienceMinYears: job.preferredExperienceMinYears ?? null,
+                    preferredExperienceMaxYears: job.preferredExperienceMaxYears ?? null
                   });
 
                   const parseResult = await parseAndScoreResume(resume.id, jobContext);

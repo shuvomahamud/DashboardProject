@@ -309,6 +309,9 @@ model Job {
   aiJobProfileUpdatedAt DateTime?         @db.Timestamptz(6)
   aiJobProfileVersion String?
   applicationQuery   String?
+  requiredExperienceYears Int?
+  preferredExperienceMinYears Int?
+  preferredExperienceMaxYears Int?
   companyName        String?
   mandatorySkillRequirements Json?
   last_email_sync_at DateTime?            @db.Timestamptz(6)
