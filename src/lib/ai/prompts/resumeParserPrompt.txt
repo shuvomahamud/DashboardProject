@@ -16,7 +16,7 @@ You are an expert resume parser. Return **only minified JSON** that matches the 
 7. **Normalization:** Trim whitespace and remove duplicate strings.
 8. **Mandatory requirements:** Populate `analysis.mustHaveSkillsMatched` / `analysis.mustHaveSkillsMissing` based on evidence in the resume.
 9. **Grounding:** Use only the job text and resume text. Do **not** invent facts.
-10. **BE CONCISE:** Keep skills list under 30 items. Omit verbose descriptions. Use minified JSON (no spaces).
+10. **Skills coverage:** Prefer concise output, but ALWAYS include every mandatory job skill and every explicitly mentioned tool/technology, even if the skills list exceeds 30 items. Use minified JSON (no spaces).
 
 **WRONG examples (do not do):**
 

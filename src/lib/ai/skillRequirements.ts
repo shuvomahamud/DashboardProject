@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { canonicalizeSkill } from '@/lib/skills/normalize';
 
 const trimSkill = (value: string) => value.trim().replace(/\s+/g, ' ');
 
@@ -67,9 +68,17 @@ const aiSkillExperienceSchema = z.object({
     .transform(value => value ?? 'ai')
 });
 
-const skillRequirementSchema = z.object({
-  skill: skillNameSchema
-});
+export const normalizeSkillKey = (value: string) => canonicalizeSkill(value);
+
+const skillRequirementSchema = z
+  .object({
+    skill: skillNameSchema,
+    canonical: z.string().optional()
+  })
+  .transform(value => ({
+    skill: value.skill,
+    canonical: normalizeSkillKey(value.canonical || value.skill)
+  }));
 
 const skillRequirementUnionSchema = z.union([skillRequirementSchema, skillNameSchema]);
 
@@ -78,7 +87,11 @@ const skillRequirementArraySchema = z
   .max(100)
   .transform(list =>
     dedupeBySkill(
-      list.map(item => (typeof item === 'string' ? { skill: item } : item))
+      list.map(item =>
+        typeof item === 'string'
+          ? { skill: item, canonical: normalizeSkillKey(item) }
+          : item
+      )
     )
   );
 
@@ -103,12 +116,10 @@ export interface SkillRequirementEvaluationSummary {
   aiDetectedWithoutManual: string[];
 }
 
-const normalizeSkillKey = (value: string) => value.trim().toLowerCase();
-
-function dedupeBySkill<T extends { skill: string }>(list: T[]): T[] {
+function dedupeBySkill<T extends { skill: string; canonical?: string }>(list: T[]): T[] {
   const seen = new Map<string, T>();
   for (const entry of list) {
-    const key = normalizeSkillKey(entry.skill);
+    const key = entry.canonical ? normalizeSkillKey(entry.canonical) : normalizeSkillKey(entry.skill);
     if (!seen.has(key)) {
       seen.set(key, entry);
       continue;
@@ -220,7 +231,7 @@ export function evaluateSkillRequirements(
   const aiDetectedWithoutManual: string[] = [];
 
   for (const requirement of requirements) {
-    const key = normalizeSkillKey(requirement.skill);
+    const key = requirement.canonical ?? normalizeSkillKey(requirement.skill);
     const manualFound = manualMap.has(key);
     const aiFound = aiMap.has(key);
     const matched = manualFound || aiFound;

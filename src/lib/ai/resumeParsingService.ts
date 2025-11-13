@@ -12,6 +12,7 @@ import {
   evaluateSkillRequirements,
   parseManualSkillAssessments,
   parseAiSkillExperience,
+  normalizeSkillKey,
   type ManualSkillAssessment,
   type SkillExperienceEntry,
   type SkillRequirementEvaluationSummary
@@ -266,12 +267,9 @@ interface ResumeToken {
   stem: string;
 }
 
-const normalizeValue = (value: string) => value.trim().toLowerCase();
+const normalizeValue = (value: string) => normalizeSkillKey(value);
 
 const normalizeToken = (token: string) => token.toLowerCase();
-
-const normalizeSkillKey = (value: string) =>
-  value.trim().toLowerCase().replace(/[^a-z0-9+#]/g, '');
 
 const skillMatchesSet = (skill: string, normalizedSet: Set<string>): boolean => {
   const key = normalizeSkillKey(skill);
@@ -963,41 +961,65 @@ export async function parseAndScoreResume(
 
     let verification: SkillVerificationResult | null = null;
 
+
+
     if (jobContext.jobProfile && resume.rawText) {
       const tokens = buildResumeTokens(resume.rawText);
       const profileMust = jobContext.jobProfile.mustHaveSkills ?? [];
       const profileNice = jobContext.jobProfile.niceToHaveSkills ?? [];
       const profileTools = jobContext.jobProfile.toolsAndTech ?? [];
 
-      const manualNormalizedSet = new Set(manualAssessments.map(assessment => normalizeSkillKey(assessment.skill)));
+      const manualNormalizedSet = new Set(
+        manualAssessments.map(assessment => normalizeSkillKey(assessment.skill))
+      );
 
-      if (manualAssessments.length === 0) {
-        manualMustMatches = matchPhrasesInResume(profileMust, tokens);
-        manualNiceMatches = matchPhrasesInResume(profileNice, tokens);
-        manualToolsMatches = matchPhrasesInResume(profileTools, tokens);
-        manualSkillsCombined = dedupePreserveOrder([...manualMustMatches, ...manualNiceMatches]);
-        manualAssessments = manualSkillsCombined.map(skill => ({
-          skill,
-          months: null,
-          source: 'auto',
-          confidence: null,
-          notes: null
-        }));
-        manualNormalizedSet.clear();
-        manualAssessments.forEach(assessment => manualNormalizedSet.add(normalizeSkillKey(assessment.skill)));
-      } else {
-        manualMustMatches = profileMust.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
-        manualNiceMatches = profileNice.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
-        manualToolsMatches = profileTools.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
-        manualSkillsCombined = dedupePreserveOrder(manualAssessments.map(assessment => assessment.skill));
+      const textMustMatches = matchPhrasesInResume(profileMust, tokens);
+      const textNiceMatches = matchPhrasesInResume(profileNice, tokens);
+      const textToolMatches = matchPhrasesInResume(profileTools, tokens);
+
+      const autoSkillCandidates = dedupePreserveOrder([...textMustMatches, ...textNiceMatches]);
+      if (autoSkillCandidates.length > 0) {
+        const additions: ManualSkillAssessment[] = [];
+        for (const skill of autoSkillCandidates) {
+          const normalized = normalizeSkillKey(skill);
+          if (manualNormalizedSet.has(normalized)) {
+            continue;
+          }
+          additions.push({
+            skill,
+            months: null,
+            source: 'auto',
+            confidence: null,
+            notes: null
+          });
+          manualNormalizedSet.add(normalized);
+        }
+        if (additions.length > 0) {
+          manualAssessments = [...manualAssessments, ...additions];
+        }
       }
 
-      const manualSkillSet = new Set(manualSkillsCombined.map(skill => normalizeSkillKey(skill)));
-      const manualToolSet = new Set(manualToolsMatches.map(tool => normalizeSkillKey(tool)));
-      validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
-      validatedData.analysis.mustHaveSkillsMissing = (jobContext.jobProfile?.mustHaveSkills ?? []).filter(
-        skill => !manualSkillSet.has(normalizeSkillKey(skill))
-      );
+      manualSkillsCombined = dedupePreserveOrder([
+        ...manualAssessments.map(assessment => assessment.skill),
+        ...textMustMatches,
+        ...textNiceMatches
+      ]);
+
+      const manualMustFromAssessments = profileMust.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
+      const manualNiceFromAssessments = profileNice.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
+      const manualToolsFromAssessments = profileTools.filter(skill => skillMatchesSet(skill, manualNormalizedSet));
+
+      manualMustMatches = dedupePreserveOrder([...manualMustFromAssessments, ...textMustMatches]);
+      manualNiceMatches = dedupePreserveOrder([...manualNiceFromAssessments, ...textNiceMatches]);
+      manualToolsMatches = dedupePreserveOrder([...manualToolsFromAssessments, ...textToolMatches]);
+    }
+
+    const manualSkillSet = new Set(manualSkillsCombined.map(skill => normalizeSkillKey(skill)));
+    const manualToolSet = new Set(manualToolsMatches.map(tool => normalizeSkillKey(tool)));
+    validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
+    validatedData.analysis.mustHaveSkillsMissing = (jobContext.jobProfile?.mustHaveSkills ?? []).filter(
+      skill => !manualSkillSet.has(normalizeSkillKey(skill))
+    );
 
       const previousNiceMatches = Array.isArray(validatedData.analysis.niceToHaveSkillsMatched)
         ? validatedData.analysis.niceToHaveSkillsMatched

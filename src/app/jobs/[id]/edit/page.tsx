@@ -9,6 +9,7 @@ import {
   parsePreferredExperienceInput,
   parseRequiredExperienceInput
 } from '@/lib/jobs/experience';
+import { canonicalizeSkill } from '@/lib/skills/normalize';
 
 interface Job {
   id: number;
@@ -169,7 +170,7 @@ export default function EditJobPage() {
       .map(item => item.trim())
       .filter(item => item.length > 0);
 
-  const normalizeSkillKey = (value: string) => value.trim().toLowerCase();
+  const normalizeSkillKey = (value: string) => canonicalizeSkill(value);
 
   const syncMandatorySkillsFromList = (skills: string[]) => {
     setMandatorySkills(() => {

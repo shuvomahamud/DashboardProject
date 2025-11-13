@@ -11,6 +11,7 @@ describe('skillRequirements helpers', () => {
     const fromArray = parseSkillRequirementConfig(['React', 'Node.js']);
     expect(fromArray).toHaveLength(2);
     expect(fromArray[0].skill).toBe('React');
+    expect(fromArray[0].canonical).toBe('react');
 
     const fromString = parseSkillRequirementConfig(
       JSON.stringify(['SQL', 'Data Analysis'])
