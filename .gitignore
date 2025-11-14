@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 logs.json
+logs.csv
 .eslintrc.json
 
 # debug

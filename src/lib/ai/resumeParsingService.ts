@@ -963,6 +963,9 @@ export async function parseAndScoreResume(
 
 
 
+    let manualSkillSet = new Set<string>();
+    let manualToolSet = new Set<string>();
+
     if (jobContext.jobProfile && resume.rawText) {
       const tokens = buildResumeTokens(resume.rawText);
       const profileMust = jobContext.jobProfile.mustHaveSkills ?? [];
@@ -1012,14 +1015,13 @@ export async function parseAndScoreResume(
       manualMustMatches = dedupePreserveOrder([...manualMustFromAssessments, ...textMustMatches]);
       manualNiceMatches = dedupePreserveOrder([...manualNiceFromAssessments, ...textNiceMatches]);
       manualToolsMatches = dedupePreserveOrder([...manualToolsFromAssessments, ...textToolMatches]);
-    }
+      manualSkillSet = new Set(manualSkillsCombined.map(skill => normalizeSkillKey(skill)));
+      manualToolSet = new Set(manualToolsMatches.map(tool => normalizeSkillKey(tool)));
 
-    const manualSkillSet = new Set(manualSkillsCombined.map(skill => normalizeSkillKey(skill)));
-    const manualToolSet = new Set(manualToolsMatches.map(tool => normalizeSkillKey(tool)));
-    validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
-    validatedData.analysis.mustHaveSkillsMissing = (jobContext.jobProfile?.mustHaveSkills ?? []).filter(
-      skill => !manualSkillSet.has(normalizeSkillKey(skill))
-    );
+      validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
+      validatedData.analysis.mustHaveSkillsMissing = (jobContext.jobProfile?.mustHaveSkills ?? []).filter(
+        skill => !manualSkillSet.has(normalizeSkillKey(skill))
+      );
 
       const previousNiceMatches = Array.isArray(validatedData.analysis.niceToHaveSkillsMatched)
         ? validatedData.analysis.niceToHaveSkillsMatched
@@ -1068,6 +1070,12 @@ export async function parseAndScoreResume(
       manualToolsMatches = [];
       aiExtraSkills = [];
       aiExtraTools = [];
+      manualSkillSet = new Set();
+      manualToolSet = new Set();
+      validatedData.analysis.mustHaveSkillsMatched = manualMustMatches;
+      validatedData.analysis.mustHaveSkillsMissing = jobContext.jobProfile?.mustHaveSkills ?? [];
+      validatedData.analysis.niceToHaveSkillsMatched = [];
+      validatedData.analysis.toolsAndTechMatched = [];
     }
 
     const aiVerifierMustHave = verification?.confirmedMustHave ?? [];

@@ -664,6 +664,18 @@ export async function tryGPTParsing(
   timeoutMs: number,
   runId: string
 ): Promise<GPTParsingResult> {
+  const isRetryableError = (message: string | undefined | null) => {
+    if (!message) return false;
+    const lower = message.toLowerCase();
+    return (
+      lower.includes('request_was_aborted') ||
+      lower.includes('request was aborted') ||
+      lower.includes('operation was aborted') ||
+      lower.includes('socket hang up') ||
+      lower.includes('fetch failed')
+    );
+  };
+
   try {
     const result = await parseAndScoreResume(resumeId, jobContext, false, timeoutMs);
     if (result.success) {
@@ -677,8 +689,9 @@ export async function tryGPTParsing(
     }
 
     const message = result.error || 'Unknown parsing error';
-    const code: GPTParsingResult['code'] =
-      message.toLowerCase().includes('timeout') ? 'timeout' : 'error';
+    const isTimeout =
+      message.toLowerCase().includes('timeout') || isRetryableError(message);
+    const code: GPTParsingResult['code'] = isTimeout ? 'timeout' : 'error';
     pipelineWarn('gpt parsing failed', {
       runId,
       resumeId,
@@ -688,13 +701,16 @@ export async function tryGPTParsing(
     return { success: false, error: message, code };
   } catch (error: any) {
     const message = error?.message || 'Unknown error';
+    const isTimeout =
+      message.toLowerCase().includes('timeout') || isRetryableError(message);
     pipelineWarn('gpt parsing failed', {
       runId,
       resumeId,
       error: message
     });
-    logMetric('gpt_worker_failure', { runId, resumeId, error: message, code: 'error' });
-    return { success: false, error: message, code: 'error' };
+    const code: GPTParsingResult['code'] = isTimeout ? 'timeout' : 'error';
+    logMetric('gpt_worker_failure', { runId, resumeId, error: message, code });
+    return { success: false, error: message, code };
   }
 }
 
