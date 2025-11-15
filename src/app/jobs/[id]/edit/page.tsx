@@ -752,7 +752,9 @@ export default function EditJobPage() {
                           placeholder="e.g., 10 or 10-12"
                         />
                         <Form.Text className="text-muted">
-                          Leave blank or enter a range like 10-12.
+                          Leave blank or enter a range like 10-12. Candidates in the range earn the
+                          strongest experience score, while those outside receive reduced points per
+                          the matching logic.
                         </Form.Text>
                       </Form.Group>
                     </Col>
