@@ -50,6 +50,7 @@ const STEP_SLOW_THRESHOLDS_MS = {
   extract: 2500
 } as const;
 const MAX_ITEM_ATTEMPTS = parseInt(process.env.IMPORT_ITEM_MAX_ATTEMPTS || '5', 10);
+const GPT_SKIP_STATUSES = new Set(['succeeded']);
 
 export interface EmailItem {
   id: bigint;
@@ -193,31 +194,60 @@ export async function processEmailItem(
 
       if (existing) {
         await linkJobApplication(jobId, existing.id, externalMessageId);
-        await enqueueResumeForAI(existing.id, jobId, runId, itemId);
-        await prisma.import_email_items.update({
-          where: { id: itemId },
-          data: {
-            resume_id: existing.id,
-            gpt_status: 'queued',
-            gpt_next_retry_at: new Date(),
-            gpt_last_error: null
-          }
+        const existingJob = await prisma.resume_ai_jobs.findUnique({
+          where: {
+            resumeId_jobId: {
+              resumeId: existing.id,
+              jobId
+            }
+          },
+          select: { status: true }
         });
+        const alreadyAnalyzed = existingJob && GPT_SKIP_STATUSES.has(existingJob.status);
+
+        if (alreadyAnalyzed) {
+          await prisma.import_email_items.update({
+            where: { id: itemId },
+            data: {
+              resume_id: existing.id,
+              gpt_status: existingJob?.status ?? 'succeeded',
+              gpt_next_retry_at: null,
+              gpt_last_error: null
+            }
+          });
+          pipelineInfo('duplicate resume already analyzed, skipping gpt', {
+            runId,
+            itemId: itemId.toString(),
+            resumeId: existing.id
+          });
+          logMetric('pipeline_duplicate_linked', {
+            runId,
+            itemId: itemId.toString(),
+            resumeId: existing.id,
+            skipped: true
+          });
+          await updateItemStatus(itemId, 'completed', 'saved');
+          return { success: true, step: 'saved', resumeId: existing.id, gptStatus: 'skipped' };
+        }
+
+        const queueResult = await enqueueResumeForAI(existing.id, jobId, runId, itemId);
 
         pipelineInfo('duplicate resume linked', {
           runId,
           itemId: itemId.toString(),
-          resumeId: existing.id
+          resumeId: existing.id,
+          queueResult
         });
 
         logMetric('pipeline_duplicate_linked', {
           runId,
           itemId: itemId.toString(),
-          resumeId: existing.id
+          resumeId: existing.id,
+          skipped: false
         });
 
         await updateItemStatus(itemId, 'completed', 'saved');
-        return { success: true, step: 'saved', resumeId: existing.id, gptStatus: 'queued' };
+        return { success: true, step: 'saved', resumeId: existing.id, gptStatus: queueResult };
       }
 
       step = 'saved';
@@ -407,13 +437,15 @@ export async function processEmailItem(
       }
 
       if (resumeId) {
-        await enqueueResumeForAI(resumeId, jobId, runId, itemId);
-        gptStatus = 'queued';
-        logMetric('pipeline_gpt_enqueued', {
-          runId,
-          itemId: itemId.toString(),
-          resumeId
-        });
+        const enqueueResult = await enqueueResumeForAI(resumeId, jobId, runId, itemId);
+        gptStatus = enqueueResult;
+        if (enqueueResult === 'queued') {
+          logMetric('pipeline_gpt_enqueued', {
+            runId,
+            itemId: itemId.toString(),
+            resumeId
+          });
+        }
       }
 
       if (resumeId && !jobApplicationLinked) {
@@ -603,43 +635,73 @@ async function enqueueResumeForAI(
   jobId: number,
   runId: string,
   itemId: bigint
-): Promise<void> {
+): Promise<'queued' | 'skipped'> {
   const now = new Date();
+  const existingJob = await prisma.resume_ai_jobs.findUnique({
+    where: {
+      resumeId_jobId: {
+        resumeId,
+        jobId
+      }
+    },
+    select: {
+      id: true,
+      status: true
+    }
+  });
 
-  await prisma.$transaction([
-    prisma.import_email_items.update({
+  if (existingJob && GPT_SKIP_STATUSES.has(existingJob.status)) {
+    await prisma.import_email_items.update({
       where: { id: itemId },
       data: {
         resume_id: resumeId,
-        gpt_status: 'queued',
-        gpt_attempts: 0,
-        gpt_last_error: null,
-        gpt_next_retry_at: now
+        gpt_status: existingJob.status,
+        gpt_next_retry_at: null,
+        gpt_last_error: null
       }
-    }),
-    prisma.resume_ai_jobs.upsert({
-      where: {
-        resumeId_jobId: {
-          resumeId,
-          jobId
+    });
+    return 'skipped';
+  }
+
+  const importItemUpdate = prisma.import_email_items.update({
+    where: { id: itemId },
+    data: {
+      resume_id: resumeId,
+      gpt_status: 'queued',
+      gpt_attempts: 0,
+      gpt_last_error: null,
+      gpt_next_retry_at: now
+    }
+  });
+
+  if (existingJob) {
+    await prisma.$transaction([
+      importItemUpdate,
+      prisma.resume_ai_jobs.update({
+        where: { id: existingJob.id },
+        data: {
+          status: 'pending',
+          runId,
+          lastError: null,
+          nextRetryAt: now,
+          updatedAt: new Date()
         }
-      },
-      update: {
-        status: 'pending',
-        runId,
-        lastError: null,
-        nextRetryAt: now,
-        updatedAt: new Date()
-      },
-      create: {
-        resumeId,
-        jobId,
-        runId,
-        status: 'pending',
-        nextRetryAt: now
-      }
-    })
-  ]);
+      })
+    ]);
+  } else {
+    await prisma.$transaction([
+      importItemUpdate,
+      prisma.resume_ai_jobs.create({
+        data: {
+          resumeId,
+          jobId,
+          runId,
+          status: 'pending',
+          nextRetryAt: now
+        }
+      })
+    ]);
+  }
 
   pipelineInfo('resume queued for ai worker', {
     runId,
@@ -647,6 +709,8 @@ async function enqueueResumeForAI(
     resumeId,
     jobId
   });
+
+  return 'queued';
 }
 
 /**

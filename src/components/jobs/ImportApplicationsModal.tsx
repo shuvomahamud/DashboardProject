@@ -25,10 +25,9 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
   const isAdmin = useIsAdmin();
   const [mailbox, setMailbox] = useState("");
   const [text, setText] = useState("");
-  const [top, setTop] = useState(5000);
-  const [mode, setMode] = useState<'bulk' | 'graph-search'>('graph-search');
+  const [mode, setMode] = useState<'graph-search' | 'deep-scan'>('graph-search');
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState<{ mailbox?: string; text?: string; top?: string; mode?: string }>({});
+  const [errors, setErrors] = useState<{ mailbox?: string; text?: string; mode?: string }>({});
   const [realTimeErrors, setRealTimeErrors] = useState<{ mailbox?: string }>({});
 
   // reset form when opened
@@ -40,7 +39,6 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
         .then(data => setMailbox(data.mailbox || ""))
         .catch(() => setMailbox(""));
       setText("");
-      setTop(5000);
       setMode('graph-search');
       setErrors({});
       setRealTimeErrors({});
@@ -85,7 +83,6 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
     const parse = importEmailSchema.safeParse({
       mailbox,
       text,
-      top: Number.isFinite(top) ? top : 25,
       mode,
     });
     if (!parse.success) {
@@ -109,7 +106,6 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
           jobId,
           mailbox,
           searchText: text.trim(),
-          maxEmails: top,
           mode,
         }),
       });
@@ -198,42 +194,21 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
               </Form.Control.Feedback>
             )}
             <Form.Text className="text-muted">
-              We will search this mailbox Inbox with: <code>hasAttachments:yes "your text"</code>
+              Default mode uses Graph search (<code>hasAttachments:yes "your text"</code>). Enable deep scan below to sweep every folder until the lookback window is reached.
             </Form.Text>
           </Form.Group>
 
           <Form.Group className="mb-3">
             <Form.Check
               type="switch"
-              id="bulk-mode-toggle"
-              label="High-volume bulk scan (subject match only)"
-              checked={mode === 'bulk'}
-              onChange={(e) => setMode(e.target.checked ? 'bulk' : 'graph-search')}
+              id="deep-scan-toggle"
+              label="Deep scan entire mailbox (subject match only)"
+              checked={mode === 'deep-scan'}
+              onChange={(e) => setMode(e.target.checked ? 'deep-scan' : 'graph-search')}
               disabled={submitting}
             />
             <Form.Text className="text-muted">
-              Bulk scan pages through up to 5,000 inbox emails using Graph pagination and filters subjects locally.
-            </Form.Text>
-          </Form.Group>
-
-          <Form.Group className="mb-3">
-            <Form.Label>Max emails to scan (optional)</Form.Label>
-            <Form.Control
-              type="number"
-              min={1}
-              max={5000}
-              value={top}
-              onChange={(e) => setTop(Number(e.target.value))}
-              style={{ width: '150px' }}
-              isInvalid={!!errors.top}
-            />
-            {errors.top && (
-              <Form.Control.Feedback type="invalid">
-                {errors.top}
-              </Form.Control.Feedback>
-            )}
-            <Form.Text className="text-muted">
-              Default is 5,000 emails
+              Deep scan walks every folder until the lookback window is exhausted. Use it for high-volume campaigns when Graph search is truncated.
             </Form.Text>
           </Form.Group>
         </Form>

@@ -29,7 +29,7 @@ export interface ListMessagesOptions {
   jobTitle: string;
   limit?: number;
   lookbackDays?: number;
-  mode?: 'bulk' | 'graph-search';
+  mode?: 'graph-search' | 'deep-scan';
 }
 
 export interface EmailProvider {

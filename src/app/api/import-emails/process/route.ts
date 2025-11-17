@@ -35,6 +35,7 @@ const ITEM_BUDGET_MS = 8000;         // conservative budget per item
 const ITEM_SLOW_THRESHOLD_MS = 4000;
 const SOFT_TIME_LIMIT_MS = HARD_TIME_LIMIT_MS - SOFT_EXIT_MARGIN_MS;
 const DEFAULT_WORKER_CONCURRENCY = parseInt(process.env.GPT_WORKER_CONCURRENCY || '3', 10);
+const DEFAULT_GRAPH_SEARCH_LIMIT = parseInt(process.env.MS_GRAPH_SEARCH_LIMIT || '2000', 10);
 
 // Time helpers
 const since = (t: number) => Date.now() - t;
@@ -120,9 +121,9 @@ export async function POST(req: NextRequest) {
     const rawSearchMode = typeof runMeta.searchMode === 'string' ? runMeta.searchMode : undefined;
     const lookbackOverride = typeof runMeta.lookbackDays === 'number' ? runMeta.lookbackDays : undefined;
     const trimmedSearchText = run.search_text?.trim() ?? '';
-    const searchMode = rawSearchMode === 'bulk' || rawSearchMode === 'graph-search'
+    const searchMode = rawSearchMode === 'deep-scan' || rawSearchMode === 'graph-search'
       ? rawSearchMode
-      : (trimmedSearchText.length > 0 ? 'graph-search' : 'bulk');
+      : (trimmedSearchText.length > 0 ? 'graph-search' : 'deep-scan');
 
     logInfo('run loaded', {
       runId: run.id,
@@ -131,7 +132,6 @@ export async function POST(req: NextRequest) {
       totalMessages: run.total_messages ?? 0,
       mailbox: run.mailbox,
       search: run.search_text,
-      maxEmails: run.max_emails,
       searchMode
     });
     logMetric('processor_run_active', { runId: run.id, jobId: run.job_id, totalMessages: run.total_messages ?? 0 });
@@ -173,12 +173,12 @@ export async function POST(req: NextRequest) {
         logInfo('phase_a skipped low budget', { runId: run.id, remainingMs: remainingBeforePhaseA });
         logMetric('processor_phase_a_skipped', { runId: run.id, remainingMs: remainingBeforePhaseA });
       } else {
-        const enumerationLimit = run.max_emails || 5000;
+        const enumerationLimit = searchMode === 'graph-search' ? DEFAULT_GRAPH_SEARCH_LIMIT : undefined;
         const phaseAStart = Date.now();
         logInfo('phase_a enumerate start', {
           runId: run.id,
           search: run.search_text,
-          limit: enumerationLimit
+          limit: enumerationLimit ?? 'auto'
         });
 
         const messages = await provider.listMessages({

@@ -16,9 +16,10 @@ export class MSGraphEmailProvider implements EmailProvider {
   }
 
   async listMessages(options: ListMessagesOptions): Promise<EmailMessage[]> {
-    const { jobTitle, limit = 5000, lookbackDays, mode } = options;
+    const { jobTitle, limit, lookbackDays, mode } = options;
     const trimmedQuery = jobTitle?.trim() ?? '';
-    const resolvedMode = mode ?? (trimmedQuery.length > 0 ? 'graph-search' : 'bulk');
+    const resolvedMode: 'graph-search' | 'deep-scan' =
+      mode === 'deep-scan' ? 'deep-scan' : (trimmedQuery.length > 0 ? 'graph-search' : 'deep-scan');
 
     // Set lookback days in env if provided
     if (lookbackDays) {

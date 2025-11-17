@@ -7,14 +7,14 @@ import { resolveExperiencePayload } from '@/lib/jobs/experience';
 
 export const dynamic = 'force-dynamic';
 
-type SearchMode = 'bulk' | 'graph-search' | null;
+type SearchMode = 'deep-scan' | 'graph-search' | null;
 
 const extractSearchMode = (meta: unknown): SearchMode => {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
     return null;
   }
   const mode = (meta as Record<string, unknown>).searchMode;
-  return mode === 'bulk' || mode === 'graph-search' ? mode : null;
+  return mode === 'deep-scan' || mode === 'graph-search' ? mode : null;
 };
 
 async function GET(req: NextRequest) {
@@ -86,7 +86,7 @@ async function GET(req: NextRequest) {
           createdAt: run.created_at,
           startedAt: run.started_at,
           finishedAt: run.finished_at,
-          highVolume: searchMode === 'bulk',
+          highVolume: searchMode === 'deep-scan',
           searchMode
         };
       })

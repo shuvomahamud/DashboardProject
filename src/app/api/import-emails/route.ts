@@ -28,16 +28,15 @@ export async function POST(req: NextRequest) {
       jobId,
       mailbox,
       searchText,
-      maxEmails,
       mode,
       lookbackDays
     } = body;
 
     const trimmedSearchText = typeof searchText === 'string' ? searchText.trim() : '';
     const requestedMode = typeof mode === 'string' ? mode : undefined;
-    const searchMode = requestedMode === 'bulk' || requestedMode === 'graph-search'
+    const searchMode = requestedMode === 'deep-scan' || requestedMode === 'graph-search'
       ? requestedMode
-      : (trimmedSearchText.length > 0 ? 'graph-search' : 'bulk');
+      : (trimmedSearchText.length > 0 ? 'graph-search' : 'deep-scan');
 
     if (!jobId || typeof jobId !== 'number') {
       return NextResponse.json(
@@ -107,7 +106,7 @@ export async function POST(req: NextRequest) {
           requested_by: userEmail,
           mailbox,
           search_text: trimmedSearchText,
-          max_emails: maxEmails || 5000,
+          max_emails: null,
           status: 'enqueued',
           progress: 0,
           processed_messages: 0,

@@ -56,13 +56,11 @@ interface ImportRun {
   id: string;
   mailbox: string | null;
   searchText: string | null;
-  maxEmails: number | null;
   status: string;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
-  highVolume: boolean;
-  searchMode?: 'bulk' | 'graph-search' | null;
+  searchMode?: 'graph-search' | 'deep-scan' | null;
 }
 
 const coerceMandatorySkillRequirements = (input: unknown): string[] => {
@@ -571,8 +569,7 @@ export default function JobDetailPage() {
                         <th style={{ width: '12rem' }}>Requested</th>
                         <th>Mailbox</th>
                         <th style={{ minWidth: '16rem' }}>Search Text</th>
-                        <th style={{ width: '8rem' }}>High Volume</th>
-                        <th style={{ width: '8rem' }}>Max Emails</th>
+                        <th style={{ width: '10rem' }}>Mode</th>
                         <th style={{ width: '8rem' }}>Status</th>
                       </tr>
                     </thead>
@@ -587,11 +584,10 @@ export default function JobDetailPage() {
                             </span>
                           </td>
                           <td>
-                            <Badge bg={run.highVolume ? 'warning' : 'secondary'} text={run.highVolume ? 'dark' : undefined}>
-                              {run.highVolume ? 'Yes' : 'No'}
+                            <Badge bg={run.searchMode === 'deep-scan' ? 'warning' : 'secondary'} text={run.searchMode === 'deep-scan' ? 'dark' : undefined}>
+                              {run.searchMode === 'deep-scan' ? 'Deep scan' : 'Graph'}
                             </Badge>
                           </td>
-                          <td>{run.maxEmails ?? '—'}</td>
                           <td>
                             <Badge bg={run.status === 'succeeded' ? 'success' : run.status === 'failed' ? 'danger' : 'info'} className="fw-normal text-uppercase">
                               {run.status}

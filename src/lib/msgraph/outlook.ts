@@ -32,11 +32,19 @@ export interface AttachmentsResponse {
   attachments: Attachment[];
 }
 
+interface MailFolder {
+  id: string;
+  displayName: string;
+  parentFolderId?: string | null;
+  childFolderCount?: number;
+}
+
 const GRAPH_DEBUG_ENABLED = process.env.MS_GRAPH_DEBUG === 'true';
 
-const DEFAULT_MS_BULK_PAGE_SIZE = 1000;
-const DEFAULT_MS_BULK_MAX_PAGES = 5;
-const DEFAULT_MS_BULK_LOOKBACK_DAYS = 365;
+const DEFAULT_MS_DEEP_SCAN_PAGE_SIZE = 200;
+const DEFAULT_MS_DEEP_SCAN_FOLDER_PAGE_SIZE = 200;
+const DEFAULT_MS_DEEP_SCAN_MAX_RESULTS = 100000;
+const DEFAULT_MS_DEEP_SCAN_LOOKBACK_DAYS = 365;
 const DEFAULT_MS_SEARCH_LOOKBACK_DAYS = 1095;
 const GRAPH_MAX_PAGE_SIZE = 1000;
 
@@ -73,7 +81,7 @@ const graphDebug = (message: string, context?: Record<string, unknown>) => {
 };
 
 export interface SearchMessagesOptions {
-  mode?: 'bulk' | 'graph-search';
+  mode?: 'deep-scan' | 'graph-search';
   lookbackDays?: number;
   pageSize?: number;
   maxPages?: number;
@@ -93,18 +101,19 @@ export async function searchMessages(
 
   const trimmedSearch = searchText?.trim() ?? '';
 
-  const requestedMode = options.mode ?? (trimmedSearch.length > 0 ? 'graph-search' : 'bulk');
-  const mode: 'bulk' | 'graph-search' = requestedMode === 'bulk' ? 'bulk' : 'graph-search';
+  const requestedMode = options.mode ?? (trimmedSearch.length > 0 ? 'graph-search' : 'deep-scan');
+  const mode: 'graph-search' | 'deep-scan' = requestedMode === 'deep-scan' ? 'deep-scan' : 'graph-search';
   const subjectFilter = options.subjectFilter ?? trimmedSearch;
   const normalizedSubjectFilter = subjectFilter.trim();
 
   const allMessages: Message[] = [];
+  const deepScanLookbackEnv = process.env.MS_DEEP_SCAN_LOOKBACK_DAYS || process.env.MS_BULK_LOOKBACK_DAYS;
 
   const lookbackDays = Math.max(
     1,
     options.lookbackDays ?? (
-      mode === 'bulk'
-        ? parsePositiveInt(process.env.MS_BULK_LOOKBACK_DAYS, DEFAULT_MS_BULK_LOOKBACK_DAYS)
+      mode === 'deep-scan'
+        ? parsePositiveInt(deepScanLookbackEnv, DEFAULT_MS_DEEP_SCAN_LOOKBACK_DAYS)
         : parsePositiveInt(process.env.MS_IMPORT_LOOKBACK_DAYS, DEFAULT_MS_SEARCH_LOOKBACK_DAYS)
     )
   );
@@ -172,6 +181,13 @@ export async function searchMessages(
       pages: pageCount,
       subjectFilterApplied: normalizedSubjectFilter.length > 0
     });
+    if (results.length >= limit) {
+      console.warn('[msgraph] Graph $search returned limit-sized result set. Consider deep scan for completeness.', {
+        limit,
+        fetched: results.length,
+        searchText: trimmedSearch
+      });
+    }
 
     return {
       messages: results.slice(0, limit),
@@ -179,80 +195,216 @@ export async function searchMessages(
     };
   }
 
-  // ---------- BULK MODE (NO TEXT) — Inbox scan with filters ----------
-  const pageSize = clampPageSize(options.pageSize ?? parsePositiveInt(process.env.MS_BULK_PAGE_SIZE, DEFAULT_MS_BULK_PAGE_SIZE));
-  const maxPages = Math.max(1, options.maxPages ?? parsePositiveInt(process.env.MS_BULK_MAX_PAGES, DEFAULT_MS_BULK_MAX_PAGES));
-
-  graphDebug('MS Graph: bulk inbox scan starting', {
+  const deepScanMessages = await deepScanMailbox({
     mailbox,
+    normalizedSubjectFilter,
     lookbackDays,
     limit,
+    utcStart
+  });
+
+  return {
+    messages: deepScanMessages,
+    next: undefined
+  };
+}
+
+interface DeepScanOptions {
+  mailbox: string;
+  normalizedSubjectFilter: string;
+  lookbackDays: number;
+  limit?: number;
+  utcStart: string;
+}
+
+async function deepScanMailbox(options: DeepScanOptions): Promise<Message[]> {
+  const {
+    mailbox,
+    normalizedSubjectFilter,
+    lookbackDays,
+    limit,
+    utcStart
+  } = options;
+  const pageSize = clampPageSize(parsePositiveInt(process.env.MS_DEEP_SCAN_PAGE_SIZE, DEFAULT_MS_DEEP_SCAN_PAGE_SIZE));
+  const folderPageSize = Math.max(1, parsePositiveInt(process.env.MS_DEEP_SCAN_FOLDER_PAGE_SIZE, DEFAULT_MS_DEEP_SCAN_FOLDER_PAGE_SIZE));
+  const maxResults = Math.max(1, Math.min(limit ?? DEFAULT_MS_DEEP_SCAN_MAX_RESULTS, DEFAULT_MS_DEEP_SCAN_MAX_RESULTS));
+  const sinceDate = new Date(utcStart);
+
+  graphDebug('MS Graph: deep scan starting', {
+    mailbox,
+    lookbackDays,
     pageSize,
-    maxPages,
+    maxResults,
     subjectFilterApplied: normalizedSubjectFilter.length > 0
   });
 
-  let url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart} and hasAttachments eq true&$orderby=receivedDateTime desc&$top=${pageSize}`;
-  let nextUrl: string | undefined;
-  let pagesFetched = 0;
+  const folders = await fetchAllFolders(mailbox, folderPageSize);
+  folders.sort((a, b) => folderPriorityValue(a.displayName) - folderPriorityValue(b.displayName));
 
-  while (allMessages.length < limit && pagesFetched < maxPages) {
-    const response = await graphFetch(nextUrl || url);
+  const results: Message[] = [];
 
-    if (!response.ok) {
-      const error = await response.text();
+  for (const folder of folders) {
+    if (results.length >= maxResults) {
+      break;
+    }
+    if (shouldSkipFolder(folder.displayName)) {
+      graphDebug('MS Graph: deep scan skipping folder', { folder: folder.displayName });
+      continue;
+    }
+    const remaining = maxResults - results.length;
+    const folderMessages = await fetchFolderMessages({
+      mailbox,
+      folderId: folder.id,
+      normalizedSubjectFilter,
+      sinceDate,
+      limit: remaining,
+      pageSize
+    });
+    if (folderMessages.length > 0) {
+      graphDebug('MS Graph: deep scan folder collected', {
+        folder: folder.displayName,
+        collected: folderMessages.length
+      });
+    }
+    results.push(...folderMessages);
+  }
 
-      // Fallback: Remove hasAttachments filter if we get InefficientFilter error
-      if (response.status === 400 && error.includes('InefficientFilter')) {
-        graphDebug('MS Graph: InefficientFilter detected, removing hasAttachments filter');
-        url = `/v1.0/users/${mailbox}/mailFolders/Inbox/messages?$select=${selectFields}&$filter=receivedDateTime ge ${utcStart}&$top=${pageSize}`;
-        nextUrl = undefined;
+  graphDebug('MS Graph: deep scan complete', {
+    folders: folders.length,
+    collected: results.length,
+    subjectFilterApplied: normalizedSubjectFilter.length > 0
+  });
+
+  return results;
+}
+
+function folderPriorityValue(name?: string): number {
+  const normalized = (name || '').toLowerCase();
+  if (normalized === 'inbox') return 0;
+  if (normalized === 'sent items') return 1;
+  if (normalized === 'deleted items') return 2;
+  return 3;
+}
+
+function shouldSkipFolder(name?: string): boolean {
+  if (!name) {
+    return false;
+  }
+  const normalized = name.toLowerCase().trim();
+  return normalized === 'sent items';
+}
+
+async function fetchAllFolders(mailbox: string, pageSize: number): Promise<MailFolder[]> {
+  const folders: MailFolder[] = [];
+  const queue: (string | null)[] = [null];
+  const seen = new Set<string>();
+
+  while (queue.length > 0) {
+    const parentId = queue.shift() ?? null;
+    const children = await fetchChildFolders(mailbox, parentId, pageSize);
+    for (const child of children) {
+      if (seen.has(child.id)) {
         continue;
       }
+      seen.add(child.id);
+      folders.push(child);
+      if ((child.childFolderCount || 0) > 0) {
+        queue.push(child.id);
+      }
+    }
+  }
 
-      throw new Error(`Inbox scan failed: ${response.status} ${error}`);
+  return folders;
+}
+
+async function fetchChildFolders(mailbox: string, parentId: string | null, pageSize: number): Promise<MailFolder[]> {
+  const base = parentId
+    ? `/v1.0/users/${mailbox}/mailFolders/${encodeURIComponent(parentId)}/childFolders`
+    : `/v1.0/users/${mailbox}/mailFolders`;
+  let url = `${base}?$select=id,displayName,parentFolderId,childFolderCount&$top=${pageSize}`;
+  const folders: MailFolder[] = [];
+
+  while (url) {
+    const response = await graphFetch(url);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to list folders: ${response.status} ${error}`);
+    }
+    const data = await response.json();
+    folders.push(...((data.value || []) as MailFolder[]));
+    url = data['@odata.nextLink'] || '';
+  }
+
+  return folders;
+}
+
+interface FetchFolderMessagesOptions {
+  mailbox: string;
+  folderId: string;
+  normalizedSubjectFilter: string;
+  sinceDate: Date;
+  limit: number;
+  pageSize: number;
+}
+
+async function fetchFolderMessages(options: FetchFolderMessagesOptions): Promise<Message[]> {
+  const {
+    mailbox,
+    folderId,
+    normalizedSubjectFilter,
+    sinceDate,
+    limit,
+    pageSize
+  } = options;
+  const collected: Message[] = [];
+  const encodedFolder = encodeURIComponent(folderId);
+  let url = `/v1.0/users/${mailbox}/mailFolders/${encodedFolder}/messages?$select=${selectFields}&$orderby=receivedDateTime desc&$top=${pageSize}&$filter=receivedDateTime ge ${sinceDate.toISOString()} and hasAttachments eq true`;
+
+  while (url && collected.length < limit) {
+    const response = await graphFetch(url);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Folder scan failed (${folderId}): ${response.status} ${error}`);
     }
 
     const data = await response.json();
     const pageMessages = (data.value || []) as Message[];
+    let stopFolder = false;
 
-    allMessages.push(...pageMessages);
-    nextUrl = data['@odata.nextLink'];
+    for (const message of pageMessages) {
+      const receivedAt = new Date(message.receivedDateTime);
+      if (receivedAt < sinceDate) {
+        stopFolder = true;
+        break;
+      }
 
-    pagesFetched++;
+      if (normalizedSubjectFilter.length > 0 && !subjectMatches(message.subject, normalizedSubjectFilter)) {
+        continue;
+      }
 
-    if (!nextUrl || pageMessages.length === 0) {
+      if (!message.hasAttachments) {
+        continue;
+      }
+
+      collected.push(message);
+      if (collected.length >= limit) {
+        stopFolder = true;
+        break;
+      }
+    }
+
+    if (stopFolder) {
       break;
     }
+
+    const nextLink = data['@odata.nextLink'];
+    if (!nextLink) {
+      break;
+    }
+    url = nextLink;
   }
 
-  let results = allMessages;
-
-  // Always filter out messages without attachments to match legacy behaviour
-  results = results.filter(m => m.hasAttachments);
-
-  // Apply subject/title filter if provided
-  if (normalizedSubjectFilter.length > 0) {
-    results = results.filter(m => subjectMatches(m.subject, normalizedSubjectFilter));
-  }
-
-  // Enforce lookback again in case any messages slipped through when the filter was removed
-  results = results.filter(m => new Date(m.receivedDateTime) >= new Date(utcStart));
-
-  // Sort newest first
-  results.sort((a, b) => +new Date(b.receivedDateTime) - +new Date(a.receivedDateTime));
-
-  graphDebug('MS Graph: bulk inbox scan complete', {
-    requested: allMessages.length,
-    retained: results.length,
-    pagesFetched,
-    subjectFilterApplied: normalizedSubjectFilter.length > 0
-  });
-
-  return {
-    messages: results.slice(0, limit),
-    next: undefined
-  };
+  return collected;
 }
 
 export async function listAttachments(messageId: string, mailboxUserId?: string): Promise<AttachmentsResponse> {
