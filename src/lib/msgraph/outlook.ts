@@ -47,6 +47,7 @@ const DEFAULT_MS_DEEP_SCAN_MAX_RESULTS = 100000;
 const DEFAULT_MS_DEEP_SCAN_LOOKBACK_DAYS = 365;
 const DEFAULT_MS_SEARCH_LOOKBACK_DAYS = 1095;
 const GRAPH_MAX_PAGE_SIZE = 1000;
+const MESSAGE_FIELDS = 'id,subject,hasAttachments,receivedDateTime,from,bodyPreview';
 
 const parsePositiveInt = (value: string | undefined, fallback: number) => {
   const parsed = value ? parseInt(value, 10) : NaN;
@@ -121,7 +122,7 @@ export async function searchMessages(
   startDate.setDate(startDate.getDate() - lookbackDays);
   const utcStart = startDate.toISOString();
 
-  const selectFields = 'id,subject,hasAttachments,receivedDateTime,from,bodyPreview';
+  const selectFields = MESSAGE_FIELDS;
 
   // ---------- TEXT SEARCH MODE (Outlook-like full-text search across ALL folders) ----------
   if (mode === 'graph-search') {
@@ -358,7 +359,7 @@ async function fetchFolderMessages(options: FetchFolderMessagesOptions): Promise
   } = options;
   const collected: Message[] = [];
   const encodedFolder = encodeURIComponent(folderId);
-  let url = `/v1.0/users/${mailbox}/mailFolders/${encodedFolder}/messages?$select=${selectFields}&$orderby=receivedDateTime desc&$top=${pageSize}&$filter=receivedDateTime ge ${sinceDate.toISOString()} and hasAttachments eq true`;
+  let url = `/v1.0/users/${mailbox}/mailFolders/${encodedFolder}/messages?$select=${MESSAGE_FIELDS}&$orderby=receivedDateTime desc&$top=${pageSize}&$filter=receivedDateTime ge ${sinceDate.toISOString()} and hasAttachments eq true`;
 
   while (url && collected.length < limit) {
     const response = await graphFetch(url);
