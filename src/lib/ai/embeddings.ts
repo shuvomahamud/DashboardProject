@@ -4,8 +4,21 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const AI_MODEL_EMBED = process.env.AI_MODEL_EMBED || 'text-embedding-3-large';
-const EMBED_DIM = parseInt(process.env.EMBED_DIM || '1536', 10);
+const DEFAULT_EMBED_MODEL = 'text-embedding-3-small';
+const KNOWN_EMBED_DIMENSIONS: Record<string, number> = {
+  'text-embedding-3-small': 1536,
+  'text-embedding-3-large': 3072
+};
+
+const configuredModel = (process.env.AI_MODEL_EMBED || '').trim();
+const AI_MODEL_EMBED = configuredModel || DEFAULT_EMBED_MODEL;
+
+const parsedEnvDim = process.env.EMBED_DIM ? parseInt(process.env.EMBED_DIM, 10) : NaN;
+const derivedDim =
+  (!Number.isNaN(parsedEnvDim) && parsedEnvDim > 0
+    ? parsedEnvDim
+    : KNOWN_EMBED_DIMENSIONS[AI_MODEL_EMBED]) ?? KNOWN_EMBED_DIMENSIONS[DEFAULT_EMBED_MODEL];
+const EMBED_DIM = derivedDim;
 
 interface EmbeddingConfig {
   maxRetries?: number;

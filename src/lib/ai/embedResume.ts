@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import prisma from '@/lib/prisma';
-import { embedText, normalizeForEmbedding } from './embeddings';
+import { AI_MODEL_EMBED, embedText, normalizeForEmbedding } from './embeddings';
 
 export interface EmbedResumeResult {
   ok: boolean;
@@ -81,7 +81,7 @@ export async function upsertResumeEmbedding(resumeId: number): Promise<EmbedResu
 
     // Store metadata about the embedding
     const metadata = {
-      model: process.env.AI_MODEL_EMBED || 'text-embedding-3-large',
+      model: AI_MODEL_EMBED,
       textLength: textToEmbed.length,
       originalName: resume.originalName,
       fileName: resume.fileName,

@@ -23,6 +23,18 @@ type ResumeLogContext = Record<string, unknown>;
 const RESUME_LOG_PREFIX = '[resume-parsing]';
 const OPENAI_SLOW_THRESHOLD_MS = 12000;
 
+const toPositiveInt = (value: string | undefined, fallback: number) => {
+  if (!value) return fallback;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const DEFAULT_PARSE_TIMEOUT_MS = toPositiveInt(process.env.OPENAI_RESUME_TIMEOUT_MS, 20000);
+const LONG_TEXT_CHAR_THRESHOLD = toPositiveInt(process.env.OPENAI_LONG_TEXT_THRESHOLD, 15000);
+const LONG_TEXT_TIMEOUT_MS = toPositiveInt(process.env.OPENAI_LONG_TEXT_TIMEOUT_MS, 32000);
+const MAX_PARSE_TIMEOUT_MS = toPositiveInt(process.env.OPENAI_RESUME_MAX_TIMEOUT_MS, 45000);
+const TIMEOUT_RETRY_BACKOFF_MS = toPositiveInt(process.env.OPENAI_TIMEOUT_RETRY_BACKOFF_MS, 8000);
+
 const resumeLogInfo = (message: string, context?: ResumeLogContext) => {
   if (context) {
     console.info(`${RESUME_LOG_PREFIX} ${message}`, context);
@@ -128,6 +140,7 @@ interface ParseResult {
   data?: EnhancedParsedResume;
   error?: string;
   tokensUsed?: number;
+  errorCode?: 'timeout' | 'api';
 }
 
 interface ParseSummary {
@@ -532,6 +545,13 @@ async function verifySkillMatchesWithAI(params: {
   }
 }
 
+const isAbortError = (error: unknown) => {
+  if (!error) return false;
+  const name = (error as { name?: string }).name?.toLowerCase() ?? '';
+  const message = (error as { message?: string }).message?.toLowerCase() ?? '';
+  return name === 'aborterror' || name === 'timeouterror' || message.includes('aborted');
+};
+
 // Main parsing function - single call to gpt-4o-mini with no fallback
 async function callOpenAIForParsing(
   jobContext: JobContext,
@@ -627,14 +647,17 @@ async function callOpenAIForParsing(
     };
 
   } catch (error: any) {
-    const isAbort = error?.name === 'AbortError';
+    const aborted = isAbortError(error);
     resumeLogError('openai api error', {
       timeoutMs,
-      error: isAbort ? 'timeout' : error?.message
+      error: aborted ? 'timeout' : (error instanceof Error ? error.message : 'unknown')
     });
     return {
       success: false,
-      error: isAbort ? `OpenAI timeout after ${timeoutMs}ms` : (error instanceof Error ? error.message : 'Unknown OpenAI API error')
+      error: aborted
+        ? `OpenAI timeout after ${timeoutMs}ms`
+        : (error instanceof Error ? error.message : 'Unknown OpenAI API error'),
+      errorCode: aborted ? 'timeout' : 'api'
     };
   }
 }
@@ -892,13 +915,48 @@ export async function parseAndScoreResume(
     // Redact sensitive data and truncate to prevent timeouts
     const redactedText = redactSensitiveData(resume.rawText);
     const processedText = redactedText;
+    const textLength = processedText.length;
+
+    const requestedTimeout = Math.max(timeoutMs ?? DEFAULT_PARSE_TIMEOUT_MS, 1000);
+    const baseTimeout = Math.max(requestedTimeout, DEFAULT_PARSE_TIMEOUT_MS);
+    const cappedBaseTimeout = Math.min(baseTimeout, MAX_PARSE_TIMEOUT_MS);
+    let effectiveTimeout = cappedBaseTimeout;
+
+    if (textLength >= LONG_TEXT_CHAR_THRESHOLD) {
+      const extendedTimeout = Math.min(Math.max(effectiveTimeout, LONG_TEXT_TIMEOUT_MS), MAX_PARSE_TIMEOUT_MS);
+      if (extendedTimeout > effectiveTimeout) {
+        effectiveTimeout = extendedTimeout;
+        resumeLogWarn('parse_timeout_extended_for_long_text', {
+          resumeId,
+          textLength,
+          timeoutMs: effectiveTimeout
+        });
+      }
+    }
 
     let manualAssessments: ManualSkillAssessment[] = parseManualSkillAssessments(
       (resume as any).manualSkillAssessments ?? (resume as any).manualSkillsMatched ?? null
     );
 
     // Call OpenAI for parsing with timeout
-    const parseResult = await callOpenAIForParsing(jobContext, processedText, timeoutMs);
+    let parseResult = await callOpenAIForParsing(jobContext, processedText, effectiveTimeout);
+
+    if (!parseResult.success && parseResult.errorCode === 'timeout') {
+      const retryTimeout = Math.min(
+        MAX_PARSE_TIMEOUT_MS,
+        effectiveTimeout + TIMEOUT_RETRY_BACKOFF_MS
+      );
+      if (retryTimeout > effectiveTimeout) {
+        resumeLogWarn('parse_retry_after_timeout', {
+          resumeId,
+          previousTimeout: effectiveTimeout,
+          retryTimeout,
+          textLength
+        });
+        effectiveTimeout = retryTimeout;
+        parseResult = await callOpenAIForParsing(jobContext, processedText, retryTimeout);
+      }
+    }
 
     if (!parseResult.success) {
       // Mark parse failure with retry logic

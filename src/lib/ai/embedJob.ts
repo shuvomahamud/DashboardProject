@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import prisma from '@/lib/prisma';
-import { embedText, normalizeForEmbedding } from './embeddings';
+import { AI_MODEL_EMBED, embedText, normalizeForEmbedding } from './embeddings';
 import { parseSkillRequirementConfig } from './skillRequirements';
 
 export interface EmbedJobResult {
@@ -202,7 +202,7 @@ export async function upsertJobEmbedding(jobId: number): Promise<EmbedJobResult>
 
     // Store metadata about the embedding
     const metadata = {
-      model: process.env.AI_MODEL_EMBED || 'text-embedding-3-large',
+      model: AI_MODEL_EMBED,
       textLength: profileText.length,
       title: job.title,
       companyName: job.company?.name,
