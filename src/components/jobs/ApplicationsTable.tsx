@@ -708,6 +708,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
                   setStateFilter(value);
                   setCityFilter('');
                   setPage(1);
+                  setSearchTerm(prev => prev);
                 }}
               >
                 <option value="">All States</option>
@@ -728,6 +729,7 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
                 onChange={(e) => {
                   setCityFilter(e.target.value);
                   setPage(1);
+                  setSearchTerm(prev => prev);
                 }}
               >
                 <option value="">All Cities</option>

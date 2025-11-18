@@ -94,10 +94,6 @@ async function _GET(req: NextRequest) {
     });
   }
 
-  if (andFilters.length > 0) {
-    whereClause.AND = andFilters;
-  }
-
   // Filter by status
   if (status && status !== 'all') {
     whereClause.status = status;
@@ -151,6 +147,10 @@ async function _GET(req: NextRequest) {
         ]
       });
     }
+  }
+
+  if (andFilters.length > 0) {
+    whereClause.AND = andFilters;
   }
 
   const sortDir = sortDirection === 'asc' ? 'asc' : 'desc';
@@ -293,14 +293,13 @@ async function _GET(req: NextRequest) {
     }
   });
 
-  const locationOptions = US_STATES.map((state) => {
-    const cities = locationMap.get(state.code) ?? new Set();
-    return {
-      code: state.code,
-      name: state.name,
+  const locationOptions = Array.from(locationMap.entries())
+    .map(([code, cities]) => ({
+      code,
+      name: getStateName(code) ?? code,
       cities: Array.from(cities).sort((a, b) => a.localeCompare(b))
-    };
-  });
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   // Parse contact info and extract candidate details
   const rows = apps.map((a) => {
