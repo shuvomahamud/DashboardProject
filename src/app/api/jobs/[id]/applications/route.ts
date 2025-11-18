@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from '@/lib/prisma';
 import { withTableAuthAppRouter } from "@/lib/auth/withTableAuthAppRouter";
+import { getStateName } from '@/lib/location/usStates';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,9 @@ function parsePaging(url: string) {
   const sortField = (sp.get("sortField") || "matchScore").trim();
   const directionParam = (sp.get("sortDirection") || "desc").toLowerCase();
   const sortDirection = directionParam === 'asc' ? 'asc' : 'desc';
-  return { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection };
+  const state = (sp.get("state") || "").trim().toUpperCase();
+  const city = (sp.get("city") || "").trim();
+  return { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection, state, city };
 }
 
 function extractSearchTokens(value: string): string[] {
@@ -50,7 +53,9 @@ async function _GET(req: NextRequest) {
   if (!Number.isFinite(jobId)) {
     return NextResponse.json({ error: "Invalid job id" }, { status: 400 });
   }
-  const { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection } = parsePaging(req.url);
+  const { page, pageSize, q, search, status, minMatch, maxFake, sortField, sortDirection, state, city } = parsePaging(req.url);
+  const stateFilter = state && state.length === 2 ? state : '';
+  const cityFilter = stateFilter ? city : '';
 
   let whereClause: any = { jobId };
   const andFilters: any[] = [];
@@ -103,6 +108,17 @@ async function _GET(req: NextRequest) {
     whereClause.matchScore = { gte: minMatch };
   }
 
+  if (stateFilter) {
+    const resumeLocationFilter: any = { candidateState: stateFilter };
+    if (cityFilter) {
+      resumeLocationFilter.candidateCity = {
+        equals: cityFilter,
+        mode: 'insensitive'
+      };
+    }
+    andFilters.push({ resume: resumeLocationFilter });
+  }
+
   const sortDir = sortDirection === 'asc' ? 'asc' : 'desc';
   let orderByClause: any;
 
@@ -143,7 +159,7 @@ async function _GET(req: NextRequest) {
       break;
   }
 
-  const [total, apps] = await Promise.all([
+  const [total, apps, locationRecords] = await Promise.all([
     prisma.jobApplication.count({ where: whereClause }),
     prisma.jobApplication.findMany({
       where: whereClause,
@@ -175,14 +191,49 @@ async function _GET(req: NextRequest) {
             candidateName: true,
             email: true,
             phone: true,
+            sourceCandidateLocation: true,
+            candidateCity: true,
+            candidateState: true
           },
         },
       },
     }),
+    prisma.resume.findMany({
+      where: {
+        candidateState: { not: null },
+        applications: {
+          some: { jobId }
+        }
+      },
+      select: {
+        candidateState: true,
+        candidateCity: true
+      }
+    })
   ]);
 
   // Helper to safely convert Decimal to number
   const toNumber = (val: any) => val == null ? null : Number(val);
+
+  const locationMap = new Map<string, Set<string>>();
+  locationRecords.forEach(record => {
+    const stateCode = record.candidateState?.toUpperCase();
+    if (!stateCode) return;
+    if (!locationMap.has(stateCode)) {
+      locationMap.set(stateCode, new Set());
+    }
+    if (record.candidateCity) {
+      locationMap.get(stateCode)!.add(record.candidateCity);
+    }
+  });
+
+  const locationOptions = Array.from(locationMap.entries())
+    .map(([code, cities]) => ({
+      code,
+      name: getStateName(code) ?? code,
+      cities: Array.from(cities).sort((a, b) => a.localeCompare(b))
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   // Parse contact info and extract candidate details
   const rows = apps.map((a) => {
@@ -223,6 +274,15 @@ async function _GET(req: NextRequest) {
       candidateName = fileName?.replace(/\.(pdf|docx?|txt)$/i, '') || null;
     }
 
+    const locationCity = a.resume?.candidateCity || null;
+    const locationState = a.resume?.candidateState || null;
+    const fallbackLocation = a.resume?.sourceCandidateLocation || null;
+    const locationDisplay = locationCity && locationState
+      ? `${locationCity}, ${locationState}`
+      : locationCity
+      ? locationCity
+      : locationState || fallbackLocation || null;
+
     return {
       id: a.id,
       jobId: a.jobId,
@@ -241,6 +301,9 @@ async function _GET(req: NextRequest) {
       // Additional resume fields
       originalName: a.resume?.originalName,
       sourceFrom: a.resume?.sourceFrom,
+      locationCity,
+      locationState,
+      locationDisplay,
       skills: a.resume?.skills,
       experience: toNumber(a.resume?.totalExperienceY),
       createdAt: a.resume?.createdAt,
@@ -255,7 +318,10 @@ async function _GET(req: NextRequest) {
       search: searchTerm,
       status: status || null,
       minMatch,
-      maxFake
+      maxFake,
+      state: stateFilter || null,
+      city: cityFilter || null,
+      locationOptions
     }
   });
 }
@@ -319,3 +385,9 @@ const protectedPATCH = withTableAuthAppRouter("jobs", _PATCH);
 const protectedDELETE = withTableAuthAppRouter("jobs", _DELETE);
 
 export { protectedGET as GET, protectedPATCH as PATCH, protectedDELETE as DELETE };
+    case 'location':
+      orderByClause = [
+        { resume: { candidateState: sortDir } },
+        { resume: { candidateCity: sortDir } }
+      ];
+      break;

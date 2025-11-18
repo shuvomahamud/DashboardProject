@@ -353,6 +353,8 @@ model Resume {
   totalExperienceY      Decimal?            @db.Decimal(5, 2)
   parsedAt              DateTime?           @db.Timestamptz(6)
   candidateName         String?
+  candidateCity         String?
+  candidateState        String?
   companyScore          Decimal?            @db.Decimal(5, 2)
   email                 String?
   fakeScore             Decimal?            @db.Decimal(5, 2)

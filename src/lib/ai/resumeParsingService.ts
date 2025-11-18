@@ -17,6 +17,7 @@ import {
   type SkillExperienceEntry,
   type SkillRequirementEvaluationSummary
 } from './skillRequirements';
+import { parseCityState } from '@/lib/location/usStates';
 
 type ResumeLogContext = Record<string, unknown>;
 
@@ -763,7 +764,9 @@ function toResumeDbFields(
   ));
   const companiesCsv = uniqueCompanies.join(', ');
   
-  return {
+  const locationParts = parseCityState(candidate.currentLocation ?? null);
+
+  const record: Record<string, any> = {
     aiExtractJson: JSON.stringify(data),
     aiSummary: data.summary,
     candidateName: candidate.name,
@@ -788,6 +791,15 @@ function toResumeDbFields(
     skillRequirementEvaluation: extras?.skillRequirementEvaluation ?? null,
     aiMatchedAttributes: buildAiMatchedAttributes(data)
   };
+
+  if (locationParts.city) {
+    record.candidateCity = locationParts.city;
+  }
+  if (locationParts.state) {
+    record.candidateState = locationParts.state;
+  }
+
+  return record;
 }
 
 function buildAiMatchedAttributes(data: EnhancedParsedResume) {

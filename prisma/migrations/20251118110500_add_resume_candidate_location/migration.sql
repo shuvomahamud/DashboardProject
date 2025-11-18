@@ -1,0 +1,3 @@
+ALTER TABLE "Resume"
+  ADD COLUMN IF NOT EXISTS "candidateCity" TEXT,
+  ADD COLUMN IF NOT EXISTS "candidateState" TEXT;

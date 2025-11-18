@@ -25,12 +25,30 @@ type ApplicationRow = {
   createdAt?: string;
   originalName?: string | null;
   sourceFrom?: string | null;
+  locationCity?: string | null;
+  locationState?: string | null;
+  locationDisplay?: string | null;
+};
+
+type LocationStateOption = {
+  code: string;
+  name: string;
+  cities: string[];
 };
 
 type ApiResp = {
   applications: ApplicationRow[];
   pagination: { page: number; pageSize: number; total: number; pages: number };
   query: string;
+  filters?: {
+    search?: string | null;
+    status?: string | null;
+    minMatch?: number | null;
+    maxFake?: number | null;
+    state?: string | null;
+    city?: string | null;
+    locationOptions?: { states: LocationStateOption[] };
+  };
 };
 
 interface ApplicationsTableProps {
@@ -54,6 +72,9 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [minMatchScore, setMinMatchScore] = useState('');
   const [maxFakeScore, setMaxFakeScore] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
+  const [stateOptions, setStateOptions] = useState<LocationStateOption[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [previewModal, setPreviewModal] = useState<{
     resumeId: number | null;
@@ -86,6 +107,10 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       if (maxFakeScore) params.append('maxFake', maxFakeScore);
       if (sortField) params.append('sortField', sortField);
       if (sortDirection) params.append('sortDirection', sortDirection);
+      if (stateFilter) {
+        params.append('state', stateFilter);
+        if (cityFilter) params.append('city', cityFilter);
+      }
 
       const res = await fetch(`/api/jobs/${jobId}/applications?${params.toString()}`);
       if (!res.ok) {
@@ -95,12 +120,13 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       const data: ApiResp = await res.json();
       setRows(data.applications || []);
       setTotal(data.pagination?.total || 0);
+      setStateOptions(data.filters?.locationOptions?.states || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load applications');
     } finally {
       setLoading(false);
     }
-  }, [jobId, page, pageSize, searchTerm, statusFilter, minMatchScore, maxFakeScore, sortField, sortDirection]);
+  }, [jobId, page, pageSize, searchTerm, statusFilter, minMatchScore, maxFakeScore, sortField, sortDirection, stateFilter, cityFilter]);
 
   useEffect(() => {
     // Debounce search
@@ -115,6 +141,8 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     setStatusFilter('all');
     setMinMatchScore('');
     setMaxFakeScore('');
+    setStateFilter('');
+    setCityFilter('');
     setPage(1);
   };
 
@@ -314,6 +342,19 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       grow: 1
     },
     {
+      id: 'location',
+      name: 'Location',
+      selector: (row: ApplicationRow) => row.locationDisplay || '',
+      sortable: true,
+      sortField: 'location',
+      cell: (row: ApplicationRow) => (
+        <div style={{ maxWidth: '200px' }}>
+          {row.locationDisplay || <span className="text-muted">-</span>}
+        </div>
+      ),
+      width: '200px'
+    },
+    {
       id: 'status',
       name: 'Status',
       selector: (row: ApplicationRow) => row.status,
@@ -342,19 +383,6 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
         </div>
       ),
       width: '180px'
-    },
-    {
-      id: 'notes',
-      name: 'Notes',
-      selector: (row: ApplicationRow) => row.notes || '',
-      sortable: true,
-      sortField: 'notes',
-      cell: (row: ApplicationRow) => (
-        <div style={{ maxWidth: '200px', wordWrap: 'break-word' }}>
-          {row.notes || '-'}
-        </div>
-      ),
-      width: '200px'
     },
     {
       id: 'matchScore',
@@ -542,11 +570,19 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
   }
 
 
+  const cityOptions = useMemo(() => {
+    if (!stateFilter) return [];
+    const selected = stateOptions.find((state) => state.code === stateFilter);
+    return selected ? selected.cities : [];
+  }, [stateOptions, stateFilter]);
+
   const activeFiltersCount = [
     searchTerm,
     statusFilter !== 'all' ? statusFilter : null,
     minMatchScore,
-    maxFakeScore
+    maxFakeScore,
+    stateFilter || null,
+    stateFilter && cityFilter ? cityFilter : null
   ].filter(Boolean).length;
 
   return (
@@ -660,6 +696,47 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
                   setPage(1);
                 }}
               />
+            </div>
+
+            <div className="col-md-3">
+              <Form.Label className="small fw-bold">State</Form.Label>
+              <Form.Select
+                size="sm"
+                value={stateFilter}
+                onChange={(e) => {
+                  const value = e.target.value.toUpperCase();
+                  setStateFilter(value);
+                  setCityFilter('');
+                  setPage(1);
+                }}
+              >
+                <option value="">All States</option>
+                {stateOptions.map((state) => (
+                  <option key={state.code} value={state.code}>
+                    {state.code} - {state.name}
+                  </option>
+                ))}
+              </Form.Select>
+            </div>
+
+            <div className="col-md-3">
+              <Form.Label className="small fw-bold">City</Form.Label>
+              <Form.Select
+                size="sm"
+                value={cityFilter}
+                disabled={!stateFilter || cityOptions.length === 0}
+                onChange={(e) => {
+                  setCityFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">All Cities</option>
+                {cityOptions.map((city) => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </Form.Select>
             </div>
 
             <div className="col-md-3 d-flex align-items-end">

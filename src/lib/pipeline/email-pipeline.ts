@@ -334,6 +334,8 @@ export async function processEmailItem(
           sourceCandidateLocation: diceMetadata.candidateLocation ?? null,
           sourceWorkAuthorization: diceMetadata.workAuthorization ?? null,
           sourceRecruiterName: diceMetadata.recruiterName ?? null,
+          candidateCity: diceMetadata.candidateCity ?? null,
+          candidateState: diceMetadata.candidateState ?? null,
           skills: null,
           experience: null,
           education: null,

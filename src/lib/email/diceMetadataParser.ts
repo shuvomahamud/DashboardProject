@@ -1,3 +1,5 @@
+import { parseCityState } from '@/lib/location/usStates';
+
 const htmlEntityMap: Record<string, string> = {
   '&nbsp;': ' ',
   '&amp;': '&',
@@ -71,6 +73,8 @@ export interface DiceCandidateMetadata {
   candidateEmail?: string;
   candidatePhone?: string;
   candidateLocation?: string;
+  candidateCity?: string;
+  candidateState?: string;
   workAuthorization?: string;
   recruiterName?: string;
 }
@@ -113,6 +117,16 @@ export function parseDiceCandidateMetadata(input: DiceParserInput): DiceCandidat
     findLabeledValue(lines, ['location', 'preferred location']) || undefined;
   metadata.workAuthorization =
     findLabeledValue(lines, ['work authorization', 'work auth']) || undefined;
+
+  if (metadata.candidateLocation) {
+    const { city, state } = parseCityState(metadata.candidateLocation);
+    if (city) {
+      metadata.candidateCity = city;
+    }
+    if (state) {
+      metadata.candidateState = state;
+    }
+  }
 
   const recruiterValue = normalizeRecruiterValue(
     findLabeledValue(lines, ['recruiter', 'recruiter name'])
