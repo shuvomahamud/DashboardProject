@@ -327,7 +327,7 @@ async function _GET(req: NextRequest) {
       maxFake,
       state: stateFilter || null,
       city: cityFilter || null,
-      locationOptions
+      locationOptions: { states: locationOptions }
     }
   });
 }
