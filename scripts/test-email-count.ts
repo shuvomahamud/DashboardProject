@@ -18,7 +18,7 @@ async function main() {
   console.log('='.repeat(80));
 
   const provider = createEmailProvider(MAILBOX);
-  const messages = await provider.listMessages({
+  const { messages } = await provider.listMessages({
     jobTitle: SEARCH_TEXT,
     limit: LIMIT,
     mode: 'graph-search'

@@ -25,9 +25,8 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
   const isAdmin = useIsAdmin();
   const [mailbox, setMailbox] = useState("");
   const [text, setText] = useState("");
-  const [mode, setMode] = useState<'graph-search' | 'deep-scan'>('graph-search');
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState<{ mailbox?: string; text?: string; mode?: string }>({});
+  const [errors, setErrors] = useState<{ mailbox?: string; text?: string }>({});
   const [realTimeErrors, setRealTimeErrors] = useState<{ mailbox?: string }>({});
 
   // reset form when opened
@@ -39,7 +38,6 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
         .then(data => setMailbox(data.mailbox || ""))
         .catch(() => setMailbox(""));
       setText("");
-      setMode('graph-search');
       setErrors({});
       setRealTimeErrors({});
       setSubmitting(false);
@@ -83,7 +81,6 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
     const parse = importEmailSchema.safeParse({
       mailbox,
       text,
-      mode,
     });
     if (!parse.success) {
       const fieldErrs: Record<string, string> = {};
@@ -106,7 +103,6 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
           jobId,
           mailbox,
           searchText: text.trim(),
-          mode,
         }),
       });
 
@@ -194,21 +190,7 @@ export default function ImportApplicationsModal({ jobId, open, onClose, onImport
               </Form.Control.Feedback>
             )}
             <Form.Text className="text-muted">
-              Default mode uses Graph search (<code>hasAttachments:yes "your text"</code>). Enable deep scan below to sweep every folder until the lookback window is reached.
-            </Form.Text>
-          </Form.Group>
-
-          <Form.Group className="mb-3">
-            <Form.Check
-              type="switch"
-              id="deep-scan-toggle"
-              label="Deep scan entire mailbox (subject match only)"
-              checked={mode === 'deep-scan'}
-              onChange={(e) => setMode(e.target.checked ? 'deep-scan' : 'graph-search')}
-              disabled={submitting}
-            />
-            <Form.Text className="text-muted">
-              Deep scan walks every folder until the lookback window is exhausted. Use it for high-volume campaigns when Graph search is truncated.
+              We’ll start with Graph search (<code>hasAttachments:yes "your text"</code>) and automatically switch to a deep mailbox scan if Graph truncates the results.
             </Form.Text>
           </Form.Group>
         </Form>

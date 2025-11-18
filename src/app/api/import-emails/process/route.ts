@@ -36,6 +36,7 @@ const ITEM_SLOW_THRESHOLD_MS = 4000;
 const SOFT_TIME_LIMIT_MS = HARD_TIME_LIMIT_MS - SOFT_EXIT_MARGIN_MS;
 const DEFAULT_WORKER_CONCURRENCY = parseInt(process.env.GPT_WORKER_CONCURRENCY || '3', 10);
 const DEFAULT_GRAPH_SEARCH_LIMIT = parseInt(process.env.MS_GRAPH_SEARCH_LIMIT || '2000', 10);
+const DEFAULT_MAX_EMAILS = parseInt(process.env.IMPORT_MAX_EMAILS || '5000', 10);
 
 // Time helpers
 const since = (t: number) => Date.now() - t;
@@ -173,27 +174,66 @@ export async function POST(req: NextRequest) {
         logInfo('phase_a skipped low budget', { runId: run.id, remainingMs: remainingBeforePhaseA });
         logMetric('processor_phase_a_skipped', { runId: run.id, remainingMs: remainingBeforePhaseA });
       } else {
-        const enumerationLimit = searchMode === 'graph-search' ? DEFAULT_GRAPH_SEARCH_LIMIT : undefined;
+        let effectiveMode: 'graph-search' | 'deep-scan' = searchMode;
+        const enumerationLimit = effectiveMode === 'graph-search' ? DEFAULT_GRAPH_SEARCH_LIMIT : DEFAULT_MAX_EMAILS;
         const phaseAStart = Date.now();
         logInfo('phase_a enumerate start', {
           runId: run.id,
           search: run.search_text,
+          mode: effectiveMode,
           limit: enumerationLimit ?? 'auto'
         });
 
-        const messages = await provider.listMessages({
+        let listResult = await provider.listMessages({
           jobTitle: run.search_text ?? '',
           limit: enumerationLimit,
-          mode: searchMode,
+          mode: effectiveMode,
           lookbackDays: lookbackOverride
         });
+        let messages = listResult.messages;
+        let reportedTotal = typeof listResult.totalCount === 'number' ? listResult.totalCount : null;
+        effectiveMode = listResult.modeUsed;
+
+        const graphLikelyTruncated =
+          effectiveMode === 'graph-search' &&
+          ((enumerationLimit && messages.length >= enumerationLimit) ||
+            (reportedTotal !== null && reportedTotal > messages.length));
+
+        if (graphLikelyTruncated) {
+          logInfo('graph search hit limit, falling back to deep scan', {
+            runId: run.id,
+            limit: enumerationLimit,
+            reportedTotal
+          });
+          listResult = await provider.listMessages({
+            jobTitle: run.search_text ?? '',
+            mode: 'deep-scan',
+            lookbackDays: lookbackOverride,
+            limit: DEFAULT_MAX_EMAILS
+          });
+          messages = listResult.messages;
+          effectiveMode = listResult.modeUsed;
+          try {
+            const newMeta = { ...runMeta, searchMode: 'deep-scan' };
+            await prisma.import_email_runs.update({
+              where: { id: run.id },
+              data: { meta: newMeta }
+            });
+          } catch (err) {
+            logWarn('failed to persist deep scan fallback meta', {
+              runId: run.id,
+              error: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
 
         const phaseADuration = Date.now() - phaseAStart;
         logMetric('processor_phase_a_messages', { runId: run.id, count: messages.length, ms: phaseADuration });
         logInfo('phase_a enumerate complete', {
           runId: run.id,
           fetched: messages.length,
-          durationMs: phaseADuration
+          durationMs: phaseADuration,
+          mode: effectiveMode
         });
 
         if (messages.length === 0) {

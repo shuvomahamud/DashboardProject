@@ -15,8 +15,7 @@ export const importEmailSchema = z.object({
       },
       { message: tenantDomain ? `Mailbox must be in @${tenantDomain}` : "Invalid mailbox domain" }
     ),
-  text: z.string().trim().min(2, "Enter at least 2 characters"),
-  mode: z.enum(['graph-search', 'deep-scan']).optional()
+  text: z.string().trim().min(2, "Enter at least 2 characters")
 });
 
 export type ImportEmailInput = z.infer<typeof importEmailSchema>;

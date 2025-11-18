@@ -32,11 +32,17 @@ export interface ListMessagesOptions {
   mode?: 'graph-search' | 'deep-scan';
 }
 
+export interface ListMessagesResult {
+  messages: EmailMessage[];
+  totalCount?: number;
+  modeUsed: 'graph-search' | 'deep-scan';
+}
+
 export interface EmailProvider {
   /**
    * List/search messages matching criteria
    */
-  listMessages(options: ListMessagesOptions): Promise<EmailMessage[]>;
+  listMessages(options: ListMessagesOptions): Promise<ListMessagesResult>;
 
   /**
    * Get full message details (body, attachments metadata)

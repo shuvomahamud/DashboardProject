@@ -3,7 +3,7 @@
  */
 
 import { searchMessages, listAttachments, getFileAttachmentBytes, isAttachmentEligible } from '@/lib/msgraph/outlook';
-import type { EmailProvider, EmailMessage, EmailAttachment, ListMessagesOptions } from './email-provider';
+import type { EmailProvider, EmailMessage, EmailAttachment, ListMessagesOptions, ListMessagesResult } from './email-provider';
 
 export class MSGraphEmailProvider implements EmailProvider {
   private mailboxUserId: string;
@@ -15,7 +15,7 @@ export class MSGraphEmailProvider implements EmailProvider {
     }
   }
 
-  async listMessages(options: ListMessagesOptions): Promise<EmailMessage[]> {
+  async listMessages(options: ListMessagesOptions): Promise<ListMessagesResult> {
     const { jobTitle, limit, lookbackDays, mode } = options;
     const trimmedQuery = jobTitle?.trim() ?? '';
     const resolvedMode: 'graph-search' | 'deep-scan' =
@@ -32,18 +32,22 @@ export class MSGraphEmailProvider implements EmailProvider {
       subjectFilter: trimmedQuery
     });
 
-    return result.messages.map(msg => ({
-      externalId: msg.id,
-      threadId: null, // MS Graph doesn't expose conversationId in basic queries
-      subject: msg.subject,
-      from: msg.from ? {
-        name: msg.from.emailAddress.name,
-        address: msg.from.emailAddress.address
-      } : null,
-      receivedAt: new Date(msg.receivedDateTime),
-      hasAttachments: msg.hasAttachments,
-      bodyPreview: msg.bodyPreview
-    }));
+    return {
+      modeUsed: resolvedMode,
+      totalCount: result.totalCount,
+      messages: result.messages.map(msg => ({
+        externalId: msg.id,
+        threadId: null, // MS Graph doesn't expose conversationId in basic queries
+        subject: msg.subject,
+        from: msg.from ? {
+          name: msg.from.emailAddress.name,
+          address: msg.from.emailAddress.address
+        } : null,
+        receivedAt: new Date(msg.receivedDateTime),
+        hasAttachments: msg.hasAttachments,
+        bodyPreview: msg.bodyPreview
+      }))
+    };
   }
 
   async getMessage(externalId: string): Promise<{

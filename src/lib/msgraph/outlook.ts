@@ -26,6 +26,7 @@ export interface Attachment {
 export interface MessagesResponse {
   messages: Message[];
   next?: string;
+  totalCount?: number;
 }
 
 export interface AttachmentsResponse {
@@ -131,9 +132,11 @@ export async function searchMessages(
     // Escape quotes in search phrase and encode for URL
     const phrase = trimmedSearch.replace(/"/g, '\\"');
     const encodedPhrase = encodeURIComponent(`"${phrase}"`);
-    let url = `/v1.0/users/${mailbox}/messages?$search=${encodedPhrase}&$select=${selectFields}&$top=25`;
+    let url = `/v1.0/users/${mailbox}/messages?$search=${encodedPhrase}&$select=${selectFields}&$top=25&$count=true`;
     let pageCount = 0;
     const maxPages = 400; // Safety limit
+
+    let reportedCount: number | undefined;
 
     while (allMessages.length < limit && pageCount < maxPages) {
       const response = await graphFetch(url, {
@@ -146,6 +149,9 @@ export async function searchMessages(
       }
 
       const data = await response.json();
+      if (reportedCount === undefined && typeof data['@odata.count'] === 'number') {
+        reportedCount = data['@odata.count'];
+      }
       const pageMessages = (data.value || []) as Message[];
 
       allMessages.push(...pageMessages);
@@ -192,7 +198,8 @@ export async function searchMessages(
 
     return {
       messages: results.slice(0, limit),
-      next: undefined
+      next: undefined,
+      totalCount: reportedCount
     };
   }
 
