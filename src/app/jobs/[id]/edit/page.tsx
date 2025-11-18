@@ -640,9 +640,9 @@ export default function EditJobPage() {
             <Card.Body>
               <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
                 <div>
-                  <h5 className="mb-1">Update Candidate Scores</h5>
+                  <h5 className="mb-1">Recalculate Candidate Scores</h5>
                   <p className="text-muted mb-0">
-                    Recalculate existing match scores using stored AI parsing data.
+                    Re-run match scoring for every applicant using stored AI data—no new GPT calls.
                   </p>
                 </div>
                 <Button
@@ -659,7 +659,7 @@ export default function EditJobPage() {
                   ) : (
                     <>
                       <i className="bi bi-arrow-repeat" />
-                      <span>Update Scores</span>
+                      <span>Recalculate Scores</span>
                     </>
                   )}
                 </Button>
