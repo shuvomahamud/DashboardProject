@@ -147,6 +147,12 @@ async function _GET(req: NextRequest) {
     case 'experience':
       orderByClause = { resume: { totalExperienceY: sortDir } };
       break;
+    case 'location':
+      orderByClause = [
+        { resume: { candidateState: sortDir } },
+        { resume: { candidateCity: sortDir } }
+      ];
+      break;
     case 'appliedDate':
       orderByClause = { appliedDate: sortDir };
       break;
@@ -385,9 +391,3 @@ const protectedPATCH = withTableAuthAppRouter("jobs", _PATCH);
 const protectedDELETE = withTableAuthAppRouter("jobs", _DELETE);
 
 export { protectedGET as GET, protectedPATCH as PATCH, protectedDELETE as DELETE };
-    case 'location':
-      orderByClause = [
-        { resume: { candidateState: sortDir } },
-        { resume: { candidateCity: sortDir } }
-      ];
-      break;
