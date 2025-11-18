@@ -2,7 +2,13 @@
  * MS Graph Email Provider Implementation
  */
 
-import { searchMessages, listAttachments, getFileAttachmentBytes, isAttachmentEligible } from '@/lib/msgraph/outlook';
+import {
+  searchMessages,
+  listAttachments,
+  getFileAttachmentBytes,
+  isAttachmentEligible,
+  getMessageDetail
+} from '@/lib/msgraph/outlook';
 import type { EmailProvider, EmailMessage, EmailAttachment, ListMessagesOptions, ListMessagesResult } from './email-provider';
 
 export class MSGraphEmailProvider implements EmailProvider {
@@ -54,8 +60,10 @@ export class MSGraphEmailProvider implements EmailProvider {
     message: EmailMessage;
     attachments: EmailAttachment[];
   }> {
-    // Get attachments
-    const attachmentsResult = await listAttachments(externalId, this.mailboxUserId);
+    const [detail, attachmentsResult] = await Promise.all([
+      getMessageDetail(externalId, this.mailboxUserId),
+      listAttachments(externalId, this.mailboxUserId)
+    ]);
 
     // Filter eligible attachments
     const eligibleAttachments = attachmentsResult.attachments
@@ -68,15 +76,27 @@ export class MSGraphEmailProvider implements EmailProvider {
         contentBytes: att.contentBytes
       }));
 
-    // We don't need to re-fetch the message since we already have it from listMessages
-    // But we'll create a minimal message object for consistency
     const message: EmailMessage = {
-      externalId,
+      externalId: detail.id,
       threadId: null,
-      subject: '',
-      from: null,
-      receivedAt: new Date(),
-      hasAttachments: eligibleAttachments.length > 0
+      subject: detail.subject ?? '',
+      from: detail.from
+        ? {
+            name: detail.from.emailAddress.name,
+            address: detail.from.emailAddress.address
+          }
+        : null,
+      receivedAt: detail.receivedDateTime ? new Date(detail.receivedDateTime) : new Date(),
+      hasAttachments: eligibleAttachments.length > 0,
+      bodyPreview: detail.bodyPreview,
+      bodyText:
+        detail.body && detail.body.contentType?.toLowerCase() === 'text'
+          ? detail.body.content ?? ''
+          : null,
+      bodyHtml:
+        detail.body && detail.body.contentType?.toLowerCase() === 'html'
+          ? detail.body.content ?? ''
+          : null
     };
 
     return {

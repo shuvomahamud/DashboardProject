@@ -363,6 +363,11 @@ model Resume {
   textHash              String?
   contactInfo           String?
   parsedText            String?
+  sourceCandidateEmail  String?
+  sourceCandidatePhone  String?
+  sourceCandidateLocation String?
+  sourceWorkAuthorization String?
+  sourceRecruiterName   String?
   manualSkillsMatched   Json?
   aiExtraSkills         Json?
   manualToolsMatched    Json?

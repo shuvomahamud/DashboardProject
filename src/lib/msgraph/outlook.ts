@@ -14,6 +14,13 @@ export interface Message {
   bodyPreview?: string;
 }
 
+export interface MessageDetail extends Message {
+  body?: {
+    contentType?: string;
+    content?: string;
+  };
+}
+
 export interface Attachment {
   id: string;
   name: string;
@@ -215,6 +222,30 @@ export async function searchMessages(
     messages: deepScanMessages,
     next: undefined
   };
+}
+
+export async function getMessageDetail(
+  messageId: string,
+  mailboxUserId?: string
+): Promise<MessageDetail> {
+  const mailbox = mailboxUserId || process.env.MS_MAILBOX_USER_ID;
+  if (!mailbox) {
+    throw new Error('Mailbox user ID not provided and MS_MAILBOX_USER_ID not configured');
+  }
+
+  const url = `/v1.0/users/${mailbox}/messages/${encodeURIComponent(
+    messageId
+  )}?$select=id,subject,hasAttachments,receivedDateTime,from,bodyPreview,body`;
+
+  const response = await graphFetch(url);
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('[msgraph] getMessageDetail failed', { status: response.status, error });
+    throw new Error(`Failed to fetch message detail: ${response.status} ${error}`);
+  }
+
+  const data = await response.json();
+  return data as MessageDetail;
 }
 
 interface DeepScanOptions {

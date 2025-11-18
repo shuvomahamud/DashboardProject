@@ -1,5 +1,3 @@
-"use server";
-
 import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import { getScoreRefreshRun, startScoreRefreshRun } from '@/lib/jobs/scoreRefreshService';

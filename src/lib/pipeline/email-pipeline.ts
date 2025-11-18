@@ -14,6 +14,7 @@ import { parseAndScoreResume } from '@/lib/ai/resumeParsingService';
 import type { JobContext } from '@/lib/ai/jobContext';
 import type { EmailAttachment, EmailMessage, EmailProvider } from '@/lib/providers/email-provider';
 import { logMetric } from '@/lib/logging/metrics';
+import { parseDiceCandidateMetadata } from '@/lib/email/diceMetadataParser';
 
 type PipelineLogContext = Record<string, unknown>;
 
@@ -305,6 +306,13 @@ export async function processEmailItem(
         .replace(/-+/g, '-')
         .substring(0, 120);
 
+      const diceMetadata = parseDiceCandidateMetadata({
+        bodyText: message.bodyText,
+        bodyHtml: message.bodyHtml,
+        bodyPreview: message.bodyPreview,
+        subject: message.subject
+      });
+
       const resume = await prisma.resume.create({
         data: {
           fileName: safeName,
@@ -321,6 +329,11 @@ export async function processEmailItem(
           sourceFrom: message.from?.address || '',
           rawText: '',
           parsedText: null,
+          sourceCandidateEmail: diceMetadata.candidateEmail ?? null,
+          sourceCandidatePhone: diceMetadata.candidatePhone ?? null,
+          sourceCandidateLocation: diceMetadata.candidateLocation ?? null,
+          sourceWorkAuthorization: diceMetadata.workAuthorization ?? null,
+          sourceRecruiterName: diceMetadata.recruiterName ?? null,
           skills: null,
           experience: null,
           education: null,

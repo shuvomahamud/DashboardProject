@@ -15,6 +15,8 @@ export interface EmailMessage {
   receivedAt: Date;
   hasAttachments: boolean;
   bodyPreview?: string;
+  bodyText?: string | null;
+  bodyHtml?: string | null;
 }
 
 export interface EmailAttachment {
