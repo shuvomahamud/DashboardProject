@@ -535,6 +535,21 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     }
   ], [updateStatus, unlink, updating, handleOpenPreview, handleDownloadResume]);
 
+  const cityOptions = useMemo(() => {
+    if (!stateFilter) return [];
+    const selected = stateOptions.find(state => state.code === stateFilter);
+    return selected ? selected.cities : [];
+  }, [stateOptions, stateFilter]);
+
+  const activeFiltersCount = [
+    searchTerm,
+    statusFilter !== 'all' ? statusFilter : null,
+    minMatchScore,
+    maxFakeScore,
+    stateFilter || null,
+    stateFilter && cityFilter ? cityFilter : null
+  ].filter(Boolean).length;
+
   const sortedColumn = useMemo(
     () => columns.find((col: any) => col.sortField === sortField),
     [columns, sortField]
@@ -569,21 +584,6 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
     );
   }
 
-
-  const cityOptions = useMemo(() => {
-    if (!stateFilter) return [];
-    const selected = stateOptions.find((state) => state.code === stateFilter);
-    return selected ? selected.cities : [];
-  }, [stateOptions, stateFilter]);
-
-  const activeFiltersCount = [
-    searchTerm,
-    statusFilter !== 'all' ? statusFilter : null,
-    minMatchScore,
-    maxFakeScore,
-    stateFilter || null,
-    stateFilter && cityFilter ? cityFilter : null
-  ].filter(Boolean).length;
 
   return (
     <div className="space-y-3">
