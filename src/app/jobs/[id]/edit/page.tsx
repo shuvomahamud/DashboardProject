@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Form, Button, Card, Row, Col, Alert, Spinner, Badge } from 'react-bootstrap';
+import { Form, Button, Card, Row, Col, Alert, Spinner, Badge, ProgressBar } from 'react-bootstrap';
 import { useToast } from '@/contexts/ToastContext';
 import {
   formatPreferredExperienceRange,
@@ -46,6 +46,21 @@ interface JobProfile {
   requiredExperienceYears: number | null;
   preferredExperienceYears: number | null;
   locationConstraints: string | null;
+}
+
+interface ScoreRefreshRun {
+  id: string;
+  jobId: number;
+  status: string;
+  totalCandidates: number;
+  processedCandidates: number;
+  successCount: number;
+  failureCount: number;
+  message: string | null;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
 }
 
 interface JobFormData {
@@ -160,6 +175,9 @@ export default function EditJobPage() {
   const [aiMustHaveSkills, setAiMustHaveSkills] = useState<string[]>([]);
   const [addingMandatorySkill, setAddingMandatorySkill] = useState(false);
   const [newMandatorySkill, setNewMandatorySkill] = useState('');
+  const [scoreRun, setScoreRun] = useState<ScoreRefreshRun | null>(null);
+  const [scoreRunLoading, setScoreRunLoading] = useState(false);
+  const [scoreRunError, setScoreRunError] = useState<string | null>(null);
 
   const listToMultiline = (items?: string[] | null) =>
     items && items.length > 0 ? items.join('\n') : '';
@@ -246,6 +264,66 @@ export default function EditJobPage() {
     setAddingMandatorySkill(false);
   };
 
+  const fetchScoreRefreshStatus = useCallback(
+    async (targetRunId?: string) => {
+      if (!jobId) {
+        return;
+      }
+      try {
+        const query = targetRunId ? `?runId=${targetRunId}` : '';
+        const response = await fetch(`/api/jobs/${jobId}/recalculate-scores${query}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.error || 'Failed to load score refresh status.');
+        }
+        setScoreRun(payload?.run ?? null);
+        setScoreRunError(null);
+      } catch (err) {
+        setScoreRunError(
+          err instanceof Error ? err.message : 'Failed to load score refresh status.'
+        );
+      }
+    },
+    [jobId]
+  );
+
+  const handleScoreRefreshStart = async () => {
+    if (!jobId) {
+      return;
+    }
+    setScoreRunLoading(true);
+    setScoreRunError(null);
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/recalculate-scores`, {
+        method: 'POST'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to queue score refresh.');
+      }
+      setScoreRun(payload?.run ?? null);
+    } catch (err) {
+      setScoreRunError(err instanceof Error ? err.message : 'Failed to queue score refresh.');
+    } finally {
+      setScoreRunLoading(false);
+    }
+  };
+
+  const scoreRunActive = scoreRun ? ['pending', 'running'].includes(scoreRun.status) : false;
+  const scoreRunProgress =
+    scoreRun && scoreRun.totalCandidates > 0
+      ? Math.round((scoreRun.processedCandidates / scoreRun.totalCandidates) * 100)
+      : scoreRun && !scoreRunActive
+      ? 100
+      : 0;
+  const scoreRunVariant = scoreRun
+    ? scoreRun.status === 'failed'
+      ? 'danger'
+      : scoreRun.status === 'completed'
+      ? 'success'
+      : 'info'
+    : 'info';
+
   const handleProfileChange = (field: keyof JobProfileFormData, value: string) => {
     setProfileFormData(prev => ({
       ...prev,
@@ -326,6 +404,23 @@ export default function EditJobPage() {
       fetchJob();
     }
   }, [jobId]);
+
+  useEffect(() => {
+    if (!jobId) {
+      return;
+    }
+    fetchScoreRefreshStatus();
+  }, [jobId, fetchScoreRefreshStatus]);
+
+  useEffect(() => {
+    if (!scoreRun || !scoreRunActive) {
+      return;
+    }
+    const interval = setInterval(() => {
+      fetchScoreRefreshStatus(scoreRun.id);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [scoreRun, scoreRunActive, fetchScoreRefreshStatus]);
 
   const fetchJob = async () => {
     try {
@@ -540,6 +635,77 @@ export default function EditJobPage() {
               {error}
             </Alert>
           )}
+
+          <Card className="mb-4">
+            <Card.Body>
+              <div className="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+                <div>
+                  <h5 className="mb-1">Update Candidate Scores</h5>
+                  <p className="text-muted mb-0">
+                    Recalculate existing match scores using stored AI parsing data.
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  onClick={handleScoreRefreshStart}
+                  disabled={scoreRunLoading || scoreRunActive || loadingJob}
+                  className="d-flex align-items-center gap-2"
+                >
+                  {scoreRunLoading ? (
+                    <>
+                      <Spinner animation="border" role="status" size="sm" />
+                      <span>Starting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-arrow-repeat" />
+                      <span>Update Scores</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+              {scoreRunError && (
+                <Alert variant="danger" className="mt-3 mb-0">
+                  {scoreRunError}
+                </Alert>
+              )}
+              {scoreRun && (
+                <div className="mt-3">
+                  <div className="d-flex justify-content-between text-muted mb-2">
+                    <span>
+                      Status:{' '}
+                      <strong className="text-dark text-uppercase">{scoreRun.status}</strong>
+                    </span>
+                    <span>
+                      {scoreRun.processedCandidates}/{scoreRun.totalCandidates} processed
+                    </span>
+                  </div>
+                  <ProgressBar
+                    now={Math.max(0, Math.min(100, scoreRunProgress))}
+                    variant={scoreRunVariant}
+                    animated={scoreRunActive}
+                    striped={scoreRunActive}
+                    label={
+                      scoreRun.totalCandidates > 0
+                        ? `${Math.max(
+                            0,
+                            Math.min(100, scoreRunProgress)
+                          )}%`
+                        : undefined
+                    }
+                  />
+                  {(scoreRun.message || scoreRun.error) && (
+                    <Alert
+                      variant={scoreRun.status === 'failed' ? 'warning' : 'success'}
+                      className="mt-3 mb-0"
+                    >
+                      {scoreRun.error || scoreRun.message}
+                    </Alert>
+                  )}
+                </div>
+              )}
+            </Card.Body>
+          </Card>
 
           <Card>
             <Card.Body>

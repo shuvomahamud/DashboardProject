@@ -321,6 +321,7 @@ model Job {
   import_email_runs  import_email_runs[]
   import_email_items import_email_items[]
   resume_ai_jobs     resume_ai_jobs[]
+  score_recalc_runs  job_score_recalc_run[]
 }
 
 model Resume {
@@ -369,6 +370,7 @@ model Resume {
   manualSkillAssessments Json?
   aiSkillExperience      Json?
   skillRequirementEvaluation Json?
+  aiMatchedAttributes    Json?
   applications          JobApplication[]
   resume_embeddings     resume_embeddings[]
   importItems           import_email_items[]
@@ -527,4 +529,22 @@ model resume_ai_jobs {
 
   @@unique([resumeId, jobId])
   @@index([status, nextRetryAt])
+}
+
+model job_score_recalc_run {
+  id                   String   @id @default(uuid())
+  jobId                Int
+  status               String   @default("pending")
+  totalCandidates      Int      @default(0)
+  processedCandidates  Int      @default(0)
+  successCount         Int      @default(0)
+  failureCount         Int      @default(0)
+  message              String?
+  error                String?
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  startedAt            DateTime? @db.Timestamptz(6)
+  finishedAt           DateTime? @db.Timestamptz(6)
+  job                  Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId], map: "job_score_recalc_runs_jobId_idx")
 }

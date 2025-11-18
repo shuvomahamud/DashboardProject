@@ -785,7 +785,26 @@ function toResumeDbFields(
     manualToolsMatched: extras?.manualTools && extras.manualTools.length > 0 ? extras.manualTools : null,
     aiExtraTools: extras?.aiExtraTools && extras.aiExtraTools.length > 0 ? extras.aiExtraTools : null,
     aiSkillExperience: extras?.aiSkillExperience && extras.aiSkillExperience.length > 0 ? extras.aiSkillExperience : null,
-    skillRequirementEvaluation: extras?.skillRequirementEvaluation ?? null
+    skillRequirementEvaluation: extras?.skillRequirementEvaluation ?? null,
+    aiMatchedAttributes: buildAiMatchedAttributes(data)
+  };
+}
+
+function buildAiMatchedAttributes(data: EnhancedParsedResume) {
+  const analysis = AnalysisSchema.parse(data.analysis ?? {});
+  return {
+    analysis,
+    candidateExperienceYears: data.resume?.candidate?.totalExperienceYears ?? null,
+    resumeSkills: Array.isArray(data.resume?.skills) ? data.resume.skills : [],
+    matched: {
+      mustHaveSkills: analysis.mustHaveSkillsMatched ?? [],
+      niceToHaveSkills: analysis.niceToHaveSkillsMatched ?? [],
+      responsibilities: analysis.responsibilitiesMatched ?? [],
+      toolsAndTech: analysis.toolsAndTechMatched ?? [],
+      domainKeywords: analysis.domainKeywordsMatched ?? [],
+      certifications: analysis.certificationsMatched ?? [],
+      targetTitles: analysis.targetTitlesMatched ?? []
+    }
   };
 }
 
