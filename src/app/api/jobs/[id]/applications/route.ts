@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from '@/lib/prisma';
 import { withTableAuthAppRouter } from "@/lib/auth/withTableAuthAppRouter";
-import { getStateName } from '@/lib/location/usStates';
+import { getStateName, parseCityState } from '@/lib/location/usStates';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,14 +109,48 @@ async function _GET(req: NextRequest) {
   }
 
   if (stateFilter) {
-    const resumeLocationFilter: any = { candidateState: stateFilter };
+    const stateClause: any = {
+      resume: {
+        candidateState: stateFilter
+      }
+    };
+
+    andFilters.push({
+      OR: [
+        stateClause.resume,
+        {
+          resume: {
+            sourceCandidateLocation: {
+              contains: stateFilter,
+              mode: 'insensitive'
+            }
+          }
+        }
+      ]
+    });
+
     if (cityFilter) {
-      resumeLocationFilter.candidateCity = {
-        equals: cityFilter,
-        mode: 'insensitive'
-      };
+      andFilters.push({
+        OR: [
+          {
+            resume: {
+              candidateCity: {
+                equals: cityFilter,
+                mode: 'insensitive'
+              }
+            }
+          },
+          {
+            resume: {
+              sourceCandidateLocation: {
+                contains: cityFilter,
+                mode: 'insensitive'
+              }
+            }
+          }
+        ]
+      });
     }
-    andFilters.push({ resume: resumeLocationFilter });
   }
 
   const sortDir = sortDirection === 'asc' ? 'asc' : 'desc';
@@ -206,14 +240,18 @@ async function _GET(req: NextRequest) {
     }),
     prisma.resume.findMany({
       where: {
-        candidateState: { not: null },
+        OR: [
+          { candidateState: { not: null } },
+          { sourceCandidateLocation: { not: null } }
+        ],
         applications: {
           some: { jobId }
         }
       },
       select: {
         candidateState: true,
-        candidateCity: true
+        candidateCity: true,
+        sourceCandidateLocation: true
       }
     })
   ]);
@@ -221,15 +259,37 @@ async function _GET(req: NextRequest) {
   // Helper to safely convert Decimal to number
   const toNumber = (val: any) => val == null ? null : Number(val);
 
+  const extractLocation = (record: {
+    candidateState: string | null;
+    candidateCity: string | null;
+    sourceCandidateLocation?: string | null;
+  }) => {
+    if (record.candidateState || record.candidateCity) {
+      return {
+        state: record.candidateState?.toUpperCase() || null,
+        city: record.candidateCity || null
+      };
+    }
+    if (record.sourceCandidateLocation) {
+      const parsed = parseCityState(record.sourceCandidateLocation);
+      return {
+        state: parsed.state,
+        city: parsed.city
+      };
+    }
+    return { state: null, city: null };
+  };
+
   const locationMap = new Map<string, Set<string>>();
   locationRecords.forEach(record => {
-    const stateCode = record.candidateState?.toUpperCase();
+    const location = extractLocation(record);
+    const stateCode = location.state ? location.state.toUpperCase() : null;
     if (!stateCode) return;
     if (!locationMap.has(stateCode)) {
       locationMap.set(stateCode, new Set());
     }
-    if (record.candidateCity) {
-      locationMap.get(stateCode)!.add(record.candidateCity);
+    if (location.city) {
+      locationMap.get(stateCode)!.add(location.city);
     }
   });
 
@@ -280,8 +340,13 @@ async function _GET(req: NextRequest) {
       candidateName = fileName?.replace(/\.(pdf|docx?|txt)$/i, '') || null;
     }
 
-    const locationCity = a.resume?.candidateCity || null;
-    const locationState = a.resume?.candidateState || null;
+    const resolvedLocation = extractLocation({
+      candidateState: a.resume?.candidateState || null,
+      candidateCity: a.resume?.candidateCity || null,
+      sourceCandidateLocation: a.resume?.sourceCandidateLocation || null
+    });
+    const locationCity = resolvedLocation.city;
+    const locationState = resolvedLocation.state;
     const fallbackLocation = a.resume?.sourceCandidateLocation || null;
     const locationDisplay = locationCity && locationState
       ? `${locationCity}, ${locationState}`
