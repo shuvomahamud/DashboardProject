@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from '@/lib/prisma';
 import { withTableAuthAppRouter } from "@/lib/auth/withTableAuthAppRouter";
-import { getStateName, parseCityState } from '@/lib/location/usStates';
+import { getStateName, parseCityState, US_STATES } from '@/lib/location/usStates';
 
 export const dynamic = 'force-dynamic';
 
@@ -293,13 +293,14 @@ async function _GET(req: NextRequest) {
     }
   });
 
-  const locationOptions = Array.from(locationMap.entries())
-    .map(([code, cities]) => ({
-      code,
-      name: getStateName(code) ?? code,
+  const locationOptions = US_STATES.map((state) => {
+    const cities = locationMap.get(state.code) ?? new Set();
+    return {
+      code: state.code,
+      name: state.name,
       cities: Array.from(cities).sort((a, b) => a.localeCompare(b))
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    };
+  });
 
   // Parse contact info and extract candidate details
   const rows = apps.map((a) => {
