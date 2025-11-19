@@ -17,7 +17,6 @@ import {
   type SkillExperienceEntry,
   type SkillRequirementEvaluationSummary
 } from './skillRequirements';
-import { parseCityState } from '@/lib/location/usStates';
 
 type ResumeLogContext = Record<string, unknown>;
 
@@ -764,8 +763,6 @@ function toResumeDbFields(
   ));
   const companiesCsv = uniqueCompanies.join(', ');
   
-  const locationParts = parseCityState(candidate.currentLocation ?? null);
-
   const record: Record<string, any> = {
     aiExtractJson: JSON.stringify(data),
     aiSummary: data.summary,
@@ -791,13 +788,6 @@ function toResumeDbFields(
     skillRequirementEvaluation: extras?.skillRequirementEvaluation ?? null,
     aiMatchedAttributes: buildAiMatchedAttributes(data)
   };
-
-  if (locationParts.city) {
-    record.candidateCity = locationParts.city;
-  }
-  if (locationParts.state) {
-    record.candidateState = locationParts.state;
-  }
 
   return record;
 }
@@ -880,6 +870,10 @@ export async function parseAndScoreResume(
           candidateCity: true,
           candidateState: true,
           sourceCandidateLocation: true,
+          email: true,
+          phone: true,
+          sourceCandidateEmail: true,
+          sourceCandidatePhone: true,
           manualSkillAssessments: true,
           manualSkillsMatched: true,
           applications: {
@@ -1385,25 +1379,17 @@ export async function parseAndScoreResume(
     });
     resumeFields.textHash = textHash;
 
-    const parsedCity =
-      typeof resumeFields.candidateCity === 'string' ? resumeFields.candidateCity : null;
-    const parsedState =
-      typeof resumeFields.candidateState === 'string' ? resumeFields.candidateState : null;
-    if (
-      originalLocationSnapshot.sourceCandidateLocation ||
-      originalLocationSnapshot.candidateCity ||
-      originalLocationSnapshot.candidateState ||
-      parsedCity ||
-      parsedState
-    ) {
-      resumeLogInfo('candidate_location_update', {
-        resumeId,
-        sourceCandidateLocation: originalLocationSnapshot.sourceCandidateLocation,
-        preParseCity: originalLocationSnapshot.candidateCity,
-        preParseState: originalLocationSnapshot.candidateState,
-        parsedCity,
-        parsedState
-      });
+    // Preserve contact info gleaned from email metadata when available.
+    if (resume.sourceCandidateEmail) {
+      resumeFields.email = resume.sourceCandidateEmail.toLowerCase();
+    } else if (!resumeFields.email && resume.email) {
+      resumeFields.email = resume.email.toLowerCase();
+    }
+
+    if (resume.sourceCandidatePhone) {
+      resumeFields.phone = resume.sourceCandidatePhone;
+    } else if (!resumeFields.phone && resume.phone) {
+      resumeFields.phone = resume.phone;
     }
 
     // Update Resume table with retry logic

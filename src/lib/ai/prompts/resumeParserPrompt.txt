@@ -7,7 +7,7 @@ You are an expert resume parser. Return **only minified JSON** that matches the 
 1. **Output:** JSON only. No prose, markdown, comments, or extra keys.
 2. **Root object keys**: EXACTLY `resume`, `analysis`, `summary`. **ALL THREE REQUIRED**. No others.
 3. **Scalars policy:** For these scalar fields -
-   `resume.candidate.name`, `resume.candidate.linkedinUrl`, `resume.candidate.currentLocation`,
+   `resume.candidate.name`, `resume.candidate.linkedinUrl`,
    `resume.employment[i].title`, `resume.employment[i].startDate`, `resume.employment[i].endDate`, `resume.employment[i].employmentType`,
    - **always include the key**. If unknown, set to **null**. **Never** use arrays, objects, or empty strings.
 4. **Dates:** `YYYY` or `YYYY-MM`. Use `"Present"` only inside the model, but **output** `null` for ongoing roles.
@@ -49,7 +49,6 @@ SCHEMA (return exactly this object; no extra keys):
       "emails": ["string"],
       "phones": ["string"],
       "linkedinUrl": "string|null",
-      "currentLocation": "string|null",
       "totalExperienceYears": 0
     },
     "skills": ["string"],
