@@ -313,6 +313,17 @@ export async function processEmailItem(
         subject: message.subject
       });
 
+      pipelineInfo('dice metadata location snapshot', {
+        runId,
+        itemId: itemId.toString(),
+        jobId,
+        messageId: externalMessageId,
+        subject: message.subject ? message.subject.slice(0, 140) : null,
+        diceLocation: diceMetadata.candidateLocation ?? null,
+        diceCity: diceMetadata.candidateCity ?? null,
+        diceState: diceMetadata.candidateState ?? null
+      });
+
       const resume = await prisma.resume.create({
         data: {
           fileName: safeName,

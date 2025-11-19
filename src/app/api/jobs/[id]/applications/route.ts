@@ -231,7 +231,8 @@ async function _GET(req: NextRequest) {
             phone: true,
             sourceCandidateLocation: true,
             candidateCity: true,
-            candidateState: true
+            candidateState: true,
+            sourceWorkAuthorization: true
           },
         },
       },
@@ -352,6 +353,8 @@ async function _GET(req: NextRequest) {
       ? locationCity
       : locationState || fallbackLocation || null;
 
+    const workAuthorization = a.resume?.sourceWorkAuthorization || null;
+
     return {
       id: a.id,
       jobId: a.jobId,
@@ -373,6 +376,7 @@ async function _GET(req: NextRequest) {
       locationCity,
       locationState,
       locationDisplay,
+      workAuthorization,
       skills: a.resume?.skills,
       experience: toNumber(a.resume?.totalExperienceY),
       createdAt: a.resume?.createdAt,

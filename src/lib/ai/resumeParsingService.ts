@@ -877,6 +877,9 @@ export async function parseAndScoreResume(
           id: true,
           rawText: true,
           fileName: true,
+          candidateCity: true,
+          candidateState: true,
+          sourceCandidateLocation: true,
           manualSkillAssessments: true,
           manualSkillsMatched: true,
           applications: {
@@ -899,6 +902,12 @@ export async function parseAndScoreResume(
         error: 'Resume has no rawText to parse'
       };
     }
+
+    const originalLocationSnapshot = {
+      sourceCandidateLocation: resume.sourceCandidateLocation ?? null,
+      candidateCity: resume.candidateCity ?? null,
+      candidateState: resume.candidateState ?? null
+    };
 
     // Generate text hash for idempotency
     const textHash = generateTextHash(resume.rawText);
@@ -1375,6 +1384,27 @@ export async function parseAndScoreResume(
       skillRequirementEvaluation: skillRequirementEvaluationRecord
     });
     resumeFields.textHash = textHash;
+
+    const parsedCity =
+      typeof resumeFields.candidateCity === 'string' ? resumeFields.candidateCity : null;
+    const parsedState =
+      typeof resumeFields.candidateState === 'string' ? resumeFields.candidateState : null;
+    if (
+      originalLocationSnapshot.sourceCandidateLocation ||
+      originalLocationSnapshot.candidateCity ||
+      originalLocationSnapshot.candidateState ||
+      parsedCity ||
+      parsedState
+    ) {
+      resumeLogInfo('candidate_location_update', {
+        resumeId,
+        sourceCandidateLocation: originalLocationSnapshot.sourceCandidateLocation,
+        preParseCity: originalLocationSnapshot.candidateCity,
+        preParseState: originalLocationSnapshot.candidateState,
+        parsedCity,
+        parsedState
+      });
+    }
 
     // Update Resume table with retry logic
     await withRetry(() =>

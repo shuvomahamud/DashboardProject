@@ -28,6 +28,7 @@ type ApplicationRow = {
   locationCity?: string | null;
   locationState?: string | null;
   locationDisplay?: string | null;
+  workAuthorization?: string | null;
 };
 
 type LocationStateOption = {
@@ -350,6 +351,18 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       cell: (row: ApplicationRow) => (
         <div style={{ maxWidth: '200px' }}>
           {row.locationDisplay || <span className="text-muted">-</span>}
+        </div>
+      ),
+      width: '200px'
+    },
+    {
+      id: 'workAuthorization',
+      name: 'Work Authorization',
+      selector: (row: ApplicationRow) => row.workAuthorization || '',
+      sortable: false,
+      cell: (row: ApplicationRow) => (
+        <div style={{ maxWidth: '200px' }}>
+          {row.workAuthorization || <span className="text-muted">-</span>}
         </div>
       ),
       width: '200px'
