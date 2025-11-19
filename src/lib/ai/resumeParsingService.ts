@@ -1178,6 +1178,38 @@ export async function parseAndScoreResume(
 
     let aiSkillExperiences = parseAiSkillExperience(validatedData.resume.skillExperience);
 
+    const resumeSkillList = Array.isArray(validatedData.resume.skills)
+      ? validatedData.resume.skills
+      : [];
+
+    if (resumeSkillList.length > 0) {
+      const knownSkillKeys = new Set<string>([
+        ...manualAssessments.map(assessment => normalizeSkillKey(assessment.skill)),
+        ...aiSkillExperiences.map(entry => normalizeSkillKey(entry.skill))
+      ]);
+
+      const inferredSkillExperience: SkillExperienceEntry[] = [];
+      for (const skill of resumeSkillList) {
+        const normalized = normalizeSkillKey(skill);
+        if (!normalized || knownSkillKeys.has(normalized)) {
+          continue;
+        }
+        inferredSkillExperience.push({
+          skill,
+          months: 0,
+          confidence: 0.35,
+          evidence: 'resume.skills',
+          lastUsed: null,
+          source: 'resume_skills'
+        });
+        knownSkillKeys.add(normalized);
+      }
+
+      if (inferredSkillExperience.length > 0) {
+        aiSkillExperiences = [...aiSkillExperiences, ...inferredSkillExperience];
+      }
+    }
+
     if (aiVerifierMustHave.length > 0) {
       const aiSkillSet = new Set(aiSkillExperiences.map(entry => normalizeSkillKey(entry.skill)));
       for (const skill of aiVerifierMustHave) {
@@ -1211,9 +1243,7 @@ export async function parseAndScoreResume(
         months: item.months,
         source: item.source
       })),
-      resumeSkillList: Array.isArray(validatedData.resume.skills)
-        ? validatedData.resume.skills.slice(0, 25)
-        : []
+      resumeSkillList: resumeSkillList.slice(0, 25)
     });
 
     const requirementSummary: SkillRequirementEvaluationSummary = evaluateSkillRequirements(
