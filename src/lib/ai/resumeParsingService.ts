@@ -1196,6 +1196,22 @@ export async function parseAndScoreResume(
       aiSkillExperiences
     );
 
+    if ((jobContext.mandatorySkillRequirements?.length ?? 0) > 0) {
+      resumeLogInfo('job_context_mandatory_snapshot', {
+        resumeId,
+        jobTitle: jobContext.jobTitle,
+        totalRequirements: jobContext.mandatorySkillRequirements.length,
+        requirements: jobContext.mandatorySkillRequirements.map(req => req.skill)
+      });
+      resumeLogInfo('mandatory_skill_evaluation_detail', {
+        resumeId,
+        matched: requirementSummary.evaluations.filter(e => e.matched).map(e => e.skill),
+        unmet: requirementSummary.unmetRequirements,
+        manualCoverageMissing: requirementSummary.manualCoverageMissing,
+        aiDetectedWithoutManual: requirementSummary.aiDetectedWithoutManual
+      });
+    }
+
     validatedData.analysis.mustHaveSkillsMatched = requirementSummary.metRequirements ?? [];
     validatedData.analysis.mustHaveSkillsMissing = requirementSummary.unmetRequirements ?? [];
 
