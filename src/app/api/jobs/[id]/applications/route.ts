@@ -105,15 +105,13 @@ async function _GET(req: NextRequest) {
   }
 
   if (stateFilter) {
-    const stateClause: any = {
-      resume: {
-        candidateState: stateFilter
-      }
-    };
-
     andFilters.push({
       OR: [
-        stateClause.resume,
+        {
+          resume: {
+            candidateState: stateFilter
+          }
+        },
         {
           resume: {
             sourceCandidateLocation: {
