@@ -1041,6 +1041,13 @@ export async function parseAndScoreResume(
       fakeScore: 0
     };
 
+    if (!jobContext.mandatorySkillRequirements || jobContext.mandatorySkillRequirements.length === 0) {
+      resumeLogWarn('job_context_missing_mandatory_requirements', {
+        resumeId,
+        jobTitle: jobContext.jobTitle
+      });
+    }
+
     let manualMustMatches: string[] = [];
     let manualNiceMatches: string[] = [];
     let manualToolsMatches: string[] = [];
@@ -1189,6 +1196,25 @@ export async function parseAndScoreResume(
     }
 
     validatedData.resume.skillExperience = aiSkillExperiences;
+
+    resumeLogInfo('resume_skill_sources', {
+      resumeId,
+      manualAssessmentCount: manualAssessments.length,
+      manualAssessments: manualAssessments.slice(0, 25).map(item => ({
+        skill: item.skill,
+        source: item.source,
+        months: item.months
+      })),
+      aiSkillExperienceCount: aiSkillExperiences.length,
+      aiSkillExamples: aiSkillExperiences.slice(0, 25).map(item => ({
+        skill: item.skill,
+        months: item.months,
+        source: item.source
+      })),
+      resumeSkillList: Array.isArray(validatedData.resume.skills)
+        ? validatedData.resume.skills.slice(0, 25)
+        : []
+    });
 
     const requirementSummary: SkillRequirementEvaluationSummary = evaluateSkillRequirements(
       jobContext.mandatorySkillRequirements ?? [],

@@ -407,6 +407,13 @@ export async function importFromMailbox(options: ImportOptions): Promise<ImportS
                     preferredExperienceMaxYears: job.preferredExperienceMaxYears ?? null
                   });
 
+                  pipelineInfo('job_context_loaded', {
+                    jobId,
+                    jobTitle: job.title,
+                    mandatorySkillCount: jobContext.mandatorySkillRequirements?.length ?? 0,
+                    mandatorySkills: (jobContext.mandatorySkillRequirements ?? []).map(item => item.skill)
+                  });
+
                   const parseResult = await parseAndScoreResume(resume.id, jobContext);
                   if (parseResult.success) {
                     console.log(`✅ AI parsing successful for ${attachment.name} (Resume ID: ${resume.id})`);
