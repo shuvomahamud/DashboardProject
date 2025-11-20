@@ -36,6 +36,7 @@ const ITEM_SLOW_THRESHOLD_MS = 4000;
 const SOFT_TIME_LIMIT_MS = HARD_TIME_LIMIT_MS - SOFT_EXIT_MARGIN_MS;
 const DEFAULT_WORKER_CONCURRENCY = parseInt(process.env.GPT_WORKER_CONCURRENCY || '3', 10);
 const DEFAULT_GRAPH_SEARCH_LIMIT = parseInt(process.env.MS_GRAPH_SEARCH_LIMIT || '2000', 10);
+const DEEP_SCAN_CHUNK_LIMIT = parseInt(process.env.DEEP_SCAN_CHUNK_LIMIT || '750', 10);
 
 // Time helpers
 const since = (t: number) => Date.now() - t;
@@ -160,32 +161,31 @@ export async function POST(req: NextRequest) {
     }
 
     const provider = createEmailProvider(run.mailbox);
+    const provider = createEmailProvider(run.mailbox);
     const graphEnumerated = runMeta.graphEnumerated === true;
     const deepScanCompleted = runMeta.deepScanCompleted === true;
+    const deepScanBefore = typeof runMeta.deepScanBefore === 'string' ? runMeta.deepScanBefore : null;
 
     const enumeratePhase = async (
       phaseLabel: 'graph' | 'deep',
       mode: 'graph-search' | 'deep-scan',
-      limit?: number
+      limit?: number,
+      beforeDate?: string | null
     ) => {
       const phaseStart = Date.now();
-      const resolvedLimit =
-        typeof limit === 'number'
-          ? limit
-          : mode === 'deep-scan'
-          ? Number.MAX_SAFE_INTEGER
-          : undefined;
       logInfo(`${phaseLabel}_enumerate_start`, {
         runId: run.id,
         mode,
-        limit: resolvedLimit ?? 'unbounded',
+        limit: typeof limit === 'number' ? limit : 'unbounded',
+        beforeDate,
         lookbackDays: lookbackOverride
       });
       const listResult = await provider.listMessages({
         jobTitle: run.search_text ?? '',
-        limit: resolvedLimit,
+        limit,
         mode,
-        lookbackDays: lookbackOverride
+        lookbackDays: lookbackOverride,
+        beforeDate: beforeDate ?? undefined
       });
       const messages = listResult.messages;
       const durationMs = Date.now() - phaseStart;
@@ -205,19 +205,26 @@ export async function POST(req: NextRequest) {
       });
 
       if (messages.length === 0) {
-        return { fetched: 0, inserted: 0 };
+        return { fetched: 0, inserted: 0, oldestDateIso: null };
       }
 
-      const items = messages.map(msg => ({
-        run_id: run.id,
-        job_id: run.job_id,
-        external_message_id: msg.externalId,
-        external_thread_id: msg.threadId,
-        received_at: msg.receivedAt,
-        status: 'pending',
-        step: 'none',
-        attempts: 0
-      }));
+      let oldestDateIso: string | null = null;
+      const items = messages.map(msg => {
+        const receivedIso = msg.receivedAt.toISOString();
+        if (!oldestDateIso || receivedIso < oldestDateIso) {
+          oldestDateIso = receivedIso;
+        }
+        return {
+          run_id: run.id,
+          job_id: run.job_id,
+          external_message_id: msg.externalId,
+          external_thread_id: msg.threadId,
+          received_at: msg.receivedAt,
+          status: 'pending',
+          step: 'none',
+          attempts: 0
+        };
+      });
 
       logInfo(`${phaseLabel}_persist_start`, { runId: run.id, items: items.length, mode });
 
@@ -271,26 +278,49 @@ export async function POST(req: NextRequest) {
         throw lastError;
       }
 
-      return { fetched: messages.length, inserted: insertedCount };
+      return { fetched: messages.length, inserted: insertedCount, oldestDateIso };
     };
 
     if (!graphEnumerated || !deepScanCompleted) {
       if (!graphEnumerated) {
-        await enumeratePhase('graph', 'graph-search', DEFAULT_GRAPH_SEARCH_LIMIT);
-        runMeta.graphEnumerated = true;
-        await prisma.import_email_runs.update({
-          where: { id: run.id },
-          data: { meta: runMeta }
-        });
+        const remainingBeforeGraph = timeLeft(startTime);
+        if (remainingBeforeGraph > 10_000) {
+          await enumeratePhase('graph', 'graph-search', DEFAULT_GRAPH_SEARCH_LIMIT, null);
+          runMeta.graphEnumerated = true;
+          await prisma.import_email_runs.update({
+            where: { id: run.id },
+            data: { meta: runMeta }
+          });
+        } else {
+          logInfo('graph_enumeration_skipped_low_budget', { runId: run.id, remainingMs: remainingBeforeGraph });
+        }
       }
 
-      if (!deepScanCompleted) {
-        await enumeratePhase('deep', 'deep-scan');
-        runMeta.deepScanCompleted = true;
-        await prisma.import_email_runs.update({
-          where: { id: run.id },
-          data: { meta: runMeta }
-        });
+      if (runMeta.graphEnumerated === true && !deepScanCompleted) {
+        const remainingBeforeDeep = timeLeft(startTime);
+        if (remainingBeforeDeep > 10_000) {
+          const { fetched, oldestDateIso } = await enumeratePhase(
+            'deep',
+            'deep-scan',
+            DEEP_SCAN_CHUNK_LIMIT,
+            deepScanBefore
+          );
+          if (fetched === 0 && !deepScanBefore) {
+            runMeta.deepScanCompleted = true;
+            delete runMeta.deepScanBefore;
+          } else if (fetched < DEEP_SCAN_CHUNK_LIMIT) {
+            runMeta.deepScanCompleted = true;
+            delete runMeta.deepScanBefore;
+          } else if (oldestDateIso) {
+            runMeta.deepScanBefore = oldestDateIso;
+          }
+          await prisma.import_email_runs.update({
+            where: { id: run.id },
+            data: { meta: runMeta }
+          });
+        } else {
+          logInfo('deep_enumeration_skipped_low_budget', { runId: run.id, remainingMs: remainingBeforeDeep });
+        }
       }
 
       const totalItems = await prisma.import_email_items.count({
@@ -305,12 +335,15 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      logInfo('enumeration_complete', {
+      logInfo('enumeration_state', {
         runId: run.id,
-        totalItems
+        totalItems,
+        graphEnumerated: runMeta.graphEnumerated === true,
+        deepScanCompleted: runMeta.deepScanCompleted === true,
+        deepScanBefore: runMeta.deepScanBefore ?? null
       });
 
-      if (totalItems === 0) {
+      if (totalItems === 0 && runMeta.deepScanCompleted === true) {
         logInfo('no messages found after enumeration', { runId: run.id });
         await prisma.import_email_runs.update({
           where: { id: run.id },
@@ -324,41 +357,6 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: 'succeeded', runId: run.id });
       }
     }
-    // Phase B: Process pending items with soft time limit
-    logInfo('phase_b start', { runId: run.id, softLimitMs: SOFT_TIME_LIMIT_MS });
-    logMetric('processor_phase_b_start', { runId: run.id, softLimitMs: SOFT_TIME_LIMIT_MS });
-
-    const concurrency = Math.max(3, parseInt(process.env.ITEM_CONCURRENCY || '3', 10));
-    logInfo('phase_b concurrency', { runId: run.id, concurrency });
-
-    let processedCount = 0;
-    let batchNumber = 0;
-    let batchesProcessed = 0;
-    let gracefulStop = false;
-    let gptQueuedThisSlice = 0;
-    let slowItemCount = 0;
-    let failedItemsInSlice = 0;
-    let previousBatchEnd: number | null = null;
-
-    while (!gracefulStop) {
-      batchNumber++;
-      const elapsed = Date.now() - startTime;
-      const remaining = timeLeft(startTime);
-
-      if (remaining <= SOFT_EXIT_MARGIN_MS) {
-        logInfo('phase_b stop low buffer', { runId: run.id, remainingMs: remaining });
-        logMetric('processor_phase_b_exit_buffer', { runId: run.id, remainingMs: remaining });
-        break;
-      }
-
-      if (elapsed >= SOFT_TIME_LIMIT_MS) {
-        logInfo('phase_b stop soft limit', { runId: run.id, elapsedMs: elapsed });
-        logMetric('processor_phase_b_exit_soft_limit', { runId: run.id, elapsedMs: elapsed });
-        break;
-      }
-
-      const batchStart = Date.now();
-      const gapSinceLastBatch = previousBatchEnd ? batchStart - previousBatchEnd : 0;
 
       const pendingItems = await prisma.import_email_items.findMany({
         where: {

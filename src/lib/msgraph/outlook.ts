@@ -97,6 +97,7 @@ export interface SearchMessagesOptions {
   pageSize?: number;
   maxPages?: number;
   subjectFilter?: string;
+  beforeDate?: string;
 }
 
 export async function searchMessages(
@@ -116,6 +117,7 @@ export async function searchMessages(
   const mode: 'graph-search' | 'deep-scan' = requestedMode === 'deep-scan' ? 'deep-scan' : 'graph-search';
   const subjectFilter = options.subjectFilter ?? trimmedSearch;
   const normalizedSubjectFilter = subjectFilter.trim();
+  const beforeDateIso = options.beforeDate || null;
 
   const allMessages: Message[] = [];
   const deepScanLookbackEnv = process.env.MS_DEEP_SCAN_LOOKBACK_DAYS || process.env.MS_BULK_LOOKBACK_DAYS;
@@ -231,7 +233,8 @@ export async function searchMessages(
     normalizedSubjectFilter,
     lookbackDays,
     limit,
-    utcStart
+    utcStart,
+    beforeDate: beforeDateIso ? new Date(beforeDateIso) : undefined
   });
 
   return {
@@ -274,6 +277,7 @@ interface DeepScanOptions {
   lookbackDays: number;
   limit?: number;
   utcStart: string;
+  beforeDate?: Date;
 }
 
 async function deepScanMailbox(options: DeepScanOptions): Promise<Message[]> {
@@ -282,7 +286,8 @@ async function deepScanMailbox(options: DeepScanOptions): Promise<Message[]> {
     normalizedSubjectFilter,
     lookbackDays,
     limit,
-    utcStart
+    utcStart,
+    beforeDate
   } = options;
   const pageSize = clampPageSize(parsePositiveInt(process.env.MS_DEEP_SCAN_PAGE_SIZE, DEFAULT_MS_DEEP_SCAN_PAGE_SIZE));
   const folderPageSize = Math.max(1, parsePositiveInt(process.env.MS_DEEP_SCAN_FOLDER_PAGE_SIZE, DEFAULT_MS_DEEP_SCAN_FOLDER_PAGE_SIZE));
@@ -294,7 +299,8 @@ async function deepScanMailbox(options: DeepScanOptions): Promise<Message[]> {
     lookbackDays,
     pageSize,
     maxResults,
-    subjectFilterApplied: normalizedSubjectFilter.length > 0
+    subjectFilterApplied: normalizedSubjectFilter.length > 0,
+    beforeDate
   });
 
   const folders = await fetchAllFolders(mailbox, folderPageSize);
@@ -317,7 +323,8 @@ async function deepScanMailbox(options: DeepScanOptions): Promise<Message[]> {
       normalizedSubjectFilter,
       sinceDate,
       limit: remaining,
-      pageSize
+      pageSize,
+      beforeDate
     });
     if (folderMessages.length > 0) {
       graphDebug('MS Graph: deep scan folder collected', {
@@ -404,6 +411,7 @@ interface FetchFolderMessagesOptions {
   sinceDate: Date;
   limit: number;
   pageSize: number;
+  beforeDate?: Date;
 }
 
 async function fetchFolderMessages(options: FetchFolderMessagesOptions): Promise<Message[]> {
@@ -417,7 +425,15 @@ async function fetchFolderMessages(options: FetchFolderMessagesOptions): Promise
   } = options;
   const collected: Message[] = [];
   const encodedFolder = encodeURIComponent(folderId);
-  let url = `/v1.0/users/${mailbox}/mailFolders/${encodedFolder}/messages?$select=${MESSAGE_FIELDS}&$orderby=receivedDateTime desc&$top=${pageSize}&$filter=receivedDateTime ge ${sinceDate.toISOString()} and hasAttachments eq true`;
+  const filterParts = [
+    `receivedDateTime ge ${sinceDate.toISOString()}`,
+    'hasAttachments eq true'
+  ];
+  if (beforeDate) {
+    filterParts.push(`receivedDateTime lt ${beforeDate.toISOString()}`);
+  }
+  const filterClause = filterParts.join(' and ');
+  let url = `/v1.0/users/${mailbox}/mailFolders/${encodedFolder}/messages?$select=${MESSAGE_FIELDS}&$orderby=receivedDateTime desc&$top=${pageSize}&$filter=${filterClause}`;
 
   while (url && collected.length < limit) {
     const response = await graphFetch(url);
@@ -435,6 +451,10 @@ async function fetchFolderMessages(options: FetchFolderMessagesOptions): Promise
       if (receivedAt < sinceDate) {
         stopFolder = true;
         break;
+      }
+
+      if (beforeDate && receivedAt >= beforeDate) {
+        continue;
       }
 
       if (normalizedSubjectFilter.length > 0 && !subjectMatches(message.subject, normalizedSubjectFilter)) {

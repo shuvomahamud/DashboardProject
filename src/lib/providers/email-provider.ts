@@ -32,6 +32,7 @@ export interface ListMessagesOptions {
   limit?: number;
   lookbackDays?: number;
   mode?: 'graph-search' | 'deep-scan';
+  beforeDate?: string;
 }
 
 export interface ListMessagesResult {

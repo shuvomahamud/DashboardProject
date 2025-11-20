@@ -22,7 +22,7 @@ export class MSGraphEmailProvider implements EmailProvider {
   }
 
   async listMessages(options: ListMessagesOptions): Promise<ListMessagesResult> {
-    const { jobTitle, limit, lookbackDays, mode } = options;
+    const { jobTitle, limit, lookbackDays, mode, beforeDate } = options;
     const trimmedQuery = jobTitle?.trim() ?? '';
     const resolvedMode: 'graph-search' | 'deep-scan' =
       mode === 'deep-scan' ? 'deep-scan' : (trimmedQuery.length > 0 ? 'graph-search' : 'deep-scan');
@@ -35,7 +35,8 @@ export class MSGraphEmailProvider implements EmailProvider {
     const result = await searchMessages(trimmedQuery, limit, this.mailboxUserId, {
       mode: resolvedMode,
       lookbackDays,
-      subjectFilter: trimmedQuery
+      subjectFilter: trimmedQuery,
+      beforeDate
     });
 
     const {
