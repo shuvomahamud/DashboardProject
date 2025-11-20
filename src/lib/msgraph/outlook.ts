@@ -421,7 +421,8 @@ async function fetchFolderMessages(options: FetchFolderMessagesOptions): Promise
     normalizedSubjectFilter,
     sinceDate,
     limit,
-    pageSize
+    pageSize,
+    beforeDate
   } = options;
   const collected: Message[] = [];
   const encodedFolder = encodeURIComponent(folderId);
