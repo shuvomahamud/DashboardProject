@@ -161,7 +161,6 @@ export async function POST(req: NextRequest) {
     }
 
     const provider = createEmailProvider(run.mailbox);
-    const provider = createEmailProvider(run.mailbox);
     const graphEnumerated = runMeta.graphEnumerated === true;
     const deepScanCompleted = runMeta.deepScanCompleted === true;
     const deepScanBefore = typeof runMeta.deepScanBefore === 'string' ? runMeta.deepScanBefore : null;
@@ -358,6 +357,40 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Phase B: Process pending items with soft time limit
+    logInfo('phase_b start', { runId: run.id, softLimitMs: SOFT_TIME_LIMIT_MS });
+    logMetric('processor_phase_b_start', { runId: run.id, softLimitMs: SOFT_TIME_LIMIT_MS });
+
+    const concurrency = Math.max(3, parseInt(process.env.ITEM_CONCURRENCY || '3', 10));
+    logInfo('phase_b concurrency', { runId: run.id, concurrency });
+
+    let processedCount = 0;
+    let batchNumber = 0;
+    let batchesProcessed = 0;
+    let slowItemCount = 0;
+    let failedItemsInSlice = 0;
+    let gptQueuedThisSlice = 0;
+    let gracefulStop = false;
+    let previousBatchEnd: number | null = null;
+
+    while (true) {
+      const remaining = timeLeft(startTime);
+      if (remaining <= SOFT_EXIT_MARGIN_MS) {
+        logInfo('phase_b stop soft limit', { runId: run.id, elapsedMs: since(startTime) });
+        logMetric('processor_phase_b_exit_soft_limit', { runId: run.id, elapsedMs: since(startTime) });
+        break;
+      }
+
+      if (remaining <= 10_000) {
+        logInfo('phase_b stop low buffer', { runId: run.id, remainingMs: remaining });
+        logMetric('processor_phase_b_exit_buffer', { runId: run.id, remainingMs: remaining });
+        break;
+      }
+
+      batchNumber++;
+      const batchStart = Date.now();
+      const gapSinceLastBatch = previousBatchEnd ? batchStart - previousBatchEnd : 0;
+
       const pendingItems = await prisma.import_email_items.findMany({
         where: {
           run_id: run.id,
@@ -497,6 +530,7 @@ export async function POST(req: NextRequest) {
         remainingMs: timeLeft(startTime)
       });
     }
+
 
     logInfo('phase_b slice summary', {
       runId: run.id,
