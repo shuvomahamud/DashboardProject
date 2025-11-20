@@ -36,7 +36,6 @@ const ITEM_SLOW_THRESHOLD_MS = 4000;
 const SOFT_TIME_LIMIT_MS = HARD_TIME_LIMIT_MS - SOFT_EXIT_MARGIN_MS;
 const DEFAULT_WORKER_CONCURRENCY = parseInt(process.env.GPT_WORKER_CONCURRENCY || '3', 10);
 const DEFAULT_GRAPH_SEARCH_LIMIT = parseInt(process.env.MS_GRAPH_SEARCH_LIMIT || '2000', 10);
-const DEFAULT_MAX_EMAILS = parseInt(process.env.IMPORT_MAX_EMAILS || '5000', 10);
 
 // Time helpers
 const since = (t: number) => Date.now() - t;
@@ -117,14 +116,10 @@ export async function POST(req: NextRequest) {
     }
 
     const runMeta = (run.meta && typeof run.meta === 'object' && !Array.isArray(run.meta))
-      ? run.meta as Record<string, any>
+      ? { ...run.meta as Record<string, any> }
       : {};
-    const rawSearchMode = typeof runMeta.searchMode === 'string' ? runMeta.searchMode : undefined;
     const lookbackOverride = typeof runMeta.lookbackDays === 'number' ? runMeta.lookbackDays : undefined;
     const trimmedSearchText = run.search_text?.trim() ?? '';
-    const searchMode = rawSearchMode === 'deep-scan' || rawSearchMode === 'graph-search'
-      ? rawSearchMode
-      : (trimmedSearchText.length > 0 ? 'graph-search' : 'deep-scan');
 
     logInfo('run loaded', {
       runId: run.id,
@@ -132,8 +127,7 @@ export async function POST(req: NextRequest) {
       jobTitle: run.Job.title,
       totalMessages: run.total_messages ?? 0,
       mailbox: run.mailbox,
-      search: run.search_text,
-      searchMode
+      search: run.search_text
     });
     logMetric('processor_run_active', { runId: run.id, jobId: run.job_id, totalMessages: run.total_messages ?? 0 });
 
@@ -166,179 +160,170 @@ export async function POST(req: NextRequest) {
     }
 
     const provider = createEmailProvider(run.mailbox);
+    const graphEnumerated = runMeta.graphEnumerated === true;
+    const deepScanCompleted = runMeta.deepScanCompleted === true;
 
-    // Phase A: Enumerate emails (only if total_messages = 0)
-    if (run.total_messages === 0) {
-      const remainingBeforePhaseA = timeLeft(startTime);
-      if (remainingBeforePhaseA < 10_000) {
-        logInfo('phase_a skipped low budget', { runId: run.id, remainingMs: remainingBeforePhaseA });
-        logMetric('processor_phase_a_skipped', { runId: run.id, remainingMs: remainingBeforePhaseA });
-      } else {
-        let effectiveMode: 'graph-search' | 'deep-scan' = searchMode;
-        const enumerationLimit = effectiveMode === 'graph-search' ? DEFAULT_GRAPH_SEARCH_LIMIT : DEFAULT_MAX_EMAILS;
-        const phaseAStart = Date.now();
-        logInfo('phase_a enumerate start', {
-          runId: run.id,
-          search: run.search_text,
-          mode: effectiveMode,
-          limit: enumerationLimit ?? 'auto'
-        });
+    const enumeratePhase = async (
+      phaseLabel: 'graph' | 'deep',
+      mode: 'graph-search' | 'deep-scan',
+      limit?: number
+    ) => {
+      const phaseStart = Date.now();
+      const resolvedLimit =
+        typeof limit === 'number'
+          ? limit
+          : mode === 'deep-scan'
+          ? Number.MAX_SAFE_INTEGER
+          : undefined;
+      logInfo(`${phaseLabel}_enumerate_start`, {
+        runId: run.id,
+        mode,
+        limit: resolvedLimit ?? 'unbounded',
+        lookbackDays: lookbackOverride
+      });
+      const listResult = await provider.listMessages({
+        jobTitle: run.search_text ?? '',
+        limit: resolvedLimit,
+        mode,
+        lookbackDays: lookbackOverride
+      });
+      const messages = listResult.messages;
+      const durationMs = Date.now() - phaseStart;
+      logMetric('processor_phase_a_messages', {
+        runId: run.id,
+        phase: phaseLabel,
+        mode,
+        count: messages.length,
+        ms: durationMs
+      });
+      logInfo(`${phaseLabel}_enumerate_complete`, {
+        runId: run.id,
+        fetched: messages.length,
+        durationMs,
+        mode,
+        totalCount: listResult.totalCount ?? null
+      });
 
-        let listResult = await provider.listMessages({
-          jobTitle: run.search_text ?? '',
-          limit: enumerationLimit,
-          mode: effectiveMode,
-          lookbackDays: lookbackOverride
-        });
-        let messages = listResult.messages;
-        let reportedTotal = typeof listResult.totalCount === 'number' ? listResult.totalCount : null;
-        effectiveMode = listResult.modeUsed;
+      if (messages.length === 0) {
+        return { fetched: 0, inserted: 0 };
+      }
 
-        const graphLikelyTruncated =
-          effectiveMode === 'graph-search' &&
-          ((enumerationLimit && messages.length >= enumerationLimit) ||
-            (reportedTotal !== null && reportedTotal > messages.length));
+      const items = messages.map(msg => ({
+        run_id: run.id,
+        job_id: run.job_id,
+        external_message_id: msg.externalId,
+        external_thread_id: msg.threadId,
+        received_at: msg.receivedAt,
+        status: 'pending',
+        step: 'none',
+        attempts: 0
+      }));
 
-        if (graphLikelyTruncated) {
-          logInfo('graph search hit limit, falling back to deep scan', {
+      logInfo(`${phaseLabel}_persist_start`, { runId: run.id, items: items.length, mode });
+
+      let retries = 3;
+      let lastError: any = null;
+      let insertedCount = 0;
+
+      while (retries > 0) {
+        const attemptStart = Date.now();
+        try {
+          const createResult = await prisma.import_email_items.createMany({
+            data: items,
+            skipDuplicates: true
+          });
+          insertedCount = createResult.count;
+          logInfo(`${phaseLabel}_persist_success`, {
             runId: run.id,
-            limit: enumerationLimit,
-            reportedTotal
+            inserted: createResult.count,
+            duplicatesSkipped: items.length - createResult.count,
+            durationMs: Date.now() - attemptStart
           });
-          listResult = await provider.listMessages({
-            jobTitle: run.search_text ?? '',
-            mode: 'deep-scan',
-            lookbackDays: lookbackOverride,
-            limit: DEFAULT_MAX_EMAILS
-          });
-          messages = listResult.messages;
-          effectiveMode = listResult.modeUsed;
-          try {
-            const newMeta = { ...runMeta, searchMode: 'deep-scan' };
-            await prisma.import_email_runs.update({
-              where: { id: run.id },
-              data: { meta: newMeta }
-            });
-          } catch (err) {
-            logWarn('failed to persist deep scan fallback meta', {
+          break;
+        } catch (error: any) {
+          lastError = error;
+          retries--;
+
+          const isConnectionError = error.code === 'P1001' || error.message?.includes("Can't reach database");
+          const isPoolError = error.message?.includes('Timed out fetching a new connection');
+
+          if ((isConnectionError || isPoolError) && retries > 0) {
+            const waitTime = (4 - retries) * 2000;
+            logWarn(`${phaseLabel}_persist_retry`, {
               runId: run.id,
-              error: err instanceof Error ? err.message : String(err)
+              waitMs: waitTime,
+              retriesRemaining: retries,
+              error: error?.message
             });
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          } else {
+            logError(`${phaseLabel}_persist_failed`, {
+              runId: run.id,
+              attempts: 3 - retries,
+              error: error?.message
+            });
+            throw error;
           }
         }
+      }
 
-        const phaseADuration = Date.now() - phaseAStart;
-        logMetric('processor_phase_a_messages', { runId: run.id, count: messages.length, ms: phaseADuration });
-        logInfo('phase_a enumerate complete', {
-          runId: run.id,
-          fetched: messages.length,
-          durationMs: phaseADuration,
-          mode: effectiveMode
-        });
+      if (retries === 0 && lastError) {
+        throw lastError;
+      }
 
-        if (messages.length === 0) {
-          logInfo('phase_a no messages', { runId: run.id });
-          await prisma.import_email_runs.update({
-            where: { id: run.id },
-            data: {
-              status: 'succeeded',
-              finished_at: new Date(),
-              progress: 1.0,
-              total_messages: 0
-            }
-          });
-          return NextResponse.json({ status: 'succeeded', runId: run.id });
-        }
+      return { fetched: messages.length, inserted: insertedCount };
+    };
 
-        const items = messages.map(msg => ({
-          run_id: run.id,
-          job_id: run.job_id,
-          external_message_id: msg.externalId,
-          external_thread_id: msg.threadId,
-          received_at: msg.receivedAt,
-          status: 'pending',
-          step: 'none',
-          attempts: 0
-        }));
-
-        logInfo('phase_a persist start', { runId: run.id, items: items.length });
-
-        let retries = 3;
-        let lastError: any = null;
-        let insertedCount = 0;
-
-        while (retries > 0) {
-          const attemptStart = Date.now();
-          try {
-            const createResult = await prisma.import_email_items.createMany({
-              data: items,
-              skipDuplicates: true
-            });
-
-            insertedCount = createResult.count;
-            logInfo('phase_a persist success', {
-              runId: run.id,
-              inserted: createResult.count,
-              duplicatesSkipped: items.length - createResult.count,
-              durationMs: Date.now() - attemptStart
-            });
-
-            const verifyCount = await prisma.import_email_items.count({
-              where: { run_id: run.id }
-            });
-
-            logInfo('phase_a verification', {
-              runId: run.id,
-              expected: items.length,
-              found: verifyCount
-            });
-
-            break;
-
-          } catch (error: any) {
-            lastError = error;
-            retries--;
-
-            const isConnectionError = error.code === 'P1001' || error.message?.includes("Can't reach database");
-            const isPoolError = error.message?.includes('Timed out fetching a new connection');
-
-            if ((isConnectionError || isPoolError) && retries > 0) {
-              const waitTime = (4 - retries) * 2000;
-              logWarn('phase_a persist retry', {
-                runId: run.id,
-                waitMs: waitTime,
-                retriesRemaining: retries,
-                error: error?.message
-              });
-              await new Promise(resolve => setTimeout(resolve, waitTime));
-            } else {
-              logError('phase_a persist failed', {
-                runId: run.id,
-                attempts: 3 - retries,
-                error: error?.message
-              });
-              throw error;
-            }
-          }
-        }
-
-        if (retries === 0 && lastError) {
-          throw lastError;
-        }
-
+    if (!graphEnumerated || !deepScanCompleted) {
+      if (!graphEnumerated) {
+        await enumeratePhase('graph', 'graph-search', DEFAULT_GRAPH_SEARCH_LIMIT);
+        runMeta.graphEnumerated = true;
         await prisma.import_email_runs.update({
           where: { id: run.id },
-          data: { total_messages: messages.length }
-        });
-
-        logInfo('phase_a complete', {
-          runId: run.id,
-          messages: messages.length,
-          inserted: insertedCount
+          data: { meta: runMeta }
         });
       }
-    }
 
+      if (!deepScanCompleted) {
+        await enumeratePhase('deep', 'deep-scan');
+        runMeta.deepScanCompleted = true;
+        await prisma.import_email_runs.update({
+          where: { id: run.id },
+          data: { meta: runMeta }
+        });
+      }
+
+      const totalItems = await prisma.import_email_items.count({
+        where: { run_id: run.id }
+      });
+
+      await prisma.import_email_runs.update({
+        where: { id: run.id },
+        data: {
+          meta: runMeta,
+          total_messages: totalItems
+        }
+      });
+
+      logInfo('enumeration_complete', {
+        runId: run.id,
+        totalItems
+      });
+
+      if (totalItems === 0) {
+        logInfo('no messages found after enumeration', { runId: run.id });
+        await prisma.import_email_runs.update({
+          where: { id: run.id },
+          data: {
+            status: 'succeeded',
+            finished_at: new Date(),
+            progress: 1.0,
+            total_messages: 0
+          }
+        });
+        return NextResponse.json({ status: 'succeeded', runId: run.id });
+      }
+    }
     // Phase B: Process pending items with soft time limit
     logInfo('phase_b start', { runId: run.id, softLimitMs: SOFT_TIME_LIMIT_MS });
     logMetric('processor_phase_b_start', { runId: run.id, softLimitMs: SOFT_TIME_LIMIT_MS });

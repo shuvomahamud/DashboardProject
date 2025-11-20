@@ -34,6 +34,9 @@ export interface MessagesResponse {
   messages: Message[];
   next?: string;
   totalCount?: number;
+  rawCount?: number;
+  filteredCount?: number;
+  graphTruncated?: boolean;
 }
 
 export interface AttachmentsResponse {
@@ -51,7 +54,6 @@ const GRAPH_DEBUG_ENABLED = process.env.MS_GRAPH_DEBUG === 'true';
 
 const DEFAULT_MS_DEEP_SCAN_PAGE_SIZE = 200;
 const DEFAULT_MS_DEEP_SCAN_FOLDER_PAGE_SIZE = 200;
-const DEFAULT_MS_DEEP_SCAN_MAX_RESULTS = 100000;
 const DEFAULT_MS_DEEP_SCAN_LOOKBACK_DAYS = 365;
 const DEFAULT_MS_SEARCH_LOOKBACK_DAYS = 1095;
 const GRAPH_MAX_PAGE_SIZE = 1000;
@@ -190,15 +192,26 @@ export async function searchMessages(
     // Sort by receivedDateTime desc (newest first)
     results.sort((a, b) => +new Date(b.receivedDateTime) - +new Date(a.receivedDateTime));
 
+    const filteredCount = results.length;
+    const rawCount = allMessages.length;
+    const limitReached = rawCount >= limit;
+    const pagesExceeded = pageCount >= maxPages;
+    const reportedMore = typeof reportedCount === 'number' ? reportedCount > rawCount : false;
+    const graphTruncated = limitReached || pagesExceeded || reportedMore;
+
     graphDebug('MS Graph: search complete', {
-      count: results.length,
+      count: filteredCount,
+      rawCount,
       pages: pageCount,
+      limitReached,
+      pagesExceeded,
+      reportedMore,
       subjectFilterApplied: normalizedSubjectFilter.length > 0
     });
-    if (results.length >= limit) {
+    if (filteredCount >= limit) {
       console.warn('[msgraph] Graph $search returned limit-sized result set. Consider deep scan for completeness.', {
         limit,
-        fetched: results.length,
+        fetched: filteredCount,
         searchText: trimmedSearch
       });
     }
@@ -206,7 +219,10 @@ export async function searchMessages(
     return {
       messages: results.slice(0, limit),
       next: undefined,
-      totalCount: reportedCount
+      totalCount: reportedCount,
+      rawCount,
+      filteredCount,
+      graphTruncated
     };
   }
 
@@ -220,7 +236,11 @@ export async function searchMessages(
 
   return {
     messages: deepScanMessages,
-    next: undefined
+    next: undefined,
+    totalCount: deepScanMessages.length,
+    rawCount: deepScanMessages.length,
+    filteredCount: deepScanMessages.length,
+    graphTruncated: false
   };
 }
 
@@ -266,7 +286,7 @@ async function deepScanMailbox(options: DeepScanOptions): Promise<Message[]> {
   } = options;
   const pageSize = clampPageSize(parsePositiveInt(process.env.MS_DEEP_SCAN_PAGE_SIZE, DEFAULT_MS_DEEP_SCAN_PAGE_SIZE));
   const folderPageSize = Math.max(1, parsePositiveInt(process.env.MS_DEEP_SCAN_FOLDER_PAGE_SIZE, DEFAULT_MS_DEEP_SCAN_FOLDER_PAGE_SIZE));
-  const maxResults = Math.max(1, Math.min(limit ?? DEFAULT_MS_DEEP_SCAN_MAX_RESULTS, DEFAULT_MS_DEEP_SCAN_MAX_RESULTS));
+  const maxResults = limit && Number.isFinite(limit) ? Math.max(1, limit) : Number.MAX_SAFE_INTEGER;
   const sinceDate = new Date(utcStart);
 
   graphDebug('MS Graph: deep scan starting', {

@@ -36,7 +36,10 @@ export interface ListMessagesOptions {
 
 export interface ListMessagesResult {
   messages: EmailMessage[];
-  totalCount?: number;
+  totalCount?: number | null;
+  rawCount?: number | null;
+  filteredCount?: number | null;
+  graphTruncated?: boolean;
   modeUsed: 'graph-search' | 'deep-scan';
 }
 

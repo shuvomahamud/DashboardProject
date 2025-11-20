@@ -38,10 +38,21 @@ export class MSGraphEmailProvider implements EmailProvider {
       subjectFilter: trimmedQuery
     });
 
+    const {
+      messages: sourceMessages,
+      totalCount,
+      rawCount,
+      filteredCount,
+      graphTruncated
+    } = result;
+
     return {
       modeUsed: resolvedMode,
-      totalCount: result.totalCount,
-      messages: result.messages.map(msg => ({
+      totalCount,
+      rawCount,
+      filteredCount: filteredCount ?? sourceMessages.length,
+      graphTruncated,
+      messages: sourceMessages.map(msg => ({
         externalId: msg.id,
         threadId: null, // MS Graph doesn't expose conversationId in basic queries
         subject: msg.subject,
