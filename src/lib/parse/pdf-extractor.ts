@@ -13,6 +13,12 @@ import { existsSync } from 'fs';
 
 const require = createRequire(import.meta.url);
 
+try {
+  require('@napi-rs/canvas');
+} catch (error) {
+  console.warn('[pdf-extractor] @napi-rs/canvas not available; continuing with polyfills only');
+}
+
 let workerConfigured = false;
 let resolvedWorkerSrc: string | null = null;
 

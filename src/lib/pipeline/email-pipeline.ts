@@ -623,11 +623,26 @@ async function linkJobApplication(
       data.external_message_id = externalMessageId;
     }
 
-    await prisma.jobApplication.create({ data });
+    await prisma.jobApplication.upsert({
+      where: {
+        jobId_resumeId: {
+          jobId,
+          resumeId
+        }
+      },
+      create: data,
+      update: {
+        ...(externalMessageId ? { external_message_id: externalMessageId } : {}),
+        updatedAt: new Date()
+      }
+    });
   } catch (error: any) {
-    if (error.code !== 'P2002') {
-      throw error;
-    }
+    pipelineWarn('job_application_link_failed', {
+      jobId,
+      resumeId,
+      error: error?.message ?? 'unknown'
+    });
+    throw error;
   }
 }
 

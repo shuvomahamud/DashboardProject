@@ -17,7 +17,7 @@ export const ResumeParseSchema = z.object({
     year: z.number().nullable().optional()
   })),
   employment: z.array(z.object({
-    company: z.string(),
+    company: z.string().nullable().optional(),
     title: z.string().nullable(),
     startDate: z.string().nullable(),
     endDate: z.string().nullable(),
@@ -144,7 +144,7 @@ export const RESUME_JSON_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          company: { type: "string" },
+          company: { type: ["string", "null"] },
           title: { type: ["string", "null"] },
           startDate: { 
             type: ["string", "null"],
@@ -159,7 +159,7 @@ export const RESUME_JSON_SCHEMA = {
             description: "full-time, part-time, contract, internship, etc."
           }
         },
-        required: ["company", "title", "startDate", "endDate", "employmentType"],
+        required: ["title", "startDate", "endDate", "employmentType"],
         additionalProperties: false
       }
     },

@@ -120,7 +120,7 @@ export const EnhancedResumeParseSchema = z.object({
       year: stringOrNull
     })).default([]),
     employment: z.array(z.object({
-      company: z.string(),
+      company: stringOrNull,
       title: stringOrNull,
       startDate: stringOrNull,
       endDate: stringOrNull,
@@ -242,7 +242,7 @@ function sanitizeModelOutput(raw: any) {
     }
     if (Array.isArray(raw?.resume?.employment)) {
       raw.resume.employment.forEach((e: any) => {
-        ['title', 'startDate', 'endDate', 'employmentType'].forEach(k => fixScalar(e, k));
+        ['company', 'title', 'startDate', 'endDate', 'employmentType'].forEach(k => fixScalar(e, k));
         if (e?.endDate === 'Present') e.endDate = null;
       });
     }

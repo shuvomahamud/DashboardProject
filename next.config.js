@@ -10,6 +10,7 @@ const nextConfig = {
   },
   experimental: {
     instrumentationHook: true,
+    serverComponentsExternalPackages: ['@napi-rs/canvas'],
   },
 };
 
