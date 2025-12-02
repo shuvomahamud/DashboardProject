@@ -522,7 +522,8 @@ export async function getFileAttachmentBytes(
 
 // Attachment eligibility check policy
 export function isAttachmentEligible(attachment: Attachment): boolean {
-  const allowedExtensions = (process.env.IMPORT_ALLOWED_EXTS || 'pdf,docx').toLowerCase().split(',');
+  // Accept legacy .doc along with the defaults
+  const allowedExtensions = (process.env.IMPORT_ALLOWED_EXTS || 'pdf,docx,doc').toLowerCase().split(',');
   const maxSizeMB = 10; // 10MB max
   
   // Check file extension
