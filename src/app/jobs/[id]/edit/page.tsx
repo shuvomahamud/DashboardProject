@@ -34,6 +34,8 @@ interface Job {
 
 interface JobProfile {
   version?: string;
+  rewrittenJobDescription?: string;
+  rewrittenRequirements?: string[];
   summary: string;
   mustHaveSkills: string[];
   niceToHaveSkills: string[];
@@ -173,6 +175,10 @@ export default function EditJobPage() {
   const [loadingJob, setLoadingJob] = useState(true);
   const [mandatorySkills, setMandatorySkills] = useState<string[]>([]);
   const [aiMustHaveSkills, setAiMustHaveSkills] = useState<string[]>([]);
+  const [aiRewrites, setAiRewrites] = useState<{ description: string; requirements: string[] }>({
+    description: '',
+    requirements: []
+  });
   const [addingMandatorySkill, setAddingMandatorySkill] = useState(false);
   const [newMandatorySkill, setNewMandatorySkill] = useState('');
   const [scoreRun, setScoreRun] = useState<ScoreRefreshRun | null>(null);
@@ -345,6 +351,7 @@ export default function EditJobPage() {
       setProfileVersion('v1');
       setAiMustHaveSkills([]);
       setMandatorySkills(override && override.length > 0 ? override : []);
+      setAiRewrites({ description: '', requirements: [] });
       return;
     }
 
@@ -397,6 +404,34 @@ export default function EditJobPage() {
     } else {
       syncMandatorySkillsFromList(mustHaveList);
     }
+
+    const rewrittenDescription =
+      typeof profile.rewrittenJobDescription === 'string'
+        ? profile.rewrittenJobDescription.trim()
+        : '';
+    const rewrittenRequirements = Array.isArray(profile.rewrittenRequirements)
+      ? profile.rewrittenRequirements.map(item => item?.toString().trim()).filter(Boolean)
+      : [];
+
+    setAiRewrites({
+      description: rewrittenDescription,
+      requirements: rewrittenRequirements
+    });
+
+    setFormData(prev => ({
+      ...prev,
+      description:
+        rewrittenDescription && rewrittenDescription.toLowerCase() !== 'unknown'
+          ? rewrittenDescription
+          : prev.description,
+      requirements:
+        rewrittenRequirements.length > 0 &&
+        !(rewrittenRequirements.length === 1 &&
+          rewrittenRequirements[0] &&
+          rewrittenRequirements[0].toLowerCase() === 'unknown')
+          ? rewrittenRequirements.join('\n')
+          : prev.requirements
+    }));
   };
 
   useEffect(() => {
@@ -535,6 +570,8 @@ export default function EditJobPage() {
 
       const aiJobProfile = {
         version: profileVersion || 'v1',
+        rewrittenJobDescription: aiRewrites.description || '',
+        rewrittenRequirements: aiRewrites.requirements,
         summary: profileFormData.summary.trim(),
         niceToHaveSkills: multilineToList(profileFormData.niceToHaveSkills),
         targetTitles: multilineToList(profileFormData.targetTitles),

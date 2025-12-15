@@ -79,6 +79,10 @@ export default function NewJobPage() {
   const [addingMandatorySkill, setAddingMandatorySkill] = useState(false);
   const [newMandatorySkill, setNewMandatorySkill] = useState('');
   const [aiMustHaveSkills, setAiMustHaveSkills] = useState<string[]>([]);
+  const [aiRewrites, setAiRewrites] = useState<{ description: string; requirements: string[] }>({
+    description: '',
+    requirements: []
+  });
 
   const listToMultiline = (items?: string[] | null) =>
     items && items.length > 0 ? items.join('\n') : '';
@@ -185,6 +189,7 @@ export default function NewJobPage() {
       setProfileVersion('v1');
       setMandatorySkills([]);
       setAiMustHaveSkills([]);
+      setAiRewrites({ description: '', requirements: [] });
       return;
     }
 
@@ -205,19 +210,39 @@ export default function NewJobPage() {
     });
     setProfileVersion(profile.version ?? 'v1');
     syncMandatorySkillsFromList(profile.mustHaveSkills ?? []);
+
+    const rewrittenDescription =
+      typeof profile.rewrittenJobDescription === 'string'
+        ? profile.rewrittenJobDescription.trim()
+        : '';
+    const rewrittenRequirements = Array.isArray(profile.rewrittenRequirements)
+      ? profile.rewrittenRequirements.map((item: string) => item?.toString().trim()).filter(Boolean)
+      : [];
+
+    setAiRewrites({
+      description: rewrittenDescription,
+      requirements: rewrittenRequirements
+    });
+
+    setFormData(prev => ({
+      ...prev,
+      description:
+        rewrittenDescription && rewrittenDescription.toLowerCase() !== 'unknown'
+          ? rewrittenDescription
+          : prev.description,
+      requirements:
+        rewrittenRequirements.length > 0 &&
+        !(rewrittenRequirements.length === 1 &&
+          rewrittenRequirements[0] &&
+          rewrittenRequirements[0].toLowerCase() === 'unknown')
+          ? rewrittenRequirements.join('\n')
+          : prev.requirements
+    }));
   };
 
   const handleRunProfile = async () => {
     if (runningProfile) return;
 
-    if (!formData.title.trim()) {
-      setError('Please enter a job title before running AI.');
-      return;
-    }
-    if (!formData.companyName.trim()) {
-      setError('Please enter a company name before running AI.');
-      return;
-    }
     if (!formData.description.trim() && !formData.requirements.trim()) {
       setError('Provide a description or requirements so AI has context.');
       return;
@@ -286,6 +311,8 @@ export default function NewJobPage() {
 
       const aiJobProfile = {
         version: profileVersion || 'v1',
+        rewrittenJobDescription: aiRewrites.description || '',
+        rewrittenRequirements: aiRewrites.requirements,
         summary: profileFormData.summary.trim(),
         niceToHaveSkills: multilineToList(profileFormData.niceToHaveSkills),
         targetTitles: multilineToList(profileFormData.targetTitles),

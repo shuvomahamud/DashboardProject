@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withTableAuthAppRouter } from '@/lib/auth/withTableAuthAppRouter';
 import { generateJobProfilePreview } from '@/lib/ai/jobProfileService';
 
-const REQUIRED_FIELDS = ['title', 'companyName'] as const;
-
 const handler = async (req: NextRequest) => {
   if (req.method !== 'POST') {
     return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
@@ -12,20 +10,23 @@ const handler = async (req: NextRequest) => {
   try {
     const body = await req.json();
 
-    for (const field of REQUIRED_FIELDS) {
-      if (!body?.[field] || typeof body[field] !== 'string' || !body[field].trim()) {
-        return NextResponse.json(
-          { error: `${field} is required to run AI profile generation` },
-          { status: 400 }
-        );
-      }
+    const hasDescription =
+      typeof body?.description === 'string' && body.description.trim().length > 0;
+    const hasRequirements =
+      typeof body?.requirements === 'string' && body.requirements.trim().length > 0;
+
+    if (!hasDescription && !hasRequirements) {
+      return NextResponse.json(
+        { error: 'Provide a description or requirements so AI has context.' },
+        { status: 400 }
+      );
     }
 
     const profile = await generateJobProfilePreview({
-      title: body.title,
+      title: typeof body.title === 'string' ? body.title : '',
       description: body.description,
       requirements: body.requirements,
-      companyName: body.companyName,
+      companyName: typeof body.companyName === 'string' ? body.companyName : '',
       employmentType: body.employmentType,
       location: body.location
     });

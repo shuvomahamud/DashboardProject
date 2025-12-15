@@ -38,6 +38,8 @@ interface Job {
 }
 
 interface JobProfile {
+  rewrittenJobDescription?: string;
+  rewrittenRequirements?: string[];
   summary: string;
   mustHaveSkills: string[];
   niceToHaveSkills: string[];

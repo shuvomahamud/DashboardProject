@@ -10,8 +10,7 @@ const stringArray = z
     const list = Array.isArray(value) ? value : (value ? [value] : []);
     return list
       .map(item => item.trim())
-      .filter(item => item.length > 0)
-      .slice(0, 20);
+      .filter(item => item.length > 0);
   })
   .default([]);
 
@@ -43,6 +42,11 @@ export const JobProfileSchema = z.object({
     .transform(value => value.trim())
     .refine(value => value.length <= 600, 'summary must be ≤ 600 characters')
     .default(''),
+  rewrittenJobDescription: z
+    .string()
+    .transform(value => value.trim())
+    .default(''),
+  rewrittenRequirements: stringArray.optional().default([]),
   mustHaveSkills: stringArray.optional().default([]),
   niceToHaveSkills: stringArray,
   targetTitles: stringArray,
@@ -178,30 +182,40 @@ async function extractJobProfile(input: {
 
   const jobText = segments.join('\n\n').slice(0, 12_000);
 
-  const systemMessage = `You are a senior technical recruiter. Extract structured hiring criteria from the job posting.
-Respond with minified JSON matching the schema below. Use concise wording.
+  const systemMessage = `You are a senior technical recruiter. Build a JobContext optimized for resume keyword matching and scoring. We match resume keywords to the job’s extracted keyword lists; completeness, correctness, and consistent keyword forms directly affect the score.
 
-{
-  "version": "${JOB_PROFILE_VERSION}",
-  "summary": "<=400 chars overview for LLM context",
-  "mustHaveSkills": ["skill"],
-  "niceToHaveSkills": ["skill"],
-  "targetTitles": ["role title"],
-  "responsibilities": ["brief responsibility"],
-  "requiredExperienceYears": null,
-  "preferredExperienceYears": null,
-  "domainKeywords": ["industry or product context"],
-  "certifications": ["certification"],
-  "locationConstraints": "string|null",
-  "disqualifiers": ["factor that disqualifies"],
-  "toolsAndTech": ["tools, platforms, frameworks"]
-}
+SCORING CONTEXT (for priority):
+- Mandatory Skills contribute the largest share (up to 70 points, split evenly). Missing/empty mandatory list makes this bucket 0.
+- Profile dimensions share 15 points: nice-to-have skills, target job titles, tools & technologies, responsibilities, domain keywords. Each scores by match ratio; only dimensions with items are active.
+- Experience alignment contributes points only if required years are provided; missing years make this bucket 0. Ranges can add preferred-range credit.
+- Disqualifiers apply a penalty only if explicitly listed and detected.
+Goal: maximize must-have keyword coverage and keep categories cleanly separated for reliable matching.
 
-Rules:
-- Prefer bullet essentials; keep arrays <=12 items.
-- Years should be integers; use null if unclear.
-- Disqualifiers include clearance, visa, location, shift, etc.
-- Summary must paraphrase requirements, not the posting verbatim.`;
+INPUT:
+- A job description/requirements blob (title/company may be blank). Use only what is provided; do not invent details.
+
+OUTPUT (STRICT, MINIFIED JSON ONLY):
+{"version":"${JOB_PROFILE_VERSION}","rewrittenJobDescription":"concise, modern rewrite; 'unknown' if absent","rewrittenRequirements":["clear bullet"],"summary":"<=600 chars factual paraphrase of role + key requirements","mustHaveSkills":["mandatory keyword"],"niceToHaveSkills":["optional keyword"],"targetTitles":["role title"],"responsibilities":["action/outcome phrase"],"toolsAndTech":["tech/tool/platform"],"domainKeywords":["industry/sector/business area"],"certifications":["certification"],"disqualifiers":["explicit constraint"],"requiredExperienceYears":null,"preferredExperienceYears":null,"locationConstraints":null}
+
+RULES:
+- Use only provided text; if not stated, use null or empty arrays. Never fabricate.
+- Arrays: concise, deduped, resume-detectable keywords. No long sentences. No “not specified.”
+- Normalize keywords: consistent casing and common resume forms (e.g., “REST API” not “restful apis”).
+- mustHaveSkills: the mandatory master list. Include ALL required/enforceable items, including required technologies/tools/platforms. Optimized for keyword matching.
+- niceToHaveSkills: optional/preferred only. Must NOT overlap with mustHaveSkills.
+- toolsAndTech: concrete technologies/tools/platforms (languages, frameworks, libraries, DBs, CI/CD, IDEs, cloud). Overlap with mustHaveSkills is allowed when a tech is required. toolsAndTech must NOT overlap with niceToHaveSkills, targetTitles, responsibilities, or domainKeywords.
+- targetTitles: job titles only. No overlap with niceToHaveSkills, toolsAndTech, responsibilities, or domainKeywords. May overlap mustHaveSkills only if the JD explicitly requires a title.
+- responsibilities: action/outcome phrases (verbs + object). No tech/tool names. No overlap with other non-mandatory lists.
+- domainKeywords: sectors/industries/business areas (e.g., public sector, healthcare, finance, permitting, inspections, parks operations, revenue tracking). Do NOT include system names, agencies, or product names. No overlap with other non-mandatory lists.
+- certifications: only explicit certifications.
+- disqualifiers: only explicit constraints (clearance, visa/work authorization, onsite requirement, shift, background check, location restrictions).
+- experience: extract integer years if stated. For ranges like “5–7 years”, set requiredExperienceYears=5 and preferredExperienceYears=7. If absent, null.
+- locationConstraints: only if explicit; else null.
+- rewrittenJobDescription / rewrittenRequirements: if no usable content, use "unknown" and ["unknown"].
+- summary: <=600 chars, factual, no fluff.
+
+FORMAT:
+- Respond with minified JSON ONLY (single compact object), no Markdown, no prose.`;
 
   const userMessage = `Job posting:\n<<<JOB_POSTING\n${jobText}\nJOB_POSTING`;
 
@@ -234,6 +248,8 @@ Rules:
 export function sanitizeProfile(profile: JobProfile): JobProfile {
   return {
     version: JOB_PROFILE_VERSION,
+    rewrittenJobDescription: profile.rewrittenJobDescription || '',
+    rewrittenRequirements: dedupeList(profile.rewrittenRequirements),
     summary: profile.summary.slice(0, 600),
     mustHaveSkills: dedupeList(profile.mustHaveSkills),
     niceToHaveSkills: dedupeList(profile.niceToHaveSkills),
@@ -257,9 +273,6 @@ function dedupeList(list: string[]): string[] {
     if (!seen.has(key)) {
       seen.add(key);
       result.push(item);
-    }
-    if (result.length >= 12) {
-      break;
     }
   }
   return result;
