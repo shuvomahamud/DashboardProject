@@ -34,6 +34,10 @@ const LONG_TEXT_CHAR_THRESHOLD = toPositiveInt(process.env.OPENAI_LONG_TEXT_THRE
 const LONG_TEXT_TIMEOUT_MS = toPositiveInt(process.env.OPENAI_LONG_TEXT_TIMEOUT_MS, 32000);
 const MAX_PARSE_TIMEOUT_MS = toPositiveInt(process.env.OPENAI_RESUME_MAX_TIMEOUT_MS, 45000);
 const TIMEOUT_RETRY_BACKOFF_MS = toPositiveInt(process.env.OPENAI_TIMEOUT_RETRY_BACKOFF_MS, 8000);
+const SKILL_VERIFY_MODEL =
+  process.env.OPENAI_SKILL_VERIFY_MODEL ||
+  process.env.OPENAI_RESUME_MODEL ||
+  'gpt-4o-mini';
 
 const resumeLogInfo = (message: string, context?: ResumeLogContext) => {
   if (context) {
@@ -446,10 +450,7 @@ async function verifySkillMatchesWithAI(params: {
   }
 
   const client = getOpenAIClient();
-  const model =
-    process.env.OPENAI_JOB_PROFILE_MODEL ||
-    process.env.OPENAI_RESUME_MODEL ||
-    'gpt-4o-mini';
+  const model = SKILL_VERIFY_MODEL;
   const temperature = Number(process.env.OPENAI_JOB_PROFILE_TEMPERATURE || 0);
 
   const jobProfile = params.jobProfile;
@@ -1565,4 +1566,3 @@ export async function getEnhancedParsingStats(): Promise<{
     return { total: 0, parsed: 0, unparsed: 0, withScores: 0, failed: 0 };
   }
 }
-

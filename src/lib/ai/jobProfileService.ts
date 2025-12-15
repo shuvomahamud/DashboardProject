@@ -164,7 +164,7 @@ async function extractJobProfile(input: {
   location: string | null;
 }): Promise<JobProfile> {
   const client = getOpenAIClient();
-  const model = process.env.OPENAI_JOB_PROFILE_MODEL || process.env.OPENAI_RESUME_MODEL || 'gpt-4o-mini';
+  const model = process.env.OPENAI_JOB_PROFILE_MODEL || 'gpt-5.1';
   const temperature = Number(process.env.OPENAI_JOB_PROFILE_TEMPERATURE || 0.1);
 
   const segments = [
