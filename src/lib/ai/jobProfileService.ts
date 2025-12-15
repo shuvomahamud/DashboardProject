@@ -227,7 +227,8 @@ FORMAT:
       { role: 'system', content: systemMessage },
       { role: 'user', content: userMessage }
     ],
-    max_tokens: 1500
+    // gpt-5.1 uses max_completion_tokens instead of max_tokens
+    max_completion_tokens: 1500
   });
 
   const content = response.choices[0]?.message?.content;
