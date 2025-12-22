@@ -49,6 +49,52 @@ const splitLines = (text: string) =>
 const normalizeLineValue = (value: string) =>
   replaceHtmlEntities(value).replace(/\s+/g, ' ').trim();
 
+const inlineLabelTokens = [
+  'email',
+  'candidate email',
+  'phone number',
+  'phone',
+  'work authorization',
+  'work auth',
+  'representation',
+  'location',
+  'preferred location',
+  'match',
+  'resume',
+  'cover letter',
+  'recruiter',
+  'recruiter name'
+];
+
+const findInlineLabeledValue = (line: string, label: string) => {
+  const escaped = escapeRegExp(label);
+  const regex = new RegExp(`\\b${escaped}(?:\\s*${escaped})?\\b`, 'i');
+  const match = line.match(regex);
+  if (!match || match.index === undefined) {
+    return null;
+  }
+
+  const remainder = line.slice(match.index + match[0].length);
+  const cleaned = remainder.replace(/^[\s:\-]+/, '');
+  if (!cleaned) {
+    return null;
+  }
+
+  let end = cleaned.length;
+  for (const otherLabel of inlineLabelTokens) {
+    if (otherLabel.toLowerCase() === label.toLowerCase()) {
+      continue;
+    }
+    const otherRegex = new RegExp(`\\b${escapeRegExp(otherLabel)}\\b`, 'i');
+    const otherMatch = cleaned.match(otherRegex);
+    if (otherMatch?.index !== undefined && otherMatch.index > 0 && otherMatch.index < end) {
+      end = otherMatch.index;
+    }
+  }
+
+  return normalizeLineValue(cleaned.slice(0, end));
+};
+
 const findLabeledValue = (lines: string[], labels: string[]) => {
   for (const line of lines) {
     for (const label of labels) {
@@ -63,6 +109,10 @@ const findLabeledValue = (lines: string[], labels: string[]) => {
           return normalizeLineValue(match[1]);
         }
       }
+      const inlineMatch = findInlineLabeledValue(line, label);
+      if (inlineMatch) {
+        return inlineMatch;
+      }
     }
   }
   return null;
@@ -70,6 +120,9 @@ const findLabeledValue = (lines: string[], labels: string[]) => {
 
 const sanitizeEmail = (value: string | null) => {
   if (!value) return null;
+  if (/not\s+provided|n\/a|na/i.test(value)) {
+    return null;
+  }
   const match = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   return match ? match[0].toLowerCase() : null;
 };
@@ -78,7 +131,23 @@ const sanitizePhone = (value: string | null) => {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
+  if (/not\s+provided|n\/a|na/i.test(trimmed)) {
+    return null;
+  }
   return trimmed;
+};
+
+const findEmailInLines = (lines: string[]) => {
+  for (const line of lines) {
+    if (!/\bemail\b/i.test(line)) {
+      continue;
+    }
+    const match = line.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    if (match) {
+      return match[0].toLowerCase();
+    }
+  }
+  return null;
 };
 
 const normalizeRecruiterValue = (value: string | null) => {
@@ -138,6 +207,13 @@ export function parseDiceCandidateMetadata(input: DiceParserInput): DiceCandidat
     findLabeledValue(lines, ['location', 'preferred location']) || undefined;
   metadata.workAuthorization =
     findLabeledValue(lines, ['work authorization', 'work auth']) || undefined;
+
+  if (!metadata.candidateEmail) {
+    const fallbackEmail = findEmailInLines(lines);
+    if (fallbackEmail) {
+      metadata.candidateEmail = fallbackEmail;
+    }
+  }
 
   if (metadata.candidateLocation) {
     const { city, state } = parseCityState(metadata.candidateLocation);
