@@ -9,8 +9,22 @@ const htmlEntityMap: Record<string, string> = {
   '&#39;': "'"
 };
 
-const labelPattern = (label: string) =>
-  new RegExp(`^${label}\\s*[\\-:–]+\\s*(.+)$`, 'i');
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const labelPattern = (label: string) => {
+  const escaped = escapeRegExp(label);
+  return new RegExp(`^${escaped}\\s*[\\-:]+\\s*(.+)$`, 'i');
+};
+
+const repeatedLabelPattern = (label: string) => {
+  const escaped = escapeRegExp(label);
+  return new RegExp(`^${escaped}\\s*${escaped}\\s*[\\-:]?\\s*(.+)$`, 'i');
+};
+
+const spacedLabelPattern = (label: string) => {
+  const escaped = escapeRegExp(label);
+  return new RegExp(`^${escaped}\\s+(.+)$`, 'i');
+};
 
 const replaceHtmlEntities = (value: string) =>
   value.replace(/&[a-zA-Z0-9#]+;/g, entity => htmlEntityMap[entity] ?? entity);
@@ -19,7 +33,8 @@ const htmlToPlainText = (html: string): string =>
   replaceHtmlEntities(
     html
       .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n')
+      .replace(/<\/(p|div|li|tr|table)>/gi, '\n')
+      .replace(/<\/t[dh]>/gi, '\t')
       .replace(/<style[\s\S]*?<\/style>/gi, '')
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/<[^>]+>/g, ' ')
@@ -37,10 +52,16 @@ const normalizeLineValue = (value: string) =>
 const findLabeledValue = (lines: string[], labels: string[]) => {
   for (const line of lines) {
     for (const label of labels) {
-      const regex = labelPattern(label);
-      const match = line.match(regex);
-      if (match && match[1]) {
-        return normalizeLineValue(match[1]);
+      const candidates = [
+        labelPattern(label),
+        repeatedLabelPattern(label),
+        spacedLabelPattern(label)
+      ];
+      for (const regex of candidates) {
+        const match = line.match(regex);
+        if (match && match[1]) {
+          return normalizeLineValue(match[1]);
+        }
       }
     }
   }

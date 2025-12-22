@@ -22,6 +22,8 @@
     "test:msgraph": "npx tsx scripts/test-msgraph.ts",
     "test:ai": "npx tsx scripts/test-ai-parsing.ts",
     "test:queue": "npx tsx scripts/test-import-queue.ts",
+    "clone:verify": "npx tsx scripts/clone-supabase.ts --verify",
+    "clone:run": "npx tsx scripts/clone-supabase.ts --yes --resume",
     "setup:storage": "npx tsx scripts/setup-supabase-storage.ts",
     "setup:queue": "npx tsx scripts/init-pgboss.ts",
     "worker:import": "npx tsx scripts/run-import-worker.ts",

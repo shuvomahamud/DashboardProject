@@ -26,6 +26,8 @@
 logs.json
 logs.csv
 .eslintrc.json
+.cache/
+exports/storage-source-*/
 
 # debug
 npm-debug.log*
