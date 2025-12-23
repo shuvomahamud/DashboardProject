@@ -407,50 +407,6 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       width: '120px'
     },
     {
-      id: 'companyScore',
-      name: 'Company Score',
-      selector: (row: ApplicationRow) => row.aiCompany ?? 0,
-      sortable: true,
-      sortField: 'aiCompanyScore',
-      cell: (row: ApplicationRow) => row.aiCompany != null ? Number(row.aiCompany).toFixed(0) : '-',
-      width: '130px'
-    },
-    {
-      id: 'fakeScore',
-      name: 'Fake Score',
-      selector: (row: ApplicationRow) => row.aiFake ?? 0,
-      sortable: true,
-      sortField: 'fakeScore',
-      cell: (row: ApplicationRow) => row.aiFake != null ? Number(row.aiFake).toFixed(0) : '-',
-      width: '110px'
-    },
-    {
-      id: 'resumeFile',
-      name: 'Resume',
-      cell: (row: ApplicationRow) => (
-        <div className="d-flex flex-column gap-2">
-          <Button
-            variant="outline-primary"
-            size="sm"
-            onClick={() => handleOpenPreview(row.resumeId)}
-          >
-            View
-          </Button>
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            onClick={() => handleDownloadResume(row.resumeId)}
-          >
-            Download
-          </Button>
-        </div>
-      ),
-      ignoreRowClick: true,
-      allowOverflow: true,
-      button: true,
-      width: '160px'
-    },
-    {
       id: 'experience',
       name: 'Experience',
       selector: (row: ApplicationRow) => row.experience ?? '',
@@ -479,6 +435,50 @@ export default function ApplicationsTable({ jobId }: ApplicationsTableProps) {
       minWidth: '200px',
       maxWidth: '400px',
       grow: 2
+    },
+    {
+      id: 'resumeFile',
+      name: 'Resume',
+      cell: (row: ApplicationRow) => (
+        <div className="d-flex flex-column gap-2">
+          <Button
+            variant="outline-primary"
+            size="sm"
+            onClick={() => handleOpenPreview(row.resumeId)}
+          >
+            View
+          </Button>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={() => handleDownloadResume(row.resumeId)}
+          >
+            Download
+          </Button>
+        </div>
+      ),
+      ignoreRowClick: true,
+      allowOverflow: true,
+      button: true,
+      width: '160px'
+    },
+    {
+      id: 'companyScore',
+      name: 'Company Score',
+      selector: (row: ApplicationRow) => row.aiCompany ?? 0,
+      sortable: true,
+      sortField: 'aiCompanyScore',
+      cell: (row: ApplicationRow) => row.aiCompany != null ? Number(row.aiCompany).toFixed(0) : '-',
+      width: '130px'
+    },
+    {
+      id: 'fakeScore',
+      name: 'Fake Score',
+      selector: (row: ApplicationRow) => row.aiFake ?? 0,
+      sortable: true,
+      sortField: 'fakeScore',
+      cell: (row: ApplicationRow) => row.aiFake != null ? Number(row.aiFake).toFixed(0) : '-',
+      width: '110px'
     },
     {
       id: 'appliedDate',
